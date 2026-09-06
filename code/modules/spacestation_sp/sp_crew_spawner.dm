@@ -17,9 +17,11 @@
  *
  * Returns the spawned human, or null on failure.
  */
-/proc/sp_spawn_crew_member(datum/job/job, atom/spawn_point, latejoin = FALSE, controller_type = /datum/ai_controller/sp_crew)
+/proc/sp_spawn_crew_member(datum/job/job, atom/spawn_point, latejoin = FALSE, controller_type = null)
 	if(isnull(job))
 		return null
+	if(isnull(controller_type))
+		controller_type = sp_controller_for_job(job)
 	if(job.spawn_type != /mob/living/carbon/human)
 		return null // silicons and other snowflakes are out of scope for now
 
@@ -53,6 +55,14 @@
 	SSspacestation_sp.register_crew(crew)
 	log_sp("spawned AI crew [crew.real_name] as [job.title] at [AREACOORD(crew)]")
 	return crew
+
+/// Picks the AI controller type for a job based on its department.
+/proc/sp_controller_for_job(datum/job/job)
+	if(/datum/job_department/medical in job.departments_list)
+		return /datum/ai_controller/sp_crew/medical
+	if(/datum/job_department/security in job.departments_list)
+		return /datum/ai_controller/sp_crew/security
+	return /datum/ai_controller/sp_crew
 
 /// Returns the list of jobs an AI crew member may be spawned as: joinable, human, station crew.
 /proc/sp_get_crew_job_pool()

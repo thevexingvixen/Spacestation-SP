@@ -1,0 +1,65 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_safety",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/pawn_health_below",
+	"vars": {
+		"health_blackboard_key": "BB_SP_HURT_THRESHOLD",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_MEDBAY_COOLDOWN",
+			"cooldown_duration": "20 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "selector",
+					"children": [
+						{
+							"type": "decorator",
+							"decorator": "/datum/bt_node/decorator/cooldown",
+							"vars": {
+								"cooldown_key": "BB_SP_HELP_COOLDOWN",
+								"cooldown_duration": "30 SECONDS",
+								"lock_on_succeed": false
+							},
+							"child": {
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_say/need_medic"
+							}
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/succeed"
+						}
+					]
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_pick_wander_turf/medbay"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_MEDBAY_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "15 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

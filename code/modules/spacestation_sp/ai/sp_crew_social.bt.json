@@ -1,0 +1,25 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_social",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_ATTENTION_TARGET",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_say/greet"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/clear_key",
+				"vars": {
+					"key": "BB_SP_ATTENTION_TARGET"
+				}
+			}
+		]
+	}
+}

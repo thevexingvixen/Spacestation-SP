@@ -6643,6 +6643,7 @@
 #include "code\modules\spacestation_sp\sp_config.dm"
 #include "code\modules\spacestation_sp\sp_crew_spawner.dm"
 #include "code\modules\spacestation_sp\sp_subsystem.dm"
+#include "code\modules\spacestation_sp\ai\sp_crew_behaviors.dm"
 #include "code\modules\spacestation_sp\ai\sp_crew_controller.dm"
 #include "code\modules\spatial_grid\cell_tracker.dm"
 #include "code\modules\spells\spell.dm"
