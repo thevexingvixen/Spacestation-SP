@@ -469,7 +469,9 @@ ADMIN_VERB(cmd_controller_view_ui, R_SERVER|R_DEBUG, "Controller Overview", "Vie
 	if(tgs_prime)
 		world.TgsInitializationComplete()
 
-	if(sleep_offline_after_initializations)
+	// SPACESTATION SP: with no clients connected, sleeping the world here means the sleep() below never returns,
+	// so RESUME_AFTER_INITIALIZATIONS could never actually resume a headless server. Skip the sleep entirely instead.
+	if(sleep_offline_after_initializations && !CONFIG_GET(flag/resume_after_initializations))
 		world.sleep_offline = TRUE
 	sleep(1 TICKS)
 

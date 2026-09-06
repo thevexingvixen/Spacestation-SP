@@ -1,0 +1,31 @@
+{
+	"dm_type": "/datum/ai_controller/sp_crew",
+	"type": "parallel",
+	"failure_policy": "BT_PARALLEL_FAILURE_CHILD_ONE",
+	"success_policy": "BT_PARALLEL_SUCCESS_CHILD_ONE",
+	"repeat_secondary": true,
+	"repeat_secondary_delay": "1 SECONDS",
+	"finish_on_primary": true,
+	"children": [
+		{
+			"type": "selector",
+			"children": [
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/escape_captivity"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/random_walk",
+					"bindings": {
+						"bf07i8ep": "15"
+					}
+				}
+			]
+		},
+		{
+			"type": "subtree",
+			"subtype": "/datum/bt_node/subtree/random_speech_loop"
+		}
+	]
+}
