@@ -1,0 +1,23 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_botanist_gather",
+	"type": "sequence",
+	"children": [
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_find_produce"
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+			"vars": {
+				"target_key": "BB_SP_PRODUCE",
+				"required_dist": 0,
+				"finish_on_arrival": true
+			}
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_stow_produce"
+		}
+	]
+}

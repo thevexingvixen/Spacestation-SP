@@ -304,3 +304,47 @@
 		),
 		BB_EMOTE_SEE = list("checks a gauge.", "taps a wrench against a pipe."),
 	))
+
+/// Botanist: runs the hydroponics trays and keeps the kitchen supplied.
+/datum/ai_controller/sp_crew/botanist
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_botanist.bt.json"
+
+/**
+ * TG gives botanists an apron and a plant analyser but no guarantee of seeds, a hoe or a watering can
+ * (the tools are family heirlooms, which most characters do not roll). Hand them a working kit so the
+ * garden actually gets planted, and a random spread of seeds so no two rounds grow the same things.
+ */
+/datum/ai_controller/sp_crew/botanist/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/cultivator)))
+		human_pawn.equip_to_storage(new /obj/item/cultivator(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+	if(isnull(sp_botany_watering_can(human_pawn)))
+		var/obj/item/reagent_containers/cup/watering_can/can = new(human_pawn)
+		can.reagents?.add_reagent(/datum/reagent/water, can.reagents.maximum_volume)
+		human_pawn.equip_to_storage(can, ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
+	// Six kinds of seed, drawn from the pool by weight, two packets of each.
+	var/list/pool = GLOB.sp_botany_seed_pool.Copy()
+	var/list/chosen = list()
+	for(var/i in 1 to 6)
+		if(!length(pool))
+			break
+		var/seed_type = pick_weight(pool)
+		pool -= seed_type
+		chosen += seed_type
+		for(var/packet in 1 to 2)
+			human_pawn.equip_to_storage(new seed_type(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+	log_sp("[human_pawn.real_name] starts with seeds: [english_list(chosen)]")
+
+/datum/ai_controller/sp_crew/botanist/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	set_blackboard_key(BB_SP_WANDER_AREAS, sp_botany_areas())
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"These trays don't water themselves.",
+			"Everything grows better with a bit of attention.",
+			"The kitchen's going to want more tomatoes.",
+			"I'm trying something new in the back tray.",
+			"Mind the weeds.",
+		),
+		BB_EMOTE_SEE = list("inspects a leaf.", "wipes soil off a pair of gloves."),
+	))

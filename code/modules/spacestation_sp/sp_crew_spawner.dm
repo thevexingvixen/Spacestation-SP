@@ -66,14 +66,21 @@
 		return /datum/ai_controller/sp_crew/security
 	if(/datum/job_department/engineering in job.departments_list)
 		return /datum/ai_controller/sp_crew/engineer
+	if(istype(job, /datum/job/botanist))
+		return /datum/ai_controller/sp_crew/botanist
 	return /datum/ai_controller/sp_crew
 
-/// Jobs the station cannot do without; populate fills one of each before anything else (after heads).
+/**
+ * Jobs the station cannot do without; populate fills one of each before anything else (after heads).
+ * The botanist is here because they feed the kitchen, and a station with nobody growing anything is a
+ * station where the chef has nothing to cook.
+ */
 /proc/sp_essential_job_types()
 	var/static/list/essential = list(
 		/datum/job/station_engineer,
 		/datum/job/security_officer,
 		/datum/job/doctor,
+		/datum/job/botanist,
 	)
 	return essential
 

@@ -1,0 +1,86 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_botanist_deliver",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_has_delivery",
+	"vars": {
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_DELIVERY_COOLDOWN",
+			"cooldown_duration": "20 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "selector",
+					"children": [
+						{
+							"type": "decorator",
+							"decorator": "/datum/bt_node/decorator/cooldown",
+							"vars": {
+								"cooldown_key": "BB_SP_SAMPLE_COOLDOWN",
+								"cooldown_duration": "4 MINUTES",
+								"lock_on_succeed": false
+							},
+							"child": {
+								"type": "sequence",
+								"children": [
+									{
+										"type": "leaf",
+										"behavior": "/datum/bt_node/ai_behavior/sp_find_sample_table"
+									},
+									{
+										"type": "leaf",
+										"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+										"vars": {
+											"target_key": "BB_SP_SAMPLE_TABLE",
+											"required_dist": 1,
+											"finish_on_arrival": true
+										}
+									},
+									{
+										"type": "leaf",
+										"behavior": "/datum/bt_node/ai_behavior/sp_unload_produce/sample"
+									}
+								]
+							}
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/succeed"
+						}
+					]
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_kitchen"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_DELIVERY_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_unload_produce/kitchen"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "3 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

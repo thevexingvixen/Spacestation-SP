@@ -117,3 +117,34 @@
 #define SP_BREACH_ATTEMPT_TIMEOUT (90 SECONDS)
 /// How long a written-off breach stays ignored.
 #define SP_BREACH_IGNORE_TIME (5 MINUTES)
+
+// --- Botany -----------------------------------------------------------------------------------
+
+/// The hydroponics tray we are walking to.
+#define BB_SP_TRAY "sp_tray"
+/// What we intend to do with it: one of the SP_TRAY_JOB_* values below.
+#define BB_SP_TRAY_JOB "sp_tray_job"
+/// The tool or seed we equipped for that job.
+#define BB_SP_BOTANY_TOOL "sp_botany_tool"
+/// Produce lying on the floor that we are about to pick up.
+#define BB_SP_PRODUCE "sp_produce"
+/// The kitchen table we deliver produce to.
+#define BB_SP_DELIVERY_TARGET "sp_delivery_target"
+/// The hydroponics table we leave sample produce on.
+#define BB_SP_SAMPLE_TABLE "sp_sample_table"
+/// A water source we are walking to in order to refill the watering can.
+#define BB_SP_WATER_SOURCE "sp_water_source"
+/// Cooldowns.
+#define BB_SP_BOTANY_COOLDOWN "sp_botany_cooldown"
+#define BB_SP_DELIVERY_COOLDOWN "sp_delivery_cooldown"
+#define BB_SP_SAMPLE_COOLDOWN "sp_sample_cooldown"
+
+/// Tray jobs, in the order the botanist prefers them.
+#define SP_TRAY_JOB_HARVEST "harvest"
+#define SP_TRAY_JOB_CLEAR "clear"
+#define SP_TRAY_JOB_WEED "weed"
+#define SP_TRAY_JOB_WATER "water"
+#define SP_TRAY_JOB_PLANT "plant"
+
+/// How much produce a botanist gathers before walking a delivery to the kitchen.
+#define SP_PRODUCE_DELIVERY_BATCH 5

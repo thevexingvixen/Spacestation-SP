@@ -13,10 +13,12 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   `sp_essential_job_types()` guarantees one engineer, one security officer and one doctor.
 - `sp_engineering.dm` — power monitoring and the scripted engine startup (see below).
 - `sp_breach.dm` — hull breach detection and RCD repair (see below).
+- `sp_botany.dm` — hydroponics helpers: which tray needs what, seed pool, produce and delivery targets.
 - `sp_admin_verbs.dm` — Fun tab: "SP: Populate Station", "SP: Spawn Crew (Job)".
 - `ai/sp_crew_controller.dm` — `/datum/ai_controller/sp_crew` and the `/medical`, `/security`,
   `/engineer` subtypes. Hearing hook, incident routing, attacker memory, `TRAIT_NOHUNGER`.
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
+- `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -35,6 +37,15 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   wait 40 s → bring the engine online.
 - `sp_engineer_repair` — find the nearest breach → announce it → put on EVA gear → open internals →
   equip the RCD → walk to a safe tile beside the hole → lay plating over it.
+- `sp_botanist_tend` — find the tray that most wants attention → put the right thing in hand → walk
+  over → work it. Harvest beats everything else, then clearing dead plants, weeding, watering and
+  finally planting an empty tray.
+- `sp_botanist_gather` — harvesting drops produce at the botanist's feet, so this picks it up and
+  stows it in their bag.
+- `sp_botanist_deliver` — once carrying five or more, leave a couple out as samples in hydroponics
+  (at most once every four minutes), then carry the rest to a kitchen table and say so on the
+  service channel.
+- `sp_botanist_refill` — top the watering can up at a water tank when it runs dry.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -96,6 +107,17 @@ Damage that genuinely cannot be walked to (a room sealed behind blast doors, say
 exercising the behaviour in headless tests. Leave it at 0 for real play. Uncomment `SP_BREACH_DEBUG`
 in `code/_compile_options.dm` for verbose target/move/failure logging.
 
+## Botany (`sp_botany.dm`)
+`sp_tray_job()` decides what a tray needs, in priority order: harvest, clear a dead plant, weed above
+level 2, water below level 30, or plant if it is empty. Every one of those is done through the same
+interaction a player uses, so trays, seeds and produce behave exactly as they normally would.
+
+TG only gives botanists an apron and a plant analyser; the hoe and watering can are family heirlooms
+most characters never roll. `equip_extra_gear` hands them a cultivator, a full watering can and two
+packets each of six seed types drawn at random from `GLOB.sp_botany_seed_pool`. The pool is weighted
+towards things the chef can cook, with a tail of the botanist's own interests, so the garden differs
+every round. Whether any of it is legal is Security's problem, not botany's.
+
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
 `AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
@@ -133,4 +155,6 @@ the game server logs nothing at all.
   re-pressurises the room afterwards.
 - Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.
 - Security uses melee and cuffs, never the disabler in their suit slot.
+- Botanists never use the seed vendor, the seed extractor or plant genetics, so they only ever grow
+  what they spawned with. They also do not compost or fight pests.
 - No hunger/sleep handling (trait-suppressed).
