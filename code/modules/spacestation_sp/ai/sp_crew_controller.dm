@@ -322,6 +322,15 @@
 		can.reagents?.add_reagent(/datum/reagent/water, can.reagents.maximum_volume)
 		human_pawn.equip_to_storage(can, ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
 
+	// Four large beakers of unstable mutagen: the sort of thing a botanist would ask chemistry for at
+	// the start of a shift. A species mutation needs a plant's instability up around 60, which is a few
+	// hundred units of the stuff, so anything less means they can never actually breed something new.
+	for(var/beaker in 1 to 4)
+		var/obj/item/reagent_containers/cup/beaker/large/mutagen = new(human_pawn)
+		mutagen.name = "beaker of unstable mutagen"
+		mutagen.reagents?.add_reagent(/datum/reagent/toxin/mutagen, mutagen.reagents.maximum_volume)
+		human_pawn.equip_to_storage(mutagen, ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
 	// Six kinds of seed, drawn from the pool by weight, two packets of each.
 	var/list/pool = GLOB.sp_botany_seed_pool.Copy()
 	var/list/chosen = list()

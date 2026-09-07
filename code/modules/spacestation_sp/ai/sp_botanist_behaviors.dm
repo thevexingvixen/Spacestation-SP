@@ -120,7 +120,7 @@
 /datum/bt_node/ai_behavior/sp_stow_produce/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/obj/item/produce = controller.blackboard[BB_SP_PRODUCE]
-	if(!istype(pawn) || QDELETED(produce) || !produce.Adjacent(pawn))
+	if(!istype(pawn) || QDELETED(produce) || !isturf(produce.loc) || !produce.Adjacent(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	// Straight into the bag; going via the hands just means dropping whatever we were holding.
 	if(!pawn.back || !produce.forceMove(pawn.back))
@@ -265,4 +265,149 @@
 	if(wanted <= 0 || !source.reagents.trans_to(can, wanted, transferred_by = pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	controller.clear_blackboard_key(BB_SP_WATER_SOURCE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Seed extraction --------------------------------------------------------------------------
+
+/// Carry produce of a species we have no seeds for to the extractor and turn it into packets.
+/datum/bt_node/subtree/sp_botanist_extract
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_botanist_extract.bt.json"
+
+/// Buy a seed variety we do not own from the MegaSeed Servitor.
+/datum/bt_node/subtree/sp_botanist_shop
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_botanist_shop.bt.json"
+
+/// Dose a growing plant with mutagen and see what it turns into.
+/datum/bt_node/subtree/sp_botanist_experiment
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_botanist_experiment.bt.json"
+
+/// Finds produce worth seeding and an extractor to do it in.
+/datum/bt_node/ai_behavior/sp_find_extraction
+	time_between_perform = 5 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_extraction/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/item/produce = sp_produce_needing_seeds(pawn)
+	if(isnull(produce))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/machinery/seed_extractor/extractor = sp_find_seed_extractor(pawn)
+	if(isnull(extractor))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_EXTRACT_ITEM, produce)
+	controller.set_blackboard_key(BB_SP_EXTRACTOR, extractor)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Feeds the produce into the extractor; the seeds drop out beside it for us to pick up.
+/datum/bt_node/ai_behavior/sp_run_extractor
+
+/datum/bt_node/ai_behavior/sp_run_extractor/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/obj/machinery/seed_extractor/extractor = controller.blackboard[BB_SP_EXTRACTOR]
+	var/obj/item/produce = controller.blackboard[BB_SP_EXTRACT_ITEM]
+	if(!istype(pawn) || QDELETED(extractor) || QDELETED(produce) || !extractor.Adjacent(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	if(!sp_equip_from_inventory(pawn, list(produce.type)))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+
+	var/produce_name = produce.name
+	pawn.face_atom(extractor)
+	controller.ai_interact(extractor, combat_mode = FALSE)
+	controller.clear_blackboard_key(BB_SP_EXTRACT_ITEM)
+	controller.clear_blackboard_key(BB_SP_EXTRACTOR)
+	log_sp("[pawn.real_name] extracted seeds from [produce_name]")
+	sp_crew_speak(pawn, pick(
+		"Got seeds off the [produce_name], that one's staying in the rotation.",
+		"Seeded the [produce_name]. Should be able to grow more of those now.",
+	), RADIO_CHANNEL_SERVICE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Buying seeds -----------------------------------------------------------------------------
+
+/// Finds a seed vendor worth visiting.
+/datum/bt_node/ai_behavior/sp_find_seed_vendor
+	time_between_perform = 10 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_seed_vendor/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/machinery/vending/hydroseeds/vendor = sp_find_seed_vendor(pawn)
+	if(isnull(vendor))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_SEED_VENDOR, vendor)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Buys one packet of something we have never grown, out of our own wages.
+/datum/bt_node/ai_behavior/sp_buy_seeds
+
+/datum/bt_node/ai_behavior/sp_buy_seeds/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/obj/machinery/vending/hydroseeds/vendor = controller.blackboard[BB_SP_SEED_VENDOR]
+	if(!istype(pawn) || QDELETED(vendor) || !vendor.Adjacent(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	pawn.face_atom(vendor)
+	var/obj/item/bought = sp_buy_seed_packet(pawn, vendor)
+	controller.clear_blackboard_key(BB_SP_SEED_VENDOR)
+	if(isnull(bought))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_crew_speak(pawn, pick(
+		"Picked up some [bought.name], never grown those before.",
+		"Trying [bought.name] this shift. We'll see how it takes.",
+	), RADIO_CHANNEL_SERVICE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Mutation experiments ---------------------------------------------------------------------
+
+/// Finds a growing plant that could mutate into something else, and mutagen to push it along.
+/datum/bt_node/ai_behavior/sp_find_experiment
+	time_between_perform = 10 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_experiment/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn) || isnull(sp_find_mutagen(pawn)))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+
+	// Stick with the plant we already started on. Instability only pays off near 60, so a botanist who
+	// dosed whichever tray happened to be nearest would never actually finish an experiment.
+	var/obj/machinery/hydroponics/tray = controller.blackboard[BB_SP_EXPERIMENT_TRAY]
+	if(!sp_is_mutation_candidate(tray))
+		tray = sp_find_mutation_candidate(pawn)
+		controller.set_blackboard_key(BB_SP_EXPERIMENT_TRAY, tray)
+	if(isnull(tray))
+		controller.clear_blackboard_key(BB_SP_EXPERIMENT_TRAY)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_MUTATE_TRAY, tray)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/**
+ * Pours mutagen into the tray. That raises the plant's instability, and an unstable plant has a
+ * chance every growth cycle to mutate into another species from its own mutation list.
+ */
+/datum/bt_node/ai_behavior/sp_apply_mutagen
+
+/datum/bt_node/ai_behavior/sp_apply_mutagen/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/obj/machinery/hydroponics/tray = controller.blackboard[BB_SP_MUTATE_TRAY]
+	if(!istype(pawn) || QDELETED(tray) || !tray.Adjacent(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/item/reagent_containers/cup/bottle/mutagen = sp_find_mutagen(pawn)
+	if(isnull(mutagen) || isnull(tray.myseed))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	if(!sp_equip_from_inventory(pawn, list(mutagen.type)))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+
+	var/plant_name = tray.myseed.plantname
+	// Dial the container up to pour everything in one go. Instability only pays off near 60, and the
+	// default 5-10 unit splash would never get a plant anywhere near that.
+	mutagen.amount_per_transfer_from_this = mutagen.reagents.total_volume
+	pawn.face_atom(tray)
+	controller.ai_interact(tray, combat_mode = FALSE)
+	controller.clear_blackboard_key(BB_SP_MUTATE_TRAY)
+	log_sp("[pawn.real_name] dosed [plant_name] with mutagen (instability now [tray.myseed?.instability])")
+	sp_crew_speak(pawn, pick(
+		"Dosing the [plant_name] with mutagen. Let's see what it turns into.",
+		"Running an experiment on the [plant_name]. Might get something new.",
+	), RADIO_CHANNEL_SERVICE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED

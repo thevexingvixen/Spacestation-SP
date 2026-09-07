@@ -118,6 +118,20 @@ packets each of six seed types drawn at random from `GLOB.sp_botany_seed_pool`. 
 towards things the chef can cook, with a tail of the botanist's own interests, so the garden differs
 every round. Whether any of it is legal is Security's problem, not botany's.
 
+### Seeds, buying and experiments
+Three slower errands sit between delivery and tending in the botanist's tree, each on its own cooldown:
+- `sp_botanist_extract` — produce whose species they hold no packet of is carried to a seed extractor
+  and turned into seeds, which is how a botanist locks in something new. They also fall back to
+  seeding whatever they have when down to their last few packets.
+- `sp_botanist_shop` — buys a packet of something they have never grown from the MegaSeed Servitor,
+  paid for out of their own wages via their ID's bank account.
+- `sp_botanist_experiment` — pours a full beaker of unstable mutagen into a growing plant that has
+  somewhere to mutate to. They commit to one tray and keep returning to it, because instability only
+  pays off near 60 and dosing whatever is nearest would never finish an experiment.
+
+SP issues four large beakers of mutagen in the starting kit. Chemistry normally supplies this and
+botanists only get it in the mail, so without it they could never deliberately breed anything.
+
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
 `AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
@@ -155,6 +169,8 @@ the game server logs nothing at all.
   re-pressurises the room afterwards.
 - Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.
 - Security uses melee and cuffs, never the disabler in their suit slot.
-- Botanists never use the seed vendor, the seed extractor or plant genetics, so they only ever grow
-  what they spawned with. They also do not compost or fight pests.
+- Botanists do not compost, fight pests, or use grafts and the DNA manipulator.
+- Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
+  full species change needs it sustained above 60, which competes with the plant stabilising between
+  doses, so new species are occasional rather than routine.
 - No hunger/sleep handling (trait-suppressed).

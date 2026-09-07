@@ -148,3 +148,24 @@
 
 /// How much produce a botanist gathers before walking a delivery to the kitchen.
 #define SP_PRODUCE_DELIVERY_BATCH 5
+
+// Deeper botany: extraction, buying and mutation.
+/// The seed extractor we are carrying produce to.
+#define BB_SP_EXTRACTOR "sp_extractor"
+/// Produce we intend to turn into seeds.
+#define BB_SP_EXTRACT_ITEM "sp_extract_item"
+/// The MegaSeed Servitor we are shopping at.
+#define BB_SP_SEED_VENDOR "sp_seed_vendor"
+/// A tray we are about to dose with mutagen.
+#define BB_SP_MUTATE_TRAY "sp_mutate_tray"
+/// Species (seed typepaths) this botanist has grown at least once.
+#define BB_SP_KNOWN_SPECIES "sp_known_species"
+/// Cooldowns for the slower botany errands.
+#define BB_SP_EXTRACT_COOLDOWN "sp_extract_cooldown"
+#define BB_SP_SHOP_COOLDOWN "sp_shop_cooldown"
+#define BB_SP_MUTATE_COOLDOWN "sp_mutate_cooldown"
+
+/// Instability at which a plant is already likely to mutate on its own; no need to add mutagen.
+#define SP_MUTAGEN_INSTABILITY_TARGET 60
+/// The tray the botanist has committed to as their current mutation experiment.
+#define BB_SP_EXPERIMENT_TRAY "sp_experiment_tray"

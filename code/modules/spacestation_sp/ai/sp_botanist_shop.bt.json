@@ -1,0 +1,39 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_botanist_shop",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/cooldown",
+	"vars": {
+		"cooldown_key": "BB_SP_SHOP_COOLDOWN",
+		"cooldown_duration": "3 MINUTES",
+		"lock_on_succeed": false
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_find_seed_vendor"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"vars": {
+					"target_key": "BB_SP_SEED_VENDOR",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_buy_seeds"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "2 SECONDS"
+				}
+			}
+		]
+	}
+}

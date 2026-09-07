@@ -106,16 +106,22 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 			seeds -= candidate
 	return length(seeds) ? pick(seeds) : null
 
-/// Produce lying loose on the floor near the botanist, nearest first.
+/**
+ * Produce or seed packets lying loose on the floor near the botanist, nearest first.
+ * Harvesting drops produce at their feet and the seed extractor spits packets out beside it, so this
+ * is how both get collected.
+ */
 /proc/sp_find_loose_produce(mob/living/carbon/human/botanist, range = 4)
-	var/obj/item/food/grown/best
+	var/obj/item/best
 	var/best_distance = INFINITY
-	for(var/obj/item/food/grown/produce in oview(range, botanist))
-		if(!isturf(produce.loc))
+	for(var/obj/item/loose in oview(range, botanist))
+		if(!isturf(loose.loc))
 			continue
-		var/distance = get_dist(botanist, produce)
+		if(!istype(loose, /obj/item/food/grown) && !istype(loose, /obj/item/seeds))
+			continue
+		var/distance = get_dist(botanist, loose)
 		if(distance < best_distance)
-			best = produce
+			best = loose
 			best_distance = distance
 	return best
 
@@ -172,6 +178,135 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 			best = source
 			best_distance = distance
 	return best
+
+
+// --- Seeds, extraction and experimentation ----------------------------------------------------
+
+/// Seed typepaths the botanist is carrying packets of.
+/proc/sp_carried_seed_types(mob/living/carbon/human/botanist)
+	var/list/types = list()
+	for(var/obj/item/seeds/packet as anything in botanist.get_all_contents_type(/obj/item/seeds))
+		types |= packet.type
+	return types
+
+/**
+ * Produce worth turning into seeds: something we are carrying whose species we have no packet of.
+ * This is how a botanist locks in a mutation they just grew, so it is worth a walk to the extractor.
+ */
+/proc/sp_produce_needing_seeds(mob/living/carbon/human/botanist)
+	var/list/have = sp_carried_seed_types(botanist)
+	var/list/carrying = sp_carried_produce(botanist)
+	for(var/obj/item/food/grown/produce as anything in carrying)
+		var/obj/item/seeds/its_seed = produce.get_plant_seed()
+		if(isnull(its_seed) || (its_seed.type in have))
+			continue
+		return produce
+	// Running out of packets: seed whatever we have rather than leaving trays empty.
+	if(length(have) < 3 && length(carrying))
+		for(var/obj/item/food/grown/produce as anything in carrying)
+			if(!isnull(produce.get_plant_seed()))
+				return produce
+	return null
+
+/// The nearest seed extractor.
+/proc/sp_find_seed_extractor(mob/living/carbon/human/botanist, range = 20)
+	var/obj/machinery/seed_extractor/best
+	var/best_distance = INFINITY
+	for(var/obj/machinery/seed_extractor/extractor in oview(range, botanist))
+		var/distance = get_dist(botanist, extractor)
+		if(distance < best_distance)
+			best = extractor
+			best_distance = distance
+	return best
+
+/// The nearest working MegaSeed Servitor.
+/proc/sp_find_seed_vendor(mob/living/carbon/human/botanist, range = 20)
+	var/obj/machinery/vending/hydroseeds/best
+	var/best_distance = INFINITY
+	for(var/obj/machinery/vending/hydroseeds/vendor in oview(range, botanist))
+		if(vendor.machine_stat & (BROKEN|NOPOWER))
+			continue
+		var/distance = get_dist(botanist, vendor)
+		if(distance < best_distance)
+			best = vendor
+			best_distance = distance
+	return best
+
+/**
+ * Buys one packet of a seed the botanist does not already carry, paid for out of their own wages.
+ * Returns the seed, or null. Botanists earn a paycheck at spawn, so a few packets a shift is affordable.
+ */
+/proc/sp_buy_seed_packet(mob/living/carbon/human/botanist, obj/machinery/vending/hydroseeds/vendor)
+	if(QDELETED(vendor) || QDELETED(botanist))
+		return null
+	var/obj/item/card/id/id_card = botanist.get_idcard(hand_first = FALSE)
+	var/datum/bank_account/account = id_card?.registered_account
+	if(isnull(account))
+		return null
+
+	var/list/have = sp_carried_seed_types(botanist)
+	var/list/datum/data/vending_product/affordable = list()
+	for(var/datum/data/vending_product/record as anything in vendor.product_records)
+		if(record.amount <= 0 || !ispath(record.product_path, /obj/item/seeds))
+			continue
+		if(record.product_path in have)
+			continue
+		var/price = record.price || vendor.default_price
+		if(!account.has_money(price))
+			continue
+		affordable += record
+	if(!length(affordable))
+		return null
+
+	var/datum/data/vending_product/chosen = pick(affordable)
+	var/price = chosen.price || vendor.default_price
+	if(!account.adjust_money(-price, "Vending: [chosen.name]"))
+		return null
+	var/obj/item/bought = vendor.dispense(chosen, get_turf(botanist))
+	if(isnull(bought))
+		return null
+	log_sp("[botanist.real_name] bought [bought.name] from the seed vendor for [price] credits")
+	return bought
+
+/**
+ * A tray worth dosing with mutagen: growing, not already unstable, and of a species that has
+ * somewhere to mutate to. This is the botanist deliberately trying to breed something new.
+ */
+/// Is this tray still a plant worth pushing towards a mutation?
+/proc/sp_is_mutation_candidate(obj/machinery/hydroponics/tray)
+	if(QDELETED(tray))
+		return FALSE
+	var/obj/item/seeds/growing = tray.myseed
+	if(isnull(growing) || tray.plant_status == HYDROTRAY_PLANT_DEAD)
+		return FALSE
+	if(!LAZYLEN(growing.mutatelist))
+		return FALSE
+	return growing.instability < SP_MUTAGEN_INSTABILITY_TARGET
+
+/proc/sp_find_mutation_candidate(mob/living/carbon/human/botanist, range = 12)
+	var/obj/machinery/hydroponics/best
+	var/best_instability = -1
+	for(var/obj/machinery/hydroponics/tray in oview(range, botanist))
+		var/obj/item/seeds/growing = tray.myseed
+		if(isnull(growing) || tray.plant_status == HYDROTRAY_PLANT_DEAD)
+			continue
+		if(!LAZYLEN(growing.mutatelist))
+			continue
+		if(growing.instability >= SP_MUTAGEN_INSTABILITY_TARGET)
+			continue
+		// Always keep working on the same plant: instability only pays off once it is high, so
+		// spreading doses around the room would never mutate anything.
+		if(growing.instability > best_instability)
+			best = tray
+			best_instability = growing.instability
+	return best
+
+/// Any cup, bottle or beaker we carry that still holds mutagen.
+/proc/sp_find_mutagen(mob/living/carbon/human/botanist)
+	for(var/obj/item/reagent_containers/cup/container as anything in botanist.get_all_contents_type(/obj/item/reagent_containers/cup))
+		if(container.reagents?.has_reagent(/datum/reagent/toxin/mutagen, 5))
+			return container
+	return null
 
 #undef SP_TRAY_WATER_THRESHOLD
 #undef SP_TRAY_WEED_THRESHOLD
