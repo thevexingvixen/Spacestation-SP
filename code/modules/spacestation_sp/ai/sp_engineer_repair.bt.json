@@ -1,0 +1,70 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_engineer_repair",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/cooldown",
+	"vars": {
+		"cooldown_key": "BB_SP_BREACH_COOLDOWN",
+		"cooldown_duration": "5 SECONDS",
+		"lock_on_succeed": false
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_find_breach"
+			},
+			{
+				"type": "selector",
+				"children": [
+					{
+						"type": "decorator",
+						"decorator": "/datum/bt_node/decorator/cooldown",
+						"vars": {
+							"cooldown_key": "BB_SP_BREACH_ANNOUNCE_COOLDOWN",
+							"cooldown_duration": "60 SECONDS",
+							"lock_on_succeed": false
+						},
+						"child": {
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_announce_breach"
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/succeed"
+					}
+				]
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_wear_eva"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_open_internals"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_equip_item/rcd"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"vars": {
+					"target_key": "BB_SP_BREACH_STANDPOINT",
+					"required_dist": 0,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_patch_breach"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/succeed"
+			}
+		]
+	}
+}

@@ -6,7 +6,7 @@
  * department, and chatter. Job subtypes add work behaviour (medical, security, engineering).
  */
 /datum/ai_controller/sp_crew
-	ai_movement = /datum/ai_movement/jps
+	ai_movement = /datum/ai_movement/jps/sp_crew
 	movement_delay = 0.4 SECONDS
 	// Keep planning even when no player is nearby: a singleplayer station should feel alive everywhere.
 	ai_traits = DEFAULT_AI_FLAGS | RUN_WHILE_UNWATCHED
@@ -41,6 +41,7 @@
 		human_pawn.AddElement(/datum/element/relay_attackers)
 	RegisterSignal(human_pawn, COMSIG_ATOM_WAS_ATTACKED, PROC_REF(on_attacked))
 	RegisterSignal(human_pawn, COMSIG_MOVABLE_PRE_HEAR, PROC_REF(on_pre_hear))
+	RegisterSignal(human_pawn, COMSIG_MOVABLE_BUMP, PROC_REF(on_bump))
 	// Until a proper needs subtree exists, AI crew do not starve. Documented limitation.
 	ADD_TRAIT(human_pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
 	setup_job_blackboard(human_pawn)
@@ -50,11 +51,23 @@
 /datum/ai_controller/sp_crew/proc/setup_job_blackboard(mob/living/carbon/human/human_pawn)
 	return
 
+/// Called by the spawner once the crew member is equipped, for job gear TG does not hand out.
+/datum/ai_controller/sp_crew/proc/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	return
+
 /datum/ai_controller/sp_crew/UnpossessPawn(destroy)
 	if(!isnull(pawn))
 		REMOVE_TRAIT(pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
-		UnregisterSignal(pawn, list(COMSIG_ATOM_WAS_ATTACKED, COMSIG_MOVABLE_PRE_HEAR, COMSIG_MOB_INCAPACITATE_CHANGED, COMSIG_DO_AFTER_BEGAN, COMSIG_DO_AFTER_ENDED))
+		UnregisterSignal(pawn, list(COMSIG_ATOM_WAS_ATTACKED, COMSIG_MOVABLE_PRE_HEAR, COMSIG_MOVABLE_BUMP, COMSIG_MOB_INCAPACITATE_CHANGED, COMSIG_DO_AFTER_BEGAN, COMSIG_DO_AFTER_ENDED))
 	return ..()
+
+/// Walked into a closed firelock: push it open, the way a crew member would, so we can keep going.
+/datum/ai_controller/sp_crew/proc/on_bump(datum/source, atom/bumped)
+	SIGNAL_HANDLER
+	var/obj/machinery/door/firedoor/firelock = bumped
+	if(!istype(firelock) || !firelock.density || firelock.welded)
+		return
+	INVOKE_ASYNC(firelock, TYPE_PROC_REF(/obj/machinery/door, open))
 
 /// Someone hurt us: remember them so the defense subtree can report and flee (or, for security, fight back).
 /datum/ai_controller/sp_crew/proc/on_attacked(datum/source, atom/attacker)
@@ -250,7 +263,25 @@
 /datum/ai_controller/sp_crew/engineer
 	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_engineer.bt.json"
 
+/**
+ * Engineers patch hull breaches, which means standing in vacuum. TG only issues them a hardhat, so
+ * SP gives them an EVA softsuit to carry; the repair subtree puts it on before heading out.
+ */
+/datum/ai_controller/sp_crew/engineer/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	// Breaches happen behind locked doors. JPS refuses to path through an airlock the pawn cannot open,
+	// so without station-wide access an AI engineer simply never reaches most hull damage.
+	var/obj/item/card/id/id_card = human_pawn.get_idcard(hand_first = FALSE)
+	if(id_card)
+		id_card.add_access(SSid_access.get_region_access_list(list(REGION_ALL_STATION)), mode = TRY_ADD_ALL_NO_WILDCARD)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/clothing/suit/space)))
+		human_pawn.equip_to_storage(new /obj/item/clothing/suit/space/eva(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/clothing/head/helmet/space)))
+		human_pawn.equip_to_storage(new /obj/item/clothing/head/helmet/space/eva(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
 /datum/ai_controller/sp_crew/engineer/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	// Repair work means standing in vacuum and taking chip damage; a high threshold would abort the
+	// job and send them to medbay every few seconds. They still bail out when actually badly hurt.
+	set_blackboard_key(BB_SP_HURT_THRESHOLD, 40)
 	var/static/list/engineering_areas = list(
 		/area/station/engineering/main,
 		/area/station/engineering/engine_smes,

@@ -212,3 +212,6 @@
 /// IconForge is 250x times faster but requires storing the icons in tmp/ and may result in higher asset transport.
 /// Note that the builtin GAGS editor still uses the 'legacy' generation to allow for debugging.
 #define USE_RUSTG_ICONFORGE_GAGS
+
+// SPACESTATION SP: uncomment for verbose hull-breach repair logging (targets, moves, failures).
+//#define SP_BREACH_DEBUG

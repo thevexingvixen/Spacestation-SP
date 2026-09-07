@@ -484,6 +484,9 @@
 
 /datum/station_trait/skub/proc/on_job_after_spawn(datum/source, datum/job/job, mob/living/spawned, client/player_client)
 	SIGNAL_HANDLER
+	// SPACESTATION SP: AI crew are spawned without a client; these traits key off player preferences, so skip them.
+	if(isnull(player_client))
+		return
 
 	var/skub_stance = skubbers[player_client.ckey]
 	if(skub_stance == SKUB_IDFC)

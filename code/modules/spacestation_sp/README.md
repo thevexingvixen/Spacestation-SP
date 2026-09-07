@@ -12,6 +12,7 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   AI attach. `sp_controller_for_job()` picks the controller by department;
   `sp_essential_job_types()` guarantees one engineer, one security officer and one doctor.
 - `sp_engineering.dm` — power monitoring and the scripted engine startup (see below).
+- `sp_breach.dm` — hull breach detection and RCD repair (see below).
 - `sp_admin_verbs.dm` — Fun tab: "SP: Populate Station", "SP: Spawn Crew (Job)".
 - `ai/sp_crew_controller.dm` — `/datum/ai_controller/sp_crew` and the `/medical`, `/security`,
   `/engineer` subtypes. Hearing hook, incident routing, attacker memory, `TRAIT_NOHUNGER`.
@@ -32,6 +33,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   look around for 8 s.
 - `sp_engineer_power` — power check → say so → walk to the engine room → run the loop setup →
   wait 40 s → bring the engine online.
+- `sp_engineer_repair` — find the nearest breach → announce it → put on EVA gear → open internals →
+  equip the RCD → walk to a safe tile beside the hole → lay plating over it.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -64,6 +67,40 @@ The watchdog always runs: it disables circulation if the chamber drops below 250
 around an energized crystal superheats instantly), pauses the emitters for 2 minutes at the first
 temperature warning, and scrams for 10 minutes with a radio call if integrity starts falling.
 
+## Hull breaches (`sp_breach.dm`)
+A breach is a space turf inside a station area that still has a real floor next to it. Solar arrays,
+external maintenance and space catwalks are made of space turfs with no adjacent floor, so they never
+match; `GLOB.sp_breach_area_blacklist` covers anything else that is open by design.
+
+`SSspacestation_sp` walks a twelfth of the station's areas every five seconds, so a full sweep is
+spread over about a minute and costs almost nothing per tick. Patched turfs drop out of the cache on
+the next pass.
+
+Engineers carry an RCD already; SP additionally issues them an EVA softsuit and helmet
+(`equip_extra_gear` on the engineer controller), because patching a vented room means standing in
+vacuum and TG only gives them a hardhat. Plating over space costs 3 RCD matter and is instant, so one
+RCD is good for roughly 50 tiles.
+
+Two obstacles had to be cleared for any of this to work, and both are worth knowing about:
+- **Access.** JPS will not path through a door the pawn cannot open, and breaches happen behind locked
+  doors, so AI engineers are granted station-wide access on their ID in `equip_extra_gear`.
+- **Firelocks.** A breach slams every firelock around it shut, and a closed firelock is dense, so
+  pathfinding refused to route into the damaged room at all. `/obj/machinery/door/firedoor/CanAStarPass`
+  now lets pathfinding through an unwelded firelock, and the crew controller opens one when it bumps
+  into it (`on_bump`), which is what a person does anyway.
+
+Damage that genuinely cannot be walked to (a room sealed behind blast doors, say) is written off after
+90 seconds and ignored for five minutes, so engineers get back to work instead of looping on it.
+
+`SP_DEBUG_BREACH_COUNT <n>` punches n holes in a random room a minute after round start, for
+exercising the behaviour in headless tests. Leave it at 0 for real play. Uncomment `SP_BREACH_DEBUG`
+in `code/_compile_options.dm` for verbose target/move/failure logging.
+
+## Movement
+SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
+`AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
+crew member can walk to medbay, the engine room, or an incident on the far side of the station.
+
 ## Local dev config
 `config/dev_overrides.txt` (gitignored; copy from `../../docs/dev_overrides.example.txt`) enables
 AUTOADMIN, a 10 s lobby, `RESUME_AFTER_INITIALIZATIONS` for headless tests, `SP_AUTOPOPULATE`, and
@@ -72,19 +109,28 @@ the engine settings.
 ## Headless test loop
 ```
 tools\build\build.bat build
-E:\games\BYOND\bin\dd.exe tgstation.dmb 1337 -trusted -close -logself -params log-directory=sp_test
+E:\games\BYOND\bin\dd.exe tgstation.dmb 7777 -trusted -close -logself -params log-directory=sp_test
 ```
 Then read `data/logs/sp_test/{game,runtime}.log`; SP lines are prefixed `SP:`. Kill `dd.exe` before
 recompiling, and touch a changed file if the build says "Skipping 'dm' (up to date)".
 
+Use port 7777, not 1337: Razer Synapse's RzSDKServer listens on `127.0.0.1:1337`, and a loopback-bound
+socket beats Dream Daemon's wildcard bind, so clients reach Razer and fail the BYOND handshake while
+the game server logs nothing at all.
+
 ## Upstream touch points (keep this list short)
 - `code/controllers/master.dm` — do not sleep the world after init when
   `RESUME_AFTER_INITIALIZATIONS` is set.
+- `code/game/machinery/doors/firedoor.dm` — `CanAStarPass` so AI can path through unwelded firelocks.
+- `code/datums/station_traits/{neutral,positive}_traits.dm` — null-guard the client argument, which
+  AI crew do not have (two traits were throwing a runtime per spawned crew member).
+- `code/_compile_options.dm` — the optional `SP_BREACH_DEBUG` flag.
 - `tgstation.dme` — include lines for this module.
 
 ## Known limitations
 - Crew wander randomly inside their areas; no schedules or work objects yet.
-- No hull-breach repair yet: engineers manage power only.
+- Breach repair patches floors only. Broken walls, windows and airlocks are left alone, and nobody
+  re-pressurises the room afterwards.
 - Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.
 - Security uses melee and cuffs, never the disabler in their suit slot.
 - No hunger/sleep handling (trait-suppressed).

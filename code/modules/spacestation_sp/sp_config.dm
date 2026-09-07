@@ -18,3 +18,11 @@
 	integer = TRUE
 	min_val = 0
 	max_val = 100000
+
+/// Debug: punch this many hull breaches a minute after round start, to exercise the repair behaviour
+/// in headless tests. 0 (the default) disables it. Config key: SP_DEBUG_BREACH_COUNT <number>
+/datum/config_entry/number/sp_debug_breach_count
+	default = 0
+	integer = TRUE
+	min_val = 0
+	max_val = 50

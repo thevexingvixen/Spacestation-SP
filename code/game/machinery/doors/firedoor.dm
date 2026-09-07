@@ -682,6 +682,15 @@
 		INVOKE_ASYNC(src, PROC_REF(open))
 		return
 
+// SPACESTATION SP: a closed firelock is dense, so JPS refuses to path through one. Since a hull breach
+// slams every firelock around it shut, that left AI engineers unable to reach the damage they exist to
+// repair. Firelocks are openable by anyone without access, so let pathfinding route through them; the
+// SP crew controller opens one when it bumps into it.
+/obj/machinery/door/firedoor/CanAStarPass(to_dir, datum/can_pass_info/pass_info)
+	if(welded)
+		return ..()
+	return TRUE
+
 /obj/machinery/door/firedoor/open()
 	if(welded)
 		return

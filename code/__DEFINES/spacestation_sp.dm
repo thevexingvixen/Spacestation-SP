@@ -95,3 +95,25 @@
 #define BB_SP_ENGINE_TARGET "sp_engine_target"
 /// Cooldown key between engine checks.
 #define BB_SP_ENGINE_COOLDOWN "sp_engine_cooldown"
+
+// --- Hull breaches ----------------------------------------------------------------------------
+
+/// The space turf we are on our way to patch.
+#define BB_SP_BREACH_TARGET "sp_breach_target"
+/// The safe floor turf we stand on while patching it.
+#define BB_SP_BREACH_STANDPOINT "sp_breach_standpoint"
+/// Cooldown between breach repair attempts.
+#define BB_SP_BREACH_COOLDOWN "sp_breach_cooldown"
+/// Cooldown for announcing a breach over the radio.
+#define BB_SP_BREACH_ANNOUNCE_COOLDOWN "sp_breach_announce_cooldown"
+/// The RCD we equipped for repairs.
+#define BB_SP_RCD "sp_rcd"
+/// Assoc list of breach turf -> world.time after which we will try it again.
+#define BB_SP_BREACH_IGNORE "sp_breach_ignore"
+/// The breach we are currently walking to, and when we started walking.
+#define BB_SP_BREACH_ATTEMPT "sp_breach_attempt"
+#define BB_SP_BREACH_ATTEMPT_AT "sp_breach_attempt_at"
+/// How long an engineer keeps trying to reach one breach before writing it off.
+#define SP_BREACH_ATTEMPT_TIMEOUT (90 SECONDS)
+/// How long a written-off breach stays ignored.
+#define SP_BREACH_IGNORE_TIME (5 MINUTES)

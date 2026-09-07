@@ -46,7 +46,9 @@
 	SEND_SIGNAL(crew, COMSIG_HUMAN_CHARACTER_SETUP_FINISHED)
 
 	// AI
-	var/datum/ai_controller/controller = new controller_type(crew)
+	var/datum/ai_controller/sp_crew/controller = new controller_type(crew)
+	if(istype(controller))
+		controller.equip_extra_gear(crew)
 	controller.set_blackboard_key(BB_SP_JOB_TITLE, job.title)
 	var/area/home = get_area(crew)
 	if(home)

@@ -6640,6 +6640,7 @@
 #include "code\modules\shuttle\stationary_port\port_types.dm"
 #include "code\modules\shuttle\stationary_port\stationary_port.dm"
 #include "code\modules\spacestation_sp\sp_admin_verbs.dm"
+#include "code\modules\spacestation_sp\sp_breach.dm"
 #include "code\modules\spacestation_sp\sp_config.dm"
 #include "code\modules\spacestation_sp\sp_crew_spawner.dm"
 #include "code\modules\spacestation_sp\sp_engineering.dm"

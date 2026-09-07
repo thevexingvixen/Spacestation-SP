@@ -38,6 +38,21 @@
 /datum/bt_node/subtree/sp_engineer_power
 	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_engineer_power.bt.json"
 
+/// Engineering: walk to a hull breach and patch it with the RCD.
+/datum/bt_node/subtree/sp_engineer_repair
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_engineer_repair.bt.json"
+
+// --- Movement -----------------------------------------------------------------------------------
+
+/**
+ * Station-wide pathfinding. TG's default AI movement caps paths at AI_MAX_PATH_LENGTH (30 tiles),
+ * which is fine for animals that lose interest after 14 tiles but leaves crew unable to walk to
+ * medbay, the engine room, or an incident on the far side of the station.
+ */
+/datum/ai_movement/jps/sp_crew
+	max_pathing_attempts = 40
+	maximum_length = 220
+
 // --- Helpers ----------------------------------------------------------------------------------
 
 /// Is this human holding something we would call a weapon?
@@ -540,3 +555,149 @@
 	if(patient.stat == DEAD)
 		return FALSE
 	return (patient.get_brute_loss() >= minimum_damage) || (patient.get_fire_loss() >= minimum_damage)
+
+// --- Leaves: hull breach repair ----------------------------------------------------------------
+
+/// Finds the nearest hull breach and a safe tile to patch it from. Fails when there is nothing to fix.
+/datum/bt_node/ai_behavior/sp_find_breach
+	time_between_perform = 3 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_breach/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/pawn = controller.pawn
+	// Some damage simply cannot be walked to: a room sealed behind blast doors, or a hole with no
+	// standing room left. Give up on a breach we have been failing to reach and let another engineer
+	// (or a player) deal with it, rather than looping on it forever.
+	var/list/ignored = controller.blackboard[BB_SP_BREACH_IGNORE]
+	var/turf/attempting = controller.blackboard[BB_SP_BREACH_ATTEMPT]
+	var/attempt_started = controller.blackboard[BB_SP_BREACH_ATTEMPT_AT] || 0
+	if(!isnull(attempting) && world.time - attempt_started > SP_BREACH_ATTEMPT_TIMEOUT)
+		controller.set_blackboard_key_assoc(BB_SP_BREACH_IGNORE, attempting, world.time + SP_BREACH_IGNORE_TIME)
+		controller.clear_blackboard_key(BB_SP_BREACH_ATTEMPT)
+		log_sp("[pawn] giving up on the breach at [AREACOORD(attempting)] for now, cannot reach it")
+
+	var/turf/breach = sp_find_nearest_breach(pawn, ignored)
+	if(isnull(breach))
+		controller.clear_blackboard_key(BB_SP_BREACH_TARGET)
+		controller.clear_blackboard_key(BB_SP_BREACH_STANDPOINT)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/turf/standpoint = sp_breach_standpoint(breach, pawn)
+	if(isnull(standpoint))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_BREACH_TARGET, breach)
+	controller.set_blackboard_key(BB_SP_BREACH_STANDPOINT, standpoint)
+	if(controller.blackboard[BB_SP_BREACH_ATTEMPT] != breach)
+		controller.set_blackboard_key(BB_SP_BREACH_ATTEMPT, breach)
+		controller.set_blackboard_key(BB_SP_BREACH_ATTEMPT_AT, world.time)
+#ifdef SP_BREACH_DEBUG
+	log_sp("[pawn.real_name] targeting breach at [AREACOORD(breach)], standpoint [AREACOORD(standpoint)], distance [get_dist(get_turf(pawn), standpoint)]")
+#endif
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Announces the breach we are heading to over the engineering channel.
+/datum/bt_node/ai_behavior/sp_announce_breach
+
+/datum/bt_node/ai_behavior/sp_announce_breach/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/turf/breach = controller.blackboard[BB_SP_BREACH_TARGET]
+	if(!istype(pawn) || isnull(breach))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/area/where = get_area(breach)
+	sp_crew_speak(pawn, "Hull breach in [where ? where.name : "the station"], I'm on it.", RADIO_CHANNEL_ENGINEERING)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Puts on the EVA suit and helmet we carry, so vacuum work does not freeze us. Always succeeds.
+/datum/bt_node/ai_behavior/sp_wear_eva
+
+/datum/bt_node/ai_behavior/sp_wear_eva/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// bypass_equip_delay_self is essential: a do_after here would trip update_able_to_run(), which calls
+	// fail_movement() and kills the walk to the breach.
+	if(!istype(pawn.wear_suit, /obj/item/clothing/suit/space))
+		var/list/suits = pawn.get_all_contents_type(/obj/item/clothing/suit/space)
+		if(length(suits))
+			pawn.equip_to_slot_if_possible(suits[1], ITEM_SLOT_OCLOTHING, disable_warning = TRUE, bypass_equip_delay_self = TRUE)
+	if(!istype(pawn.head, /obj/item/clothing/head/helmet/space))
+		var/list/helmets = pawn.get_all_contents_type(/obj/item/clothing/head/helmet/space)
+		if(length(helmets))
+			// The hardhat is in the way; stow it so the sealed helmet can go on.
+			var/obj/item/old_head = pawn.head
+			if(old_head && pawn.temporarilyRemoveItemFromInventory(old_head))
+				pawn.equip_to_storage(old_head, ITEM_SLOT_BACK, indirect_action = TRUE)
+			pawn.equip_to_slot_if_possible(helmets[1], ITEM_SLOT_HEAD, disable_warning = TRUE, bypass_equip_delay_self = TRUE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Puts on a breath mask and opens an emergency tank before working next to vacuum. Always succeeds.
+/datum/bt_node/ai_behavior/sp_open_internals
+
+/datum/bt_node/ai_behavior/sp_open_internals/perform(seconds_per_tick, datum/ai_controller/controller)
+	sp_open_internals(controller.pawn)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Closes internals once the work is done. Always succeeds.
+/datum/bt_node/ai_behavior/sp_close_internals
+
+/datum/bt_node/ai_behavior/sp_close_internals/perform(seconds_per_tick, datum/ai_controller/controller)
+	sp_close_internals(controller.pawn)
+	return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_SUCCEEDED
+
+/// Equips the RCD every engineer carries.
+/datum/bt_node/ai_behavior/sp_equip_item/rcd
+	item_types = list(/obj/item/construction/rcd)
+	target_key = BB_SP_RCD
+
+/// Lays plating over the breach we are standing next to.
+/datum/bt_node/ai_behavior/sp_patch_breach
+
+/datum/bt_node/ai_behavior/sp_patch_breach/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/turf/breach = controller.blackboard[BB_SP_BREACH_TARGET]
+	if(!istype(pawn) || isnull(breach))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	if(!isspaceturf(breach)) // somebody else got there first
+		controller.clear_blackboard_key(BB_SP_BREACH_TARGET)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+	if(!sp_patch_breach_cluster(pawn, breach))
+		var/obj/item/construction/rcd/device = pawn.get_active_held_item()
+		if(istype(device) && device.matter < 3)
+			sp_crew_speak(pawn, "My RCD's out of matter, I need a refill.", RADIO_CHANNEL_ENGINEERING)
+#ifdef SP_BREACH_DEBUG
+		log_sp("[pawn.real_name] failed to patch [AREACOORD(breach)]: holding [device || "nothing"], adjacent [breach.Adjacent(pawn) ? "yes" : "no"], matter [istype(device) ? device.matter : "n/a"]")
+#endif
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.clear_blackboard_key(BB_SP_BREACH_TARGET)
+	controller.clear_blackboard_key(BB_SP_BREACH_STANDPOINT)
+	controller.clear_blackboard_key(BB_SP_BREACH_ATTEMPT)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+#ifdef SP_BREACH_DEBUG
+/// Debug only: reports where we are relative to the breach we are walking to.
+/datum/bt_node/ai_behavior/sp_breach_progress
+	time_between_perform = 10 SECONDS
+
+/datum/bt_node/ai_behavior/sp_breach_progress/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/pawn = controller.pawn
+	var/turf/standpoint = controller.blackboard[BB_SP_BREACH_STANDPOINT]
+	var/turf/here = get_turf(pawn)
+	if(!isnull(standpoint) && !isnull(here))
+		log_sp("[pawn] en route: at [AREACOORD(here)], [get_dist(here, standpoint)] from standpoint")
+	return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_SUCCEEDED
+#endif
+
+#ifdef SP_BREACH_DEBUG
+/// Debug only: a move_to_target that reports why it gave up.
+/datum/bt_node/ai_behavior/move_to_target/sp_logged
+
+/datum/bt_node/ai_behavior/move_to_target/sp_logged/setup(datum/ai_controller/controller)
+	. = ..()
+	var/atom/target = controller.blackboard[target_key]
+	log_sp("[controller.pawn] move setup -> [target ? AREACOORD(target) : "null"], ok=[. ? "yes" : "no"], movement=[controller.ai_movement.type]")
+
+/datum/bt_node/ai_behavior/move_to_target/sp_logged/perform(seconds_per_tick, datum/ai_controller/controller)
+	. = ..()
+	if(. & AI_BEHAVIOR_FAILED)
+		log_sp("[controller.pawn] move FAILED (movement_failed=[movement_failed], attempts=[controller.consecutive_pathing_attempts])")
+	else if(. & AI_BEHAVIOR_SUCCEEDED)
+		log_sp("[controller.pawn] move SUCCEEDED, arrived")
+#endif
