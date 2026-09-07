@@ -62,7 +62,18 @@
 		return /datum/ai_controller/sp_crew/medical
 	if(/datum/job_department/security in job.departments_list)
 		return /datum/ai_controller/sp_crew/security
+	if(/datum/job_department/engineering in job.departments_list)
+		return /datum/ai_controller/sp_crew/engineer
 	return /datum/ai_controller/sp_crew
+
+/// Jobs the station cannot do without; populate fills one of each before anything else (after heads).
+/proc/sp_essential_job_types()
+	var/static/list/essential = list(
+		/datum/job/station_engineer,
+		/datum/job/security_officer,
+		/datum/job/doctor,
+	)
+	return essential
 
 /// Returns the list of jobs an AI crew member may be spawned as: joinable, human, station crew.
 /proc/sp_get_crew_job_pool()
@@ -91,15 +102,19 @@
 		log_sp("job pool is empty, cannot populate")
 		return 0
 
-	// Heads first, then everyone else shuffled.
+	// Heads first, then one of each essential job (engineer, security, doctor), then everyone else shuffled.
 	var/list/datum/job/heads = list()
+	var/list/datum/job/essentials = list()
 	var/list/datum/job/rest = list()
+	var/list/essential_types = sp_essential_job_types()
 	for(var/datum/job/job as anything in pool)
 		if(job.job_flags & JOB_HEAD_OF_STAFF)
 			heads += job
+		else if(job.type in essential_types)
+			essentials += job
 		else
 			rest += job
-	var/list/datum/job/order = shuffle(heads) + shuffle(rest)
+	var/list/datum/job/order = shuffle(heads) + essentials + shuffle(rest)
 
 	var/spawned = 0
 	var/index = 0
@@ -109,13 +124,14 @@
 		var/datum/job/job = order[index]
 		if(job.spawn_positions != -1 && job.current_positions >= job.spawn_positions)
 			order -= job
+			index-- // the list shifted left under us; re-check the same slot
 			continue
 		var/mob/living/carbon/human/crew = sp_spawn_crew_member(job, latejoin = latejoin)
 		if(isnull(crew))
 			order -= job
+			index--
 			continue
 		spawned++
-		index++
 		// Deliberately no CHECK_TICK: at round start we run from an async OnRoundstart callback and
 		// SSticker.PostSetup() deletes the roundstart landmarks as soon as we yield. Spawning the whole
 		// batch in one tick keeps everyone in their department instead of falling back to arrivals.

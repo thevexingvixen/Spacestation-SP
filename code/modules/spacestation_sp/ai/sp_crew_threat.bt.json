@@ -1,0 +1,52 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_threat",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_THREAT",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "selector",
+				"children": [
+					{
+						"type": "decorator",
+						"decorator": "/datum/bt_node/decorator/cooldown",
+						"vars": {
+							"cooldown_key": "BB_SP_THREAT_WARN_COOLDOWN",
+							"cooldown_duration": "15 SECONDS",
+							"lock_on_succeed": false
+						},
+						"child": {
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_say/threat_warning"
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/succeed"
+					}
+				]
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/maintain_distance",
+				"vars": {
+					"target_key": "BB_SP_THREAT",
+					"min_dist_key": "BB_SP_THREAT_MIN_DISTANCE",
+					"max_dist_key": "BB_SP_THREAT_MAX_DISTANCE"
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "1 SECONDS"
+				}
+			}
+		]
+	}
+}

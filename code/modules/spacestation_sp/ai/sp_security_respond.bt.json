@@ -1,0 +1,145 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_security_respond",
+	"type": "selector",
+	"children": [
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/bb_key_set",
+			"vars": {
+				"key": "BB_SP_INCIDENT_TARGET",
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+			},
+			"child": {
+				"type": "selector",
+				"children": [
+					{
+						"type": "decorator",
+						"decorator": "/datum/bt_node/decorator/sp_target_secured",
+						"vars": {
+							"key": "BB_SP_INCIDENT_TARGET"
+						},
+						"child": {
+							"type": "sequence",
+							"children": [
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/sp_say/security_resolved"
+								},
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/sp_clear_incident"
+								}
+							]
+						}
+					},
+					{
+						"type": "decorator",
+						"decorator": "/datum/bt_node/decorator/sp_target_incapacitated",
+						"vars": {
+							"key": "BB_SP_INCIDENT_TARGET"
+						},
+						"child": {
+							"type": "sequence",
+							"children": [
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/sp_equip_item/handcuffs"
+								},
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+									"vars": {
+										"target_key": "BB_SP_INCIDENT_TARGET",
+										"required_dist": 1,
+										"finish_on_arrival": true
+									}
+								},
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/use_on_object",
+									"vars": {
+										"target_key": "BB_SP_INCIDENT_TARGET"
+									}
+								},
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/wait",
+									"vars": {
+										"duration": "2 SECONDS"
+									}
+								}
+							]
+						}
+					},
+					{
+						"type": "sequence",
+						"children": [
+							{
+								"type": "selector",
+								"children": [
+									{
+										"type": "leaf",
+										"behavior": "/datum/bt_node/ai_behavior/sp_equip_item/baton"
+									},
+									{
+										"type": "leaf",
+										"behavior": "/datum/bt_node/ai_behavior/succeed"
+									}
+								]
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+								"vars": {
+									"target_key": "BB_SP_INCIDENT_TARGET",
+									"required_dist": 1,
+									"finish_on_arrival": true
+								}
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_attack_target",
+								"vars": {
+									"target_key": "BB_SP_INCIDENT_TARGET"
+								}
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/bb_key_set",
+			"vars": {
+				"key": "BB_SP_INCIDENT_LOCATION",
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+			},
+			"child": {
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+						"vars": {
+							"target_key": "BB_SP_INCIDENT_LOCATION",
+							"required_dist": 2,
+							"finish_on_arrival": true
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/wait",
+						"vars": {
+							"duration": "8 SECONDS"
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_clear_incident"
+					}
+				]
+			}
+		}
+	]
+}

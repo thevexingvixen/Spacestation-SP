@@ -1,0 +1,79 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_defense",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_ATTACKER",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "selector",
+				"children": [
+					{
+						"type": "decorator",
+						"decorator": "/datum/bt_node/decorator/cooldown",
+						"vars": {
+							"cooldown_key": "BB_SP_REPORT_COOLDOWN",
+							"cooldown_duration": "20 SECONDS",
+							"lock_on_succeed": false
+						},
+						"child": {
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_report_attack"
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/succeed"
+					}
+				]
+			},
+			{
+				"type": "selector",
+				"children": [
+					{
+						"type": "sequence",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/find_flee_location",
+								"vars": {
+									"target_key": "BB_SP_ATTACKER",
+									"destination_key": "BB_SP_FLEE_TARGET",
+									"flee_steps": 4
+								}
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+								"vars": {
+									"target_key": "BB_SP_FLEE_TARGET",
+									"required_dist": 0,
+									"finish_on_arrival": true
+								}
+							}
+						]
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/succeed"
+					}
+				]
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "1 SECONDS"
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_expire_attacker"
+			}
+		]
+	}
+}

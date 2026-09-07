@@ -6642,6 +6642,7 @@
 #include "code\modules\spacestation_sp\sp_admin_verbs.dm"
 #include "code\modules\spacestation_sp\sp_config.dm"
 #include "code\modules\spacestation_sp\sp_crew_spawner.dm"
+#include "code\modules\spacestation_sp\sp_engineering.dm"
 #include "code\modules\spacestation_sp\sp_subsystem.dm"
 #include "code\modules\spacestation_sp\ai\sp_crew_behaviors.dm"
 #include "code\modules\spacestation_sp\ai\sp_crew_controller.dm"

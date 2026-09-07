@@ -1,0 +1,65 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_engineer_power",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/cooldown",
+	"vars": {
+		"cooldown_key": "BB_SP_ENGINE_COOLDOWN",
+		"cooldown_duration": "90 SECONDS",
+		"lock_on_succeed": false
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_power_check"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_say/engine_go"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_pick_wander_turf/engine"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"vars": {
+					"target_key": "BB_SP_ENGINE_TARGET",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "5 SECONDS"
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_run_engine_setup"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "40 SECONDS"
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_start_emitters"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "10 SECONDS"
+				}
+			}
+		]
+	}
+}

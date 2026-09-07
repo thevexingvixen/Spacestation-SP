@@ -50,3 +50,48 @@
 
 /// Prefix all SP game-log lines so they are easy to grep in data/logs/*/game.log
 #define log_sp(msg) log_game("SP: " + (msg))
+
+// --- Threats, attacks and incident reporting -------------------------------------------------
+
+/// A nearby mob wielding a weapon (set by sp_scan_threats, cleared when out of sight for a while).
+#define BB_SP_THREAT "sp_threat"
+/// world.time we last saw the threat.
+#define BB_SP_THREAT_SEEN_AT "sp_threat_seen_at"
+/// Cooldown key for warning an armed person.
+#define BB_SP_THREAT_WARN_COOLDOWN "sp_threat_warn_cooldown"
+/// Distance band (blackboard values) kept from an armed person.
+#define BB_SP_THREAT_MIN_DISTANCE "sp_threat_min_distance"
+#define BB_SP_THREAT_MAX_DISTANCE "sp_threat_max_distance"
+/// The mob that last attacked us (cleared by sp_expire_attacker).
+#define BB_SP_ATTACKER "sp_attacker"
+/// world.time we were last attacked.
+#define BB_SP_ATTACKED_AT "sp_attacked_at"
+/// Cooldown key for reporting an attack.
+#define BB_SP_REPORT_COOLDOWN "sp_report_cooldown"
+/// Turf we flee towards.
+#define BB_SP_FLEE_TARGET "sp_flee_target"
+/// Structured record of the last incident we reported (assoc list, SP_INCIDENT_* keys). Read by security who hear us.
+#define BB_SP_LAST_INCIDENT "sp_last_incident"
+
+// Security response
+/// The suspect security is going after.
+#define BB_SP_INCIDENT_TARGET "sp_incident_target"
+/// Where the incident was reported from.
+#define BB_SP_INCIDENT_LOCATION "sp_incident_location"
+/// Cooldown key for acknowledging reports over the radio.
+#define BB_SP_ACK_COOLDOWN "sp_ack_cooldown"
+/// Security: equipped weapon / restraints.
+#define BB_SP_WEAPON "sp_weapon"
+#define BB_SP_CUFFS "sp_cuffs"
+
+#define SP_INCIDENT_ATTACKER "attacker"
+#define SP_INCIDENT_VICTIM "victim"
+#define SP_INCIDENT_TURF "turf"
+#define SP_INCIDENT_TIME "time"
+
+// --- Engineering -----------------------------------------------------------------------------
+
+/// Turf in the engine room the engineer walks to.
+#define BB_SP_ENGINE_TARGET "sp_engine_target"
+/// Cooldown key between engine checks.
+#define BB_SP_ENGINE_COOLDOWN "sp_engine_cooldown"
