@@ -77,6 +77,10 @@
 	add_blackboard_key_lazylist(BB_BASIC_MOB_RETALIATE_LIST, attacker)
 	set_blackboard_key(BB_SP_ATTACKER, attacker)
 	set_blackboard_key(BB_SP_ATTACKED_AT, world.time)
+	sp_adjust_reputation(src, attacker, -6, "attacked us")
+	// Whatever we were talking about is over.
+	clear_blackboard_key(BB_SP_CHAT_PARTNER)
+	clear_blackboard_key(BB_SP_CHAT_REPLY_DUE)
 
 /**
  * Hearing. /mob/living/Hear() bails out early for client-less mobs, so we listen on the PRE_HEAR
@@ -122,19 +126,47 @@
 	if(isliving(real_speaker) && sp_message_is_distress(raw_message))
 		on_heard_distress(real_speaker, raw_message, is_radio)
 
-	// Someone nearby said our first name: give them our attention (the social subtree answers).
-	if(is_radio || !isliving(speaker))
+	if(is_radio || !isliving(real_speaker) || real_speaker == pawn)
 		return
-	var/mob/living/living_pawn = pawn
-	var/list/name_parts = splittext(living_pawn.real_name, " ")
-	var/first_name = length(name_parts) ? name_parts[1] : living_pawn.real_name
-	if(length(first_name) < 3 || !findtext(raw_message, first_name))
+	consider_conversation(real_speaker, raw_message)
+
+/**
+ * Decides whether something said nearby was meant for us, and queues an answer if so.
+ *
+ * Another AI crew member opening a topic hands us the topic itself, so the reply fits what they said.
+ * For anyone else -- a player, usually -- we answer if they used our name or said something that
+ * clearly wants a response.
+ */
+/datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
+	var/mob/living/carbon/human/human_pawn = pawn
+	if(!istype(human_pawn) || human_pawn.stat != STABLE)
 		return
-	var/greet_ready_at = blackboard[BB_SP_GREET_COOLDOWN]
-	if(!isnull(greet_ready_at) && greet_ready_at > world.time)
+	var/reply_ready_at = blackboard[BB_SP_GREET_COOLDOWN]
+	if(!isnull(reply_ready_at) && reply_ready_at > world.time)
 		return
-	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 10 SECONDS)
-	set_blackboard_key(BB_SP_ATTENTION_TARGET, speaker)
+
+	// Another crew member talking to us: take the topic straight off their controller.
+	if(ishuman(speaker))
+		var/mob/living/carbon/human/human_speaker = speaker
+		var/datum/ai_controller/sp_crew/their_ai = human_speaker.ai_controller
+		if(istype(their_ai) && their_ai.blackboard[BB_SP_CHAT_PARTNER] == pawn)
+			var/datum/sp_topic/topic = their_ai.blackboard[BB_SP_CHAT_TOPIC]
+			if(!isnull(topic))
+				set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 8 SECONDS)
+				set_blackboard_key(BB_SP_CHAT_TOPIC, topic)
+				set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
+				set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
+				return
+
+	// Anyone else. Answer if they used our name, or said something plainly aimed at a person.
+	var/list/name_parts = splittext(human_pawn.real_name, " ")
+	var/first_name = length(name_parts) ? name_parts[1] : human_pawn.real_name
+	var/named_us = length(first_name) >= 3 && findtext(raw_message, first_name)
+	if(!named_us && isnull(sp_answer_for(src, speaker, raw_message)))
+		return
+	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 8 SECONDS)
+	set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
+	set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
 
 /// Another crew member reported an attack within earshot (or on a channel we hear). Base crew ignore it.
 /datum/ai_controller/sp_crew/proc/on_heard_incident(mob/living/carbon/human/reporter, list/incident)

@@ -1,0 +1,112 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_converse",
+	"type": "selector",
+	"children": [
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/sp_owes_reply",
+			"vars": {
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+			},
+			"child": {
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_say_reply"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/wait",
+						"vars": {
+							"duration": "2 SECONDS"
+						}
+					}
+				]
+			}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/bb_key_set",
+			"vars": {
+				"key": "BB_SP_CHAT_PARTNER"
+			},
+			"child": {
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/wait",
+						"vars": {
+							"duration": "4 SECONDS"
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_say_closer"
+					}
+				]
+			}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/cooldown",
+			"vars": {
+				"cooldown_key": "BB_SP_CHAT_COOLDOWN",
+				"cooldown_duration": "90 SECONDS",
+				"lock_on_succeed": false
+			},
+			"child": {
+				"type": "selector",
+				"children": [
+					{
+						"type": "sequence",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_start_chat"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+								"vars": {
+									"target_key": "BB_SP_CHAT_PARTNER",
+									"required_dist": 2,
+									"finish_on_arrival": true
+								}
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_say_opener"
+							}
+						]
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_greet_newcomer"
+					}
+				]
+			}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/cooldown",
+			"vars": {
+				"cooldown_key": "BB_SP_YAP_COOLDOWN",
+				"cooldown_duration": "8 MINUTES",
+				"lock_on_succeed": false
+			},
+			"child": {
+				"type": "decorator",
+				"decorator": "/datum/bt_node/decorator/random_chance",
+				"vars": {
+					"chance": 25
+				},
+				"child": {
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_station_yap"
+				}
+			}
+		}
+	]
+}

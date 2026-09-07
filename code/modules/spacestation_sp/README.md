@@ -19,6 +19,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   `/engineer` subtypes. Hearing hook, incident routing, attacker memory, `TRAIT_NOHUNGER`.
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
+- `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
+- `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -46,6 +48,26 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   (at most once every four minutes), then carry the rest to a kitchen table and say so on the
   service channel.
 - `sp_botanist_refill` — top the watering can up at a water tank when it runs dry.
+
+## Conversation and standing (`sp_conversation.dm`)
+Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
+answer, and sometimes a closing remark. Because both sides are ours, the listener reads the topic
+straight off the speaker's controller, so replies actually match what was said. Topics are weighted
+and some are job-specific, so an engineer opens with the power and a doctor with medbay.
+
+Players are handled from the other direction. What someone says to a crew member in singleplayer is
+fairly predictable, so greetings, "what do you do", "where is x", asking for help, thanks and abuse
+are matched by keyword and answered in character. Crew also greet a player once each when they first
+come near, and make the occasional remark to the whole station over common.
+
+Every exchange moves how that crew member feels about the person, held in `BB_SP_REPUTATION`.
+Politeness and conversation raise it, an attack drops it sharply. Answers already vary with standing:
+a stranger gets "What do you need?", someone they like gets greeted by name, and someone who has been
+abusive gets told to ask elsewhere. Asking a crew member to follow you is recognised and refused
+politely below the friendly threshold, which is where the follow behaviour will hook in.
+
+None of this outranks an emergency: conversation is the last entry in `sp_crew_core`, so a fight, an
+injury or a drawn weapon cuts it off, and being attacked clears the conversation outright.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -174,3 +196,5 @@ the game server logs nothing at all.
   full species change needs it sustained above 60, which competes with the plant stabilising between
   doses, so new species are occasional rather than routine.
 - No hunger/sleep handling (trait-suppressed).
+- Conversation has no dialogue trees yet: crew answer one line at a time rather than tracking a
+  thread with a player, and standing is not yet spent on anything (following, favours, access).

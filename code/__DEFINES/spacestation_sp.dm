@@ -169,3 +169,28 @@
 #define SP_MUTAGEN_INSTABILITY_TARGET 60
 /// The tray the botanist has committed to as their current mutation experiment.
 #define BB_SP_EXPERIMENT_TRAY "sp_experiment_tray"
+
+// --- Conversation and standing ------------------------------------------------------------------
+
+/// The person we are talking to.
+#define BB_SP_CHAT_PARTNER "sp_chat_partner"
+/// The /datum/sp_topic we are talking about.
+#define BB_SP_CHAT_TOPIC "sp_chat_topic"
+/// How far through the exchange we are: 0 opener, 1 reply, 2 closer.
+#define BB_SP_CHAT_STAGE "sp_chat_stage"
+/// Set when somebody has said something to us that we owe an answer to.
+#define BB_SP_CHAT_REPLY_DUE "sp_chat_reply_due"
+/// What they said, so the answer can suit it.
+#define BB_SP_CHAT_HEARD "sp_chat_heard"
+/// Cooldown before we start another conversation of our own.
+#define BB_SP_CHAT_COOLDOWN "sp_chat_cooldown"
+/// Cooldown on remarks made to the whole station over common.
+#define BB_SP_YAP_COOLDOWN "sp_yap_cooldown"
+/// Who we have already introduced ourselves to, so we do not greet the same person every minute.
+#define BB_SP_GREETED "sp_greeted"
+/// Assoc list of person -> how well we think of them.
+#define BB_SP_REPUTATION "sp_reputation"
+
+/// Standing thresholds.
+#define SP_REP_FRIENDLY 4
+#define SP_REP_HOSTILE -4
