@@ -26,3 +26,8 @@
 	integer = TRUE
 	min_val = 0
 	max_val = 50
+
+/// Debug: two minutes into the round, have a random non-cargo crew member ask cargo for a crate, so the
+/// request-and-deliver path can be exercised without waiting for a department to want something.
+/// Config key: SP_DEBUG_SUPPLY_REQUEST
+/datum/config_entry/flag/sp_debug_supply_request

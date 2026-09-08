@@ -389,3 +389,45 @@
 		),
 		BB_EMOTE_SEE = list("inspects a leaf.", "wipes soil off a pair of gloves."),
 	))
+
+/// Cargo technician: gets the crates off the shuttle and walks the requested ones where they belong.
+/datum/ai_controller/sp_crew/cargo
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_cargo.bt.json"
+
+/datum/ai_controller/sp_crew/cargo/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	var/static/list/cargo_areas = list(
+		/area/station/cargo/storage,
+		/area/station/cargo/office,
+		/area/station/cargo/sorting,
+		/area/station/cargo/warehouse,
+		/area/station/cargo/lower,
+		/area/station/cargo/breakroom,
+	)
+	set_blackboard_key(BB_SP_WANDER_AREAS, cargo_areas)
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"If it's not on the manifest, it isn't mine.",
+			"Another crate, another day.",
+			"Shuttle's the only thing that runs on time around here.",
+			"Whoever keeps stacking crates in the doorway, don't.",
+		),
+		BB_EMOTE_SEE = list("checks a manifest.", "shoves a crate into place."),
+	))
+
+/// Quartermaster: the same, plus the paperwork and the shuttle itself.
+/datum/ai_controller/sp_crew/cargo/quartermaster
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_quartermaster.bt.json"
+
+/datum/ai_controller/sp_crew/cargo/quartermaster/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	. = ..()
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"Requests go through me, not the shuttle.",
+			"The budget is not infinite. Ask anyway.",
+			"If your department needs something, say so on the radio.",
+			"I've got orders to file.",
+		),
+		BB_EMOTE_SEE = list("thumbs through a stack of forms.", "taps at the supply console."),
+	))

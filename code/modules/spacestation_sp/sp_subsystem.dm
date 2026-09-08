@@ -18,6 +18,8 @@ SUBSYSTEM_DEF(spacestation_sp)
 	var/watchdog_timer
 	/// Timer id of the breach scan loop.
 	var/breach_timer
+	/// Outstanding supply requests from the rest of the station.
+	var/list/datum/sp_supply_request/supply_requests = list()
 	/// world.time of the next engine telemetry line.
 	var/next_engine_log = 0
 	/// TRUE once the chamber scrubbers have been switched to siphon (gas circulating through the freezers).
@@ -69,7 +71,7 @@ SUBSYSTEM_DEF(spacestation_sp)
 		CHECK_TICK
 
 /datum/controller/subsystem/spacestation_sp/stat_entry(msg)
-	msg = "AI crew: [length(ai_crew)] | scram: [engine_scrammed() ? "ON" : "off"] | breaches: [length(breach_turfs)]"
+	msg = "AI crew: [length(ai_crew)] | supply reqs: [length(supply_requests)] | scram: [engine_scrammed() ? "ON" : "off"] | breaches: [length(breach_turfs)]"
 	return ..()
 
 /// Fires once the round has started and player characters have been placed.
@@ -82,6 +84,17 @@ SUBSYSTEM_DEF(spacestation_sp)
 	var/debug_breaches = CONFIG_GET(number/sp_debug_breach_count)
 	if(debug_breaches > 0)
 		addtimer(CALLBACK(GLOBAL_PROC, GLOBAL_PROC_REF(sp_debug_make_breach), debug_breaches), 1 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_supply_request))
+		addtimer(CALLBACK(src, PROC_REF(debug_supply_request)), 2 MINUTES)
+
+/// Debug helper: has a random non-cargo crew member ask cargo for something.
+/datum/controller/subsystem/spacestation_sp/proc/debug_supply_request()
+	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
+		if(istype(crew.ai_controller, /datum/ai_controller/sp_crew/cargo) || crew.stat != STABLE)
+			continue
+		sp_request_supplies(/datum/supply_pack/organic/food, crew)
+		return
+	log_sp("debug: nobody available to raise a supply request")
 
 /// Registers a spawned AI crew member so we can track and clean it up.
 /datum/controller/subsystem/spacestation_sp/proc/register_crew(mob/living/carbon/human/crew)

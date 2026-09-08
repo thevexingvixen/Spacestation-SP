@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/sp_owes_reply","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_say_reply"},{"type":"/datum/bt_node/ai_behavior/wait","duration":20}]}],"observer_abort":2}

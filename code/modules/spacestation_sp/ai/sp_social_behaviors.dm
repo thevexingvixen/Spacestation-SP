@@ -1,8 +1,19 @@
 // Conversation behaviour: answering people, striking up exchanges, and the odd remark to the station.
 
-/// Answer whoever just spoke to us, then carry a short exchange if it was another crew member.
-/datum/bt_node/subtree/sp_crew_converse
-	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_converse.bt.json"
+/**
+ * Answering somebody is urgent and short, so it lives in the emergency ladder: ignoring a person who
+ * just spoke to you reads worse than almost anything else a crew member can do.
+ */
+/datum/bt_node/subtree/sp_crew_respond
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_respond.bt.json"
+
+/**
+ * Starting a conversation, greeting a newcomer and remarking to the station are idle-time behaviour.
+ * They sit below the job work: a technician hauling a crate across the station should finish the job
+ * before stopping for small talk.
+ */
+/datum/bt_node/subtree/sp_crew_chatter
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_chatter.bt.json"
 
 // --- Answering --------------------------------------------------------------------------------
 

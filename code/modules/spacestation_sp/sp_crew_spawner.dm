@@ -68,6 +68,10 @@
 		return /datum/ai_controller/sp_crew/engineer
 	if(istype(job, /datum/job/botanist))
 		return /datum/ai_controller/sp_crew/botanist
+	if(istype(job, /datum/job/quartermaster))
+		return /datum/ai_controller/sp_crew/cargo/quartermaster
+	if(/datum/job_department/cargo in job.departments_list)
+		return /datum/ai_controller/sp_crew/cargo
 	return /datum/ai_controller/sp_crew
 
 /**
@@ -81,6 +85,8 @@
 		/datum/job/security_officer,
 		/datum/job/doctor,
 		/datum/job/botanist,
+		/datum/job/quartermaster,
+		/datum/job/cargo_technician,
 	)
 	return essential
 

@@ -1,0 +1,30 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_qm_shuttle",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_shuttle_needs_moving",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_SHUTTLE_COOLDOWN",
+			"cooldown_duration": "60 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_run_supply_shuttle"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "3 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

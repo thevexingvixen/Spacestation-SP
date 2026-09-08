@@ -20,7 +20,9 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 - `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
+- `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
+- `ai/sp_cargo_behaviors.dm` — the quartermaster's paperwork and the technicians' hauling.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -48,6 +50,11 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   (at most once every four minutes), then carry the rest to a kitchen table and say so on the
   service channel.
 - `sp_botanist_refill` — top the watering can up at a water tank when it runs dry.
+- `sp_qm_order` — walk to a cargo console and put the outstanding requests on the order list, or a
+  standing restock when nobody has asked for anything.
+- `sp_qm_shuttle` — send the supply shuttle out with the orders, and call it back with the goods.
+- `sp_cargo_haul` — drag a crate off the shuttle, to the department that requested it if it was
+  asked for, otherwise into the cargo bay.
 
 ## Conversation and standing (`sp_conversation.dm`)
 Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
@@ -154,6 +161,22 @@ Three slower errands sit between delivery and tending in the botanist's tree, ea
 SP issues four large beakers of mutagen in the starting kit. Chemistry normally supplies this and
 botanists only get it in the mail, so without it they could never deliberately breed anything.
 
+## Cargo (`sp_cargo.dm`)
+Requests are the point of the department, so they are first-class here. Any AI crew member can call
+`sp_request_supplies(pack_type, requester)` and the queue on `SSspacestation_sp` carries it through
+pending, ordered and delivered. The quartermaster notices pending requests, orders them against the
+cargo budget through a real `/datum/supply_order`, and answers the requester by name on the supply
+channel. When the crate comes back, a technician matches it to the request and walks it to the
+department that asked rather than dumping it in the bay.
+
+With nothing requested, the quartermaster keeps the shuttle earning its keep with a small standing
+restock (`GLOB.sp_cargo_standing_order`): food, medical supplies, engineering equipment, janitorial
+supplies and hydroponics gear.
+
+Cargo is staffed as an essential job, because the chef and the rest of the station depend on it.
+`SP_DEBUG_SUPPLY_REQUEST` has a random crew member raise a request two minutes in, for testing the
+path without waiting for a department to want something.
+
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
 `AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
@@ -191,6 +214,12 @@ the game server logs nothing at all.
   re-pressurises the room afterwards.
 - Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.
 - Security uses melee and cuffs, never the disabler in their suit slot.
+- Cargo never sells anything, works the mining or materials markets, or handles the express console;
+  there are no miners yet. Crates are dragged, so a technician moves one at a time, and a haul that
+  has not finished within two minutes is abandoned where it stands rather than blocking the
+  quartermaster's paperwork behind it.
+- Machine lookups here deliberately avoid `oview()`. It is sight-limited, so a console one room away
+  behind a wall is invisible and the quartermaster would never find their own desk.
 - Botanists do not compost, fight pests, or use grafts and the DNA manipulator.
 - Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
   full species change needs it sustained above 60, which competes with the plant stabilising between

@@ -208,25 +208,37 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 				return produce
 	return null
 
-/// The nearest seed extractor.
-/proc/sp_find_seed_extractor(mob/living/carbon/human/botanist, range = 20)
+/// The nearest seed extractor. Not sight-limited, for the same reason as the cargo console.
+/proc/sp_find_seed_extractor(mob/living/carbon/human/botanist)
+	var/turf/origin = get_turf(botanist)
+	if(isnull(origin))
+		return null
 	var/obj/machinery/seed_extractor/best
 	var/best_distance = INFINITY
-	for(var/obj/machinery/seed_extractor/extractor in oview(range, botanist))
-		var/distance = get_dist(botanist, extractor)
+	for(var/obj/machinery/seed_extractor/extractor as anything in SSmachines.get_machines_by_type_and_subtypes(/obj/machinery/seed_extractor))
+		var/turf/spot = get_turf(extractor)
+		if(isnull(spot) || spot.z != origin.z)
+			continue
+		var/distance = get_dist(origin, spot)
 		if(distance < best_distance)
 			best = extractor
 			best_distance = distance
 	return best
 
-/// The nearest working MegaSeed Servitor.
-/proc/sp_find_seed_vendor(mob/living/carbon/human/botanist, range = 20)
+/// The nearest working MegaSeed Servitor. Not sight-limited.
+/proc/sp_find_seed_vendor(mob/living/carbon/human/botanist)
+	var/turf/origin = get_turf(botanist)
+	if(isnull(origin))
+		return null
 	var/obj/machinery/vending/hydroseeds/best
 	var/best_distance = INFINITY
-	for(var/obj/machinery/vending/hydroseeds/vendor in oview(range, botanist))
+	for(var/obj/machinery/vending/hydroseeds/vendor as anything in SSmachines.get_machines_by_type_and_subtypes(/obj/machinery/vending/hydroseeds))
 		if(vendor.machine_stat & (BROKEN|NOPOWER))
 			continue
-		var/distance = get_dist(botanist, vendor)
+		var/turf/spot = get_turf(vendor)
+		if(isnull(spot) || spot.z != origin.z)
+			continue
+		var/distance = get_dist(origin, spot)
 		if(distance < best_distance)
 			best = vendor
 			best_distance = distance

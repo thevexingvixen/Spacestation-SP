@@ -194,3 +194,26 @@
 /// Standing thresholds.
 #define SP_REP_FRIENDLY 4
 #define SP_REP_HOSTILE -4
+
+// --- Cargo ---------------------------------------------------------------------------------------
+
+/// The cargo console the quartermaster works at.
+#define BB_SP_CARGO_CONSOLE "sp_cargo_console"
+/// A crate we are hauling, and where we are hauling it to.
+#define BB_SP_CRATE "sp_crate"
+#define BB_SP_CRATE_DESTINATION "sp_crate_destination"
+/// Cooldowns for the quartermaster's paperwork and the shuttle run.
+#define BB_SP_ORDER_COOLDOWN "sp_order_cooldown"
+#define BB_SP_SHUTTLE_COOLDOWN "sp_shuttle_cooldown"
+#define BB_SP_HAUL_COOLDOWN "sp_haul_cooldown"
+
+/// Supply request states.
+#define SP_REQUEST_PENDING "pending"
+#define SP_REQUEST_ORDERED "ordered"
+#define SP_REQUEST_DELIVERED "delivered"
+/// Who to tell when we actually pick a requested crate up.
+#define BB_SP_CRATE_ANNOUNCE "sp_crate_announce"
+/// When the current haul is abandoned if the crate has not reached its destination.
+#define BB_SP_HAUL_DEADLINE "sp_haul_deadline"
+/// How long one crate may be dragged before we give up on it.
+#define SP_HAUL_TIMEOUT (2 MINUTES)

@@ -1,0 +1,43 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_qm_order",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_has_orders_to_place",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_ORDER_COOLDOWN",
+			"cooldown_duration": "45 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_cargo_console"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_CARGO_CONSOLE",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_place_orders"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "3 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}
