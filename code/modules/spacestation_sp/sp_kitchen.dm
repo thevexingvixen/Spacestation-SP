@@ -250,20 +250,39 @@ GLOBAL_LIST_INIT(sp_kitchen_prep_steps, list(
 	return pick(candidates)
 
 /**
- * Guards the rungs whose applicability is a property of the item rather than its type.
+ * Would the oven turn this into something better than it is now?
  *
- * The component is dropped once something is cooked, so its presence doubles as "is this still raw?".
- * Plenty of things are technically bakeable and come out as a burned mess — the component says so, and
- * a chef who cannot tell the difference fills both ovens with rubbish.
+ * Not simply "does it have a bakeable component": /tg/ gives *every* food one, defaulting to a burned
+ * mess, so the component alone says nothing. What matters is whether the bake is a positive one — that
+ * is the difference between dough, which is half-made, and a sandwich, which is dinner.
+ */
+/proc/sp_bakes_into_something(obj/item/thing)
+	if(QDELETED(thing))
+		return FALSE
+	var/datum/component/bakeable/bakeable = thing.GetComponent(/datum/component/bakeable)
+	if(isnull(bakeable) || !bakeable.positive_result)
+		return FALSE
+	return !ispath(bakeable.bake_result, /obj/item/food/badrecipe)
+
+/// The same question for the griddle.
+/proc/sp_grills_into_something(obj/item/thing)
+	if(QDELETED(thing))
+		return FALSE
+	var/datum/component/grillable/grillable = thing.GetComponent(/datum/component/grillable)
+	if(isnull(grillable))
+		return FALSE
+	return !ispath(grillable.cook_result, /obj/item/food/badrecipe)
+
+/**
+ * Guards the rungs whose applicability is a property of the item rather than its type. The component is
+ * dropped once something is cooked, so these also answer "is this still raw?".
  */
 /proc/sp_prep_step_applies(datum/sp_prep_step/step, obj/item/thing)
 	switch(step.operation)
 		if(SP_PREP_BAKE)
-			var/datum/component/bakeable/bakeable = thing.GetComponent(/datum/component/bakeable)
-			return !isnull(bakeable) && bakeable.positive_result && !ispath(bakeable.bake_result, /obj/item/food/badrecipe)
+			return sp_bakes_into_something(thing)
 		if(SP_PREP_GRILL)
-			var/datum/component/grillable/grillable = thing.GetComponent(/datum/component/grillable)
-			return !isnull(grillable) && !ispath(grillable.cook_result, /obj/item/food/badrecipe)
+			return sp_grills_into_something(thing)
 	return TRUE
 
 /**
@@ -459,7 +478,13 @@ GLOBAL_LIST_INIT(sp_kitchen_mixes, list(
 		return FALSE
 	if(dish.crafting_complexity <= 0)
 		return FALSE
-	if(!isnull(dish.GetComponent(/datum/component/bakeable)) || !isnull(dish.GetComponent(/datum/component/grillable)))
+	if(dish.foodtypes & RAW)
+		return FALSE
+	// Something the oven would improve is still unfinished: dough, batter, a raw pizza. Note that this
+	// is not "has a bakeable component" — every food has one of those. Grillable is deliberately not
+	// disqualifying either, because grilling is usually an upgrade rather than a requirement: a cheese
+	// sandwich is a cheese sandwich whether or not somebody later makes it a grilled cheese.
+	if(sp_bakes_into_something(dish))
 		return FALSE
 	for(var/datum/sp_prep_step/step as anything in GLOB.sp_kitchen_prep_steps)
 		if(step.result && istype(dish, step.result))

@@ -86,6 +86,8 @@ SUBSYSTEM_DEF(spacestation_sp)
 		addtimer(CALLBACK(GLOBAL_PROC, GLOBAL_PROC_REF(sp_debug_make_breach), debug_breaches), 1 MINUTES)
 	if(CONFIG_GET(flag/sp_debug_supply_request))
 		addtimer(CALLBACK(src, PROC_REF(debug_supply_request)), 2 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_kitchen_stock))
+		addtimer(CALLBACK(src, PROC_REF(debug_kitchen_stock)), 1 MINUTES)
 
 /// Debug helper: has a random non-cargo crew member ask cargo for something.
 /datum/controller/subsystem/spacestation_sp/proc/debug_supply_request()
@@ -95,6 +97,38 @@ SUBSYSTEM_DEF(spacestation_sp)
 		sp_request_supplies(/datum/supply_pack/organic/food, crew)
 		return
 	log_sp("debug: nobody available to raise a supply request")
+
+/**
+ * Debug helper: lay a set of ready-made components out on the chef's prep table.
+ *
+ * The kitchen is a tech tree, so a chef starting from raw stock takes a good few minutes to reach
+ * anything servable. This skips to the interesting half — a cheese sandwich and a proper sandwich are
+ * both craftable from what this drops — so the cook-and-serve path can be watched in one go.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_kitchen_stock()
+	var/static/list/components = list(
+		/obj/item/food/breadslice/plain = 4,
+		/obj/item/food/cheese/wedge = 3,
+		/obj/item/food/meat/steak/plain = 2,
+		/obj/item/food/grown/cabbage = 2,
+		/obj/item/food/grown/tomato = 2,
+		/obj/item/reagent_containers/cup/bowl = 2,
+	)
+	for(var/mob/living/carbon/human/crew as anything in ai_crew)
+		if(!istype(crew.ai_controller, /datum/ai_controller/sp_crew/chef) || crew.stat != STABLE)
+			continue
+		var/obj/structure/table/prep_table = crew.ai_controller.blackboard[BB_SP_PREP_TABLE] || sp_find_prep_table(crew)
+		if(QDELETED(prep_table))
+			break
+		var/turf/table_turf = get_turf(prep_table)
+		var/placed = 0
+		for(var/component_type in components)
+			for(var/i in 1 to components[component_type])
+				new component_type(table_turf)
+				placed++
+		log_sp("debug: put [placed] ready-made components on [crew.real_name]'s prep table")
+		return
+	log_sp("debug: no chef to stock a prep table for")
 
 /// Registers a spawned AI crew member so we can track and clean it up.
 /datum/controller/subsystem/spacestation_sp/proc/register_crew(mob/living/carbon/human/crew)

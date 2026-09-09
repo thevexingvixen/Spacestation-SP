@@ -226,10 +226,23 @@ everything within reach and returns what would actually work, so what comes out 
 grew and what cargo delivered. Finished dishes are preferred, but half-made things get crafted too —
 a raw calzone goes back on the pile and the oven rung finishes it.
 
-**Serving** is the point of all of it. A dish counts as finished when it is cooked, is not itself an
-ingredient in one of the prep steps, and the game no longer considers it raw. It goes out on the
-counter with a line on the service channel, and the chef stops once eight of them are stacked up
-uneaten.
+**Serving** is the point of all of it. A dish counts as finished when it took crafting to make, is not
+itself an ingredient in one of the prep steps, is not flagged `RAW`, and is not something the oven would
+improve — dough, batter and a raw pizza all fail that last one.
+
+That last test is `sp_bakes_into_something()`, and it is not "does it have a bakeable component". Every
+food in /tg/ has one: `/obj/item/food/make_bakeable()` gives everything a default bake into a burned
+mess. What separates dough from dinner is whether the bake is a *positive* one. Testing for the
+component alone classified every sandwich the chef made as an unfinished ingredient, and nothing ever
+reached the counter. Being *grillable* is deliberately not disqualifying either — a cheese sandwich can
+become a grilled cheese, and an available upgrade does not make something an ingredient.
+
+Dishes go out on the counter with a line on the service channel, and the chef stops once eight are
+stacked up uneaten.
+
+`SP_DEBUG_KITCHEN_STOCK` lays a set of ready-made components on the prep table a minute in, so the
+cooking and serving half can be watched without first sitting through the whole cutting, mixing and
+baking chain.
 
 **Running dry** goes through cargo: when the worktop is not stocked, the chef is carrying nothing, and
 there is no fridge, cabinet or pile left in the kitchen with anything in it, the chef

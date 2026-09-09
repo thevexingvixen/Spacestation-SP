@@ -102,16 +102,20 @@
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	var/obj/item/food/dish = sp_find_dish_to_serve(pawn)
 	if(QDELETED(dish))
+		log_kitchen("[pawn.real_name] has no dish to serve after all")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	var/obj/structure/table/counter = sp_find_counter(pawn)
 	if(isnull(counter))
+		log_kitchen("[pawn.real_name] cannot find a counter for [dish]")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	// A counter nobody has cleared is a counter nobody wants more food on.
 	if(sp_counter_load(counter) >= SP_COUNTER_LIMIT)
+		log_kitchen("[pawn.real_name] finds the counter already stacked with [sp_counter_load(counter)]")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	if(!pawn.is_holding(dish))
 		sp_free_hands(pawn)
 		if(!pawn.put_in_hands(dish))
+			log_kitchen("[pawn.real_name] could not pick up [dish] to serve it")
 			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	controller.set_blackboard_key(BB_SP_DISH, dish)
 	controller.set_blackboard_key(BB_SP_COUNTER, counter)
@@ -127,11 +131,13 @@
 	controller.clear_blackboard_key(BB_SP_DISH)
 	controller.clear_blackboard_key(BB_SP_COUNTER)
 	if(!istype(pawn) || QDELETED(dish) || QDELETED(counter) || !counter.Adjacent(pawn))
+		log_kitchen("[pawn?.real_name] reached the counter without the dish still in hand")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	var/turf/counter_turf = get_turf(counter)
 	pawn.face_atom(counter)
 	var/dish_name = dish.name
 	if(!pawn.transferItemToLoc(dish, counter_turf, silent = TRUE))
+		log_kitchen("[pawn.real_name] could not put [dish_name] down on the counter")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	log_sp("[pawn.real_name] served [dish_name] on the counter in [get_area_name(counter)]")
 	sp_crew_speak(pawn, pick(
@@ -192,9 +198,17 @@
 		return
 	var/obj/item/made = result
 	log_sp("[pawn.real_name] cooked [made.name]")
-	// Crafting drops the result at our feet. A finished dish gets carried out to the counter by the
-	// serving branch; anything still half-made (a raw pizza, say) goes back on the pile to be baked.
-	if(!sp_is_finished_dish(made))
+	// Crafting drops the result at our feet. Anything half-made (a raw pizza, say) goes back on the pile
+	// for the oven rung; a finished dish goes straight into our hands, because the next craft reads the
+	// tiles around us as ingredients and would otherwise fold the dish we just made into another one.
+	if(sp_is_finished_dish(made))
+		sp_free_hands(pawn)
+		var/in_hand = pawn.put_in_hands(made)
+		if(in_hand)
+			controller.set_blackboard_key(BB_SP_DISH, made)
+		log_kitchen("[pawn.real_name] plated [made.name][in_hand ? "" : " but could not pick it up"]")
+	else
+		log_kitchen("[pawn.real_name] put [made.name] back on the pile; it is not finished yet")
 		sp_stash_on_table(pawn, controller.blackboard[BB_SP_PREP_TABLE], made)
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 

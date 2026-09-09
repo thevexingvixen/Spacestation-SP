@@ -31,3 +31,8 @@
 /// request-and-deliver path can be exercised without waiting for a department to want something.
 /// Config key: SP_DEBUG_SUPPLY_REQUEST
 /datum/config_entry/flag/sp_debug_supply_request
+
+/// Debug: a minute into the round, lay a set of ready-made components out on the chef's prep table, so
+/// the cooking and serving half of the kitchen can be exercised without first waiting out the whole
+/// cutting, mixing and baking chain. Config key: SP_DEBUG_KITCHEN_STOCK
+/datum/config_entry/flag/sp_debug_kitchen_stock
