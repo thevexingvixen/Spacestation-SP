@@ -1,0 +1,35 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_roam",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/cooldown",
+	"vars": {
+		"cooldown_key": "BB_SP_ROAM_COOLDOWN",
+		"cooldown_duration": "5 MINUTES",
+		"lock_on_succeed": true
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_pick_wander_turf/roam"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"vars": {
+					"target_key": "BB_SP_ROAM_TARGET",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "20 SECONDS"
+				}
+			}
+		]
+	}
+}

@@ -44,6 +44,7 @@
 	RegisterSignal(human_pawn, COMSIG_MOVABLE_BUMP, PROC_REF(on_bump))
 	// Until a proper needs subtree exists, AI crew do not starve. Documented limitation.
 	ADD_TRAIT(human_pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
+	set_blackboard_key(BB_SP_INTERESTS, sp_roll_interests())
 	setup_job_blackboard(human_pawn)
 	return ..()
 
@@ -54,6 +55,50 @@
 /// Called by the spawner once the crew member is equipped, for job gear TG does not hand out.
 /datum/ai_controller/sp_crew/proc/equip_extra_gear(mob/living/carbon/human/human_pawn)
 	return
+
+// --- Curiosity hooks ---------------------------------------------------------------------------
+// The three decisions that separate a nosy crew member from a greytider. Overriding these is how an
+// antagonist controller will be built: want everything, rummage constantly, and do something about a
+// locked door other than complain.
+
+/**
+ * Would this person pocket that? Ordinary crew take things that match their own tastes, rolled once at
+ * spawn, and leave anything they have no business carrying.
+ */
+/datum/ai_controller/sp_crew/proc/wants_item(obj/item/thing)
+	if(QDELETED(thing) || (thing.item_flags & (ABSTRACT|DROPDEL)))
+		return FALSE
+	if(thing.w_class > WEIGHT_CLASS_NORMAL)
+		return FALSE
+	if(HAS_TRAIT(thing, TRAIT_NODROP) || is_type_in_typecache(thing, GLOB.sp_interest_blacklist))
+		return FALSE
+	var/list/interests = blackboard[BB_SP_INTERESTS]
+	return length(interests) && is_type_in_list(thing, interests)
+
+/// Whether this person is the sort to go through other people's lockers.
+/datum/ai_controller/sp_crew/proc/may_rummage()
+	return TRUE
+
+/// Whether this person tries doors that are not theirs.
+/datum/ai_controller/sp_crew/proc/may_try_doors()
+	return TRUE
+
+/**
+ * The door said no. Crew take it personally for about a second and then get on with their shift; this
+ * is the hook a greytider overrides to reach for a crowbar instead.
+ */
+/datum/ai_controller/sp_crew/proc/on_door_denied(obj/machinery/door/airlock/door)
+	var/mob/living/carbon/human/human_pawn = pawn
+	var/quiet_until = blackboard[BB_SP_NOSY_SPEAK_COOLDOWN] || 0
+	if(!istype(human_pawn) || world.time < quiet_until)
+		return
+	set_blackboard_key(BB_SP_NOSY_SPEAK_COOLDOWN, world.time + 45 SECONDS)
+	sp_crew_speak(human_pawn, pick(
+		"Locked. Of course it is.",
+		"Who do I have to ask to get in here?",
+		"Not my access, apparently.",
+		"Huh. Thought that one was open.",
+	))
 
 /datum/ai_controller/sp_crew/UnpossessPawn(destroy)
 	if(!isnull(pawn))

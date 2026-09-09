@@ -21,10 +21,12 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 - `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
+- `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
 - `sp_kitchen.dm` — the prep table and counter, the prep-step table, the mixes, and the recipe scan.
 - `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
 - `ai/sp_cargo_behaviors.dm` — the quartermaster's paperwork and the technicians' hauling.
 - `ai/sp_chef_behaviors.dm` — the chef's stocking, prep, mixing, cooking and serving leaves.
+- `ai/sp_curiosity_behaviors.dm` — the idle leaves every job shares: roam, rummage, try a door.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -69,6 +71,9 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_chef_cook` — stand at the prep table and craft whatever the pile currently supports.
 - `sp_chef_serve` — carry a finished dish to the counter, set it down, and say so on the service channel.
 - `sp_chef_supply` — when the kitchen has been picked clean, put a food crate on cargo's list.
+- `sp_crew_rummage` — open a locker or crate in sight and pocket anything that takes their fancy.
+- `sp_crew_try_door` — walk up to a door they have no access to and try it anyway.
+- `sp_crew_roam` — wander off to somewhere else on the station for a while.
 
 ## Conversation and standing (`sp_conversation.dm`)
 Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
@@ -276,6 +281,37 @@ tried and why it did not work, which is how both of those turned up.
 The cook is an essential job, so `sp_populate_station()` fills the post before filling out the rest of
 the crew. There are seven heads of staff and seven essential jobs, and heads are placed first, so
 `SP_AUTOPOPULATE` below 14 will leave departments empty — the dev config ships at 16.
+
+## Idle curiosity (`sp_curiosity.dm`)
+What a crew member does when they have nothing to do, shared by every job because it is character
+rather than work. It sits below the job subtrees and above the department wander, so it never competes
+with actual work — and above `sp_department_wander` so it beats pacing the same room.
+
+- **Roaming.** Every five minutes or so they take a trip somewhere else on the station — a hallway, the
+  bar, the dorms, maintenance — stand about for twenty seconds, and drift back when the department
+  wander next picks a turf at home.
+- **Rummaging.** A shut locker, crate or box in *sight* (`oview`, so only what they could actually have
+  noticed) that is unlocked or opens to their ID gets opened, looked through, and shut again. Each
+  character rolls four tastes from `GLOB.sp_interest_pool` at spawn, so one has a weakness for hats and
+  another walks off with every screwdriver they find, and they are consistent about it all shift. They
+  take at most two things and leave the container as they found it. Searched containers are left alone
+  for ten minutes.
+- **Trying doors.** Every few minutes they walk up to a door they have no access to and try it. The
+  door refuses — that is the whole point — and they grumble about it and move on. A door found locked
+  is left alone for fifteen minutes.
+
+### Groundwork for greytide and antagonists
+The three decisions that separate a nosy crew member from a greytider are all overridable on
+`/datum/ai_controller/sp_crew`:
+
+- `wants_item(thing)` — ordinary crew take what matches their own tastes and nothing on
+  `GLOB.sp_interest_blacklist` (IDs, guns, organs). An antagonist wants rather more.
+- `may_rummage()` / `may_try_doors()` — whether to bother at all.
+- `on_door_denied(door)` — base crew complain out loud and walk away. This is where prying, welding or
+  hacking goes.
+
+Ordinary crew also shut lockers behind them, which a greytider will not: a corridor of hanging-open
+lockers is a tell, and skipping that one line is most of the visual difference.
 
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's

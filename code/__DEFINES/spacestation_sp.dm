@@ -275,3 +275,33 @@
 #define SP_PANTRY_TARGET 14
 /// The chef waits at least this long between food crates.
 #define SP_KITCHEN_SUPPLY_INTERVAL (6 MINUTES)
+
+// --- Curiosity: roaming, rummaging and trying doors -------------------------------------------------
+
+/// Item typepaths this particular crew member would pocket if they found one. Rolled at spawn.
+#define BB_SP_INTERESTS "sp_interests"
+/// A locker, crate or box we are on our way to look inside.
+#define BB_SP_RUMMAGE_TARGET "sp_rummage_target"
+/// Assoc list of container -> world.time after which it is worth another look.
+#define BB_SP_RUMMAGE_IGNORE "sp_rummage_ignore"
+/// A door we are about to try, and the assoc list of ones we have already found locked.
+#define BB_SP_DOOR_TARGET "sp_door_target"
+#define BB_SP_DOOR_IGNORE "sp_door_ignore"
+/// Somewhere on the station we have wandered off to.
+#define BB_SP_ROAM_TARGET "sp_roam_target"
+/// Cooldowns for each. All long: this is idle behaviour, not a job.
+#define BB_SP_ROAM_COOLDOWN "sp_roam_cooldown"
+#define BB_SP_RUMMAGE_COOLDOWN "sp_rummage_cooldown"
+#define BB_SP_DOOR_COOLDOWN "sp_door_cooldown"
+/// Cooldown on remarking about any of it out loud.
+#define BB_SP_NOSY_SPEAK_COOLDOWN "sp_nosy_speak_cooldown"
+
+/// How far a crew member notices something worth a look.
+#define SP_CURIOSITY_RANGE 7
+/// How long a searched container, or a door found locked, is left alone.
+#define SP_RUMMAGE_IGNORE_TIME (10 MINUTES)
+#define SP_DOOR_IGNORE_TIME (15 MINUTES)
+/// How many things somebody will pocket out of one container.
+#define SP_RUMMAGE_TAKE_LIMIT 2
+/// How many interests each character rolls.
+#define SP_INTEREST_COUNT 4

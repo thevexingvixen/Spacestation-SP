@@ -86,6 +86,33 @@
 			return TRUE
 	return FALSE
 
+/// Puts whatever is in our hands away, so the next step starts from a clean grip.
+/proc/sp_free_hands(mob/living/carbon/human/crew)
+	for(var/obj/item/held in crew.held_items)
+		if(isnull(held))
+			continue
+		if(crew.back && crew.transferItemToLoc(held, crew.back, silent = TRUE))
+			continue
+		crew.dropItemToGround(held)
+
+/**
+ * One click, waiting out the click delay first.
+ *
+ * ClickOn() drops anything that arrives within a decisecond of the last click, which is invisible when
+ * a behaviour clicks once but silently eats every second click of a sequence — open the oven, put the
+ * tray in, shut the door becomes open the oven and nothing else. Only safe from an async behaviour,
+ * because it sleeps.
+ */
+/proc/sp_ai_click(datum/ai_controller/controller, atom/target, list/modifiers)
+	var/mob/living/pawn = controller.pawn
+	if(QDELETED(pawn) || QDELETED(target))
+		return FALSE
+	if(world.time <= pawn.next_click)
+		sleep(pawn.next_click - world.time + 1)
+	if(QDELETED(pawn) || QDELETED(target))
+		return FALSE
+	return controller.ai_interact(target, combat_mode = FALSE, modifiers = modifiers)
+
 /**
  * Speaks for an AI crew member. If `channel` is given and the crew member wears a headset that has that
  * channel (common is on every headset), the line goes over the radio; otherwise it is said out loud.

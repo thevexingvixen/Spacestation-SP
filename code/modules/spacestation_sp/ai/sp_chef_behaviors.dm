@@ -31,33 +31,6 @@
 
 // --- Shared ---------------------------------------------------------------------------------------
 
-/// Puts whatever is in our hands away, so the next step starts from a clean grip.
-/proc/sp_free_hands(mob/living/carbon/human/chef)
-	for(var/obj/item/held in chef.held_items)
-		if(isnull(held))
-			continue
-		if(chef.back && chef.transferItemToLoc(held, chef.back, silent = TRUE))
-			continue
-		chef.dropItemToGround(held)
-
-/**
- * One click, waiting out the click delay first.
- *
- * ClickOn() drops anything that arrives within a decisecond of the last click, which is invisible when
- * a behaviour clicks once but silently eats every second click of a sequence — open the oven, put the
- * tray in, shut the door becomes open the oven and nothing else. Only safe from an async behaviour,
- * because it sleeps.
- */
-/proc/sp_chef_click(datum/ai_controller/controller, atom/target, list/modifiers)
-	var/mob/living/pawn = controller.pawn
-	if(QDELETED(pawn) || QDELETED(target))
-		return FALSE
-	if(world.time <= pawn.next_click)
-		sleep(pawn.next_click - world.time + 1)
-	if(QDELETED(pawn) || QDELETED(target))
-		return FALSE
-	return controller.ai_interact(target, combat_mode = FALSE, modifiers = modifiers)
-
 /// Puts something we have just made back on the prep table, where the next step can find it.
 /proc/sp_stash_on_table(mob/living/carbon/human/chef, obj/structure/table/prep_table, obj/item/thing)
 	if(QDELETED(prep_table) || QDELETED(thing))
@@ -258,7 +231,7 @@
 	var/obj/machinery/oven/oven = machine
 	if(istype(oven) && !oven.open)
 		sp_free_hands(pawn)
-		sp_chef_click(controller, oven)
+		sp_ai_click(controller, oven)
 
 	var/list/obj/item/done = sp_finished_in_machine(machine)
 	var/taken = 0
@@ -281,7 +254,7 @@
 	var/obj/machinery/griddle/griddle = machine
 	if(taken && istype(griddle) && griddle.on && !length(griddle.griddled_objects))
 		sp_free_hands(pawn)
-		sp_chef_click(controller, griddle)
+		sp_ai_click(controller, griddle)
 
 	if(!async_still_valid())
 		return
@@ -402,7 +375,7 @@
 	switch(step.operation)
 		if(SP_PREP_TOOL)
 			// Processing is a tool act on the ingredient itself, which has to be lying on a table.
-			sp_chef_click(controller, ingredient)
+			sp_ai_click(controller, ingredient)
 			worked = QDELETED(ingredient)
 		if(SP_PREP_GRILL)
 			var/obj/machinery/griddle/griddle = target
@@ -410,39 +383,39 @@
 			for(var/obj/item/thing as anything in prep_load)
 				if(QDELETED(thing) || !pawn.put_in_hands(thing))
 					continue
-				sp_chef_click(controller, griddle, list(ICON_X = "16", ICON_Y = "16"))
+				sp_ai_click(controller, griddle, list(ICON_X = "16", ICON_Y = "16"))
 				if(thing in griddle.griddled_objects)
 					worked = TRUE
 			sp_free_hands(pawn)
 			if(worked && !griddle.on)
-				sp_chef_click(controller, griddle)
+				sp_ai_click(controller, griddle)
 		if(SP_PREP_BAKE)
 			var/obj/machinery/oven/oven = target
 			// Hands empty first: clicking a shut oven with something in them does nothing at all.
 			sp_free_hands(pawn)
 			if(!oven.open)
-				sp_chef_click(controller, oven)
+				sp_ai_click(controller, oven)
 			if(oven.open && !isnull(oven.used_tray))
 				for(var/obj/item/thing as anything in prep_load)
 					if(QDELETED(thing) || !pawn.put_in_hands(thing))
 						continue
-					sp_chef_click(controller, oven.used_tray, list(ICON_X = "16", ICON_Y = "16"))
+					sp_ai_click(controller, oven.used_tray, list(ICON_X = "16", ICON_Y = "16"))
 					if(thing.loc == oven.used_tray)
 						worked = TRUE
 				sp_free_hands(pawn)
 				if(worked)
-					sp_chef_click(controller, oven) // shut the door, which starts it baking
+					sp_ai_click(controller, oven) // shut the door, which starts it baking
 					log_kitchen("[pawn.real_name] loaded [oven] with [length(oven.used_tray.contents)]: shut [!oven.open], baking [oven.appears_active()]")
 		if(SP_PREP_PROCESS)
 			var/obj/machinery/processor/processor = target
 			if(!pawn.is_holding(ingredient) && !pawn.put_in_hands(ingredient))
 				finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 				return
-			sp_chef_click(controller, processor)
+			sp_ai_click(controller, processor)
 			worked = (ingredient.loc == processor)
 			if(worked)
 				sp_free_hands(pawn)
-				sp_chef_click(controller, processor)
+				sp_ai_click(controller, processor)
 
 	if(!async_still_valid())
 		return
@@ -689,11 +662,11 @@
 		// The freezers are locked, and a locked closet does not open to a plain click: unlocking one is
 		// a right-click, which runs the access check against the ID we are wearing.
 		if(closet.locked)
-			sp_chef_click(controller, closet, list(RIGHT_CLICK = "1"))
+			sp_ai_click(controller, closet, list(RIGHT_CLICK = "1"))
 		if(closet.locked)
 			finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 			return
-		sp_chef_click(controller, closet)
+		sp_ai_click(controller, closet)
 		if(!closet.opened)
 			finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 			return
