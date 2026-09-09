@@ -121,6 +121,64 @@
 			TEST_ASSERT(glass.reagents.has_reagent(drink.result), "'[drink.name]' left no [drink.result] in the glass")
 			TEST_ASSERT(!length(sp_missing_parts(drink, glass)), "'[drink.name]' still reads as short of something after it was made")
 
+/**
+ * Drinks made to order, worked out from /tg/'s own reactions rather than a list somebody typed.
+ *
+ * The catalogue is only worth having if it is right, and "right" here means every entry can actually be
+ * poured from the two taps and comes out as the thing it claims to be. So this pours the whole book.
+ */
+/datum/unit_test/sp_drink_catalogue
+
+/datum/unit_test/sp_drink_catalogue/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/obj/machinery/chem_dispenser/drinks/soda = allocate(/obj/machinery/chem_dispenser/drinks, spot)
+	var/obj/machinery/chem_dispenser/drinks/beer/booze = allocate(/obj/machinery/chem_dispenser/drinks/beer, spot)
+
+	var/list/datum/sp_cocktail/catalogue = sp_drink_catalogue()
+	TEST_ASSERT(length(catalogue) >= length(GLOB.sp_cocktails), "the catalogue should be at least as big as the house menu, got [length(catalogue)]")
+
+	var/made = 0
+	var/list/failures = list()
+	for(var/datum/sp_cocktail/drink as anything in catalogue)
+		var/obj/item/reagent_containers/cup/glass/drinkingglass/glass = allocate(/obj/item/reagent_containers/cup/glass/drinkingglass, spot)
+		for(var/obj/machinery/chem_dispenser/dispenser in list(booze, soda))
+			// Top the cell up between drinks. A real bar recharges across a shift; pouring the whole book
+			// back to back would run both machines flat and blame the recipes for it.
+			dispenser.cell.charge = dispenser.cell.maxcharge
+			for(var/reagent_type in sp_parts_from(drink, dispenser))
+				sp_dispense_into(dispenser, glass, reagent_type, drink.units_of(reagent_type))
+		if(sp_drink_ready(drink, glass))
+			made++
+		else
+			var/list/ended_up_with = list()
+			for(var/datum/reagent/left as anything in glass.reagents.reagent_list)
+				ended_up_with += "[left.name] [round(left.volume, 0.1)]"
+			var/list/wanted = list()
+			for(var/reagent_type in drink.parts)
+				wanted += "[reagent_type] [round(drink.units_of(reagent_type), 0.1)]"
+			failures += "[drink.name] (wanted [jointext(wanted, " + ")], got [length(ended_up_with) ? jointext(ended_up_with, " + ") : "nothing"])"
+	TEST_ASSERT(!length(failures), "[length(failures)] of [length(catalogue)] catalogue drinks did not come together: [english_list(failures)]")
+	TEST_ASSERT(made > 0, "the catalogue poured nothing at all")
+
+/// An order has to be recognised from what somebody actually says.
+/datum/unit_test/sp_drink_orders
+
+/datum/unit_test/sp_drink_orders/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	allocate(/obj/machinery/chem_dispenser/drinks, spot)
+	allocate(/obj/machinery/chem_dispenser/drinks/beer, spot)
+
+	var/datum/sp_cocktail/asked = sp_drink_from_order("could I get a gin and tonic please")
+	TEST_ASSERT_NOTNULL(asked, "a gin and tonic should be recognised from a sentence")
+	TEST_ASSERT_EQUAL(asked.result, /datum/reagent/consumable/ethanol/gintonic, "recognised the wrong drink: [asked.name]")
+
+	// The longest match wins, or every vodka martini gets served as a martini.
+	var/datum/sp_cocktail/specific = sp_drink_from_order("one vodka martini")
+	TEST_ASSERT_NOTNULL(specific, "a vodka martini should be recognised")
+	TEST_ASSERT_EQUAL(specific.result, /datum/reagent/consumable/ethanol/vodkamartini, "a vodka martini was heard as [specific.name]")
+
+	TEST_ASSERT_NULL(sp_drink_from_order("has anyone seen the clown"), "ordinary chatter should not read as an order")
+
 /// The chef's whole pipeline, from a pile of components to something worth serving.
 /datum/unit_test/sp_cook_a_dish
 

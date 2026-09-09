@@ -50,6 +50,7 @@
 	if(istype(controller))
 		controller.equip_extra_gear(crew)
 	controller.set_blackboard_key(BB_SP_JOB_TITLE, job.title)
+	sp_send_to_post(crew, controller)
 	var/area/home = get_area(crew)
 	if(home)
 		controller.set_blackboard_key(BB_SP_HOME_AREA, home)
@@ -57,6 +58,36 @@
 	SSspacestation_sp.register_crew(crew)
 	log_sp("spawned AI crew [crew.real_name] as [job.title] at [AREACOORD(crew)]")
 	return crew
+
+/**
+ * Puts a new crew member at their post if the job's own spawn point dropped them at arrivals.
+ *
+ * SSticker.PostSetup() deletes the roundstart landmarks the moment we yield, and we do not reliably win
+ * that race — when we lose it, every job falls back to the arrival shuttle. That is worse than untidy:
+ * the shuttle leaves, and it takes the whole crew with it to a z-level their department is not on.
+ * Nobody is watching at this point in the round, so placing them where they were assigned is both
+ * honest and the only thing that works.
+ */
+/proc/sp_send_to_post(mob/living/carbon/human/crew, datum/ai_controller/sp_crew/controller)
+	var/area/where = get_area(crew)
+	if(isnull(where) || !(istype(where, /area/shuttle/arrival) || istype(where, /area/station/hallway/secondary/entry)))
+		return FALSE
+	var/list/post_areas = controller?.blackboard[BB_SP_WANDER_AREAS]
+	if(!length(post_areas))
+		return FALSE
+	var/turf/here = get_turf(crew)
+	for(var/area_type in shuffle(post_areas.Copy()))
+		var/list/turf/candidates = get_area_turfs(area_type, here?.z)
+		if(!length(candidates))
+			continue
+		for(var/i in 1 to 20)
+			var/turf/spot = pick(candidates)
+			if(spot.density || isgroundlessturf(spot) || spot.is_blocked_turf(exclude_mobs = TRUE))
+				continue
+			crew.forceMove(spot)
+			log_sp("[crew.real_name] was assigned to [get_area_name(spot)] rather than left on the arrival shuttle")
+			return TRUE
+	return FALSE
 
 /// Picks the AI controller type for a job based on its department.
 /proc/sp_controller_for_job(datum/job/job)

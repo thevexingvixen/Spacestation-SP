@@ -1,0 +1,30 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_order_drink",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_at_the_bar",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_ORDER_COOLDOWN_PATRON",
+			"cooldown_duration": "3 MINUTES",
+			"lock_on_succeed": true
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_order_drink"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "20 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

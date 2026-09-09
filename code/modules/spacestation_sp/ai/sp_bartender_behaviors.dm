@@ -33,14 +33,16 @@
 	var/datum/sp_cocktail/drink = controller.blackboard[BB_SP_DRINK]
 	var/obj/item/reagent_containers/cup/glass/drinkingglass/glass = controller.blackboard[BB_SP_GLASS]
 	if(isnull(drink) || QDELETED(glass))
-		// Do not start another one while the counter is still full of the last round.
-		var/obj/structure/table/counter = sp_find_service_counter(pawn, sp_bar_areas())
-		if(!isnull(counter) && sp_counter_drinks(counter) >= SP_BAR_COUNTER_LIMIT)
-			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+		var/datum/sp_cocktail/ordered = controller.blackboard[BB_SP_DRINK_ORDER]
+		// An order beats the house menu, and beats a full counter: somebody asked for that one.
+		if(isnull(ordered))
+			var/obj/structure/table/counter = sp_find_service_counter(pawn, sp_bar_areas())
+			if(!isnull(counter) && sp_counter_drinks(counter) >= SP_BAR_COUNTER_LIMIT)
+				return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 		glass = sp_find_clean_glass(pawn)
 		if(QDELETED(glass))
 			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-		drink = pick(GLOB.sp_cocktails)
+		drink = ordered || pick(GLOB.sp_cocktails)
 
 	var/list/missing = sp_missing_parts(drink, glass)
 	if(sp_drink_ready(drink, glass))
@@ -179,9 +181,12 @@
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/obj/item/glass = controller.blackboard[BB_SP_GLASS]
 	var/obj/structure/table/counter = controller.blackboard[BB_SP_BAR_COUNTER]
+	var/ordered_by = controller.blackboard[BB_SP_ORDER_FOR]
 	controller.clear_blackboard_key(BB_SP_GLASS)
 	controller.clear_blackboard_key(BB_SP_BAR_COUNTER)
 	controller.clear_blackboard_key(BB_SP_DRINK)
+	controller.clear_blackboard_key(BB_SP_DRINK_ORDER)
+	controller.clear_blackboard_key(BB_SP_ORDER_FOR)
 	if(!istype(pawn) || QDELETED(glass) || QDELETED(counter) || !counter.Adjacent(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.face_atom(counter)
@@ -189,13 +194,21 @@
 	if(!pawn.transferItemToLoc(glass, get_turf(counter), silent = TRUE))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	sp_record("bar.served")
-	log_sp("[pawn.real_name] put [drink_name] on the bar in [get_area_name(counter)]")
-	sp_crew_speak(pawn, pick(
-		"[drink_name], on the bar.",
-		"There's [drink_name] up here if anyone wants it.",
-		"Poured [drink_name]. Come and get it.",
-		"Bar's open. [drink_name] going spare.",
-	), RADIO_CHANNEL_SERVICE)
+	log_sp("[pawn.real_name] put [drink_name] on the bar in [get_area_name(counter)][ordered_by ? " for [ordered_by]" : ""]")
+	if(ordered_by)
+		sp_record("bar.order_filled")
+		sp_crew_speak(pawn, pick(
+			"[ordered_by], your [drink_name] is up.",
+			"One [drink_name] for [ordered_by], on the bar.",
+			"[drink_name], [ordered_by]. Enjoy it.",
+		))
+	else
+		sp_crew_speak(pawn, pick(
+			"[drink_name], on the bar.",
+			"There's [drink_name] up here if anyone wants it.",
+			"Poured [drink_name]. Come and get it.",
+			"Bar's open. [drink_name] going spare.",
+		), RADIO_CHANNEL_SERVICE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 // --- Glassware ---------------------------------------------------------------------------------------

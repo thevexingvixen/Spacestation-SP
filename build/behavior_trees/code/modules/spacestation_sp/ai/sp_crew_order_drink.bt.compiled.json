@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/sp_at_the_bar","children":[{"type":"/datum/bt_node/decorator/cooldown","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_order_drink"},{"type":"/datum/bt_node/ai_behavior/wait","duration":200}]}],"cooldown_key":"sp_order_cooldown_patron","cooldown_duration":1800,"lock_on_succeed":true}]}

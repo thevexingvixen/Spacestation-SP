@@ -182,3 +182,78 @@
 	log_sp("[pawn.real_name] tried [door.name] in [get_area_name(door)] and was refused")
 	crew_controller.on_door_denied(door)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Ordering a drink ------------------------------------------------------------------------------
+
+/// Ask the bartender for something, if we happen to be at the bar and there is one behind it.
+/datum/bt_node/subtree/sp_crew_order_drink
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_order_drink.bt.json"
+
+/**
+ * True when we are standing in the bar with a bartender in earshot.
+ *
+ * This is what gives the bar something to do with no players on. A bartender who only ever pours the
+ * house menu at nobody is scenery; one taking orders off the crew who wander in is a bar.
+ */
+/datum/bt_node/decorator/sp_at_the_bar
+
+/datum/bt_node/decorator/sp_at_the_bar/check_condition(datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn) || istype(controller, /datum/ai_controller/sp_crew/bartender))
+		return FALSE
+	if(!sp_in_bar(pawn))
+		return FALSE
+	for(var/mob/living/carbon/human/other in oview(SP_CURIOSITY_RANGE, pawn))
+		if(istype(other.ai_controller, /datum/ai_controller/sp_crew/bartender) && other.stat == STABLE)
+			return TRUE
+	return FALSE
+
+/// Says what we fancy, out loud, where the bartender can hear it.
+/datum/bt_node/ai_behavior/sp_order_drink
+
+/datum/bt_node/ai_behavior/sp_order_drink/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// Order off the house menu rather than the whole catalogue: the crew are ordinary drinkers, and a
+	// technician asking for a Sui Dream by name would be a bit much.
+	var/datum/sp_cocktail/wanted = pick(GLOB.sp_cocktails)
+	sp_record("crew.ordered_drink")
+	log_sp("[pawn.real_name] ordered [wanted.name] at the bar")
+	sp_crew_speak(pawn, pick(
+		"Could I get [wanted.name]?",
+		"[wanted.name], when you have a moment.",
+		"I'll have [wanted.name], thanks.",
+		"Make it [wanted.name].",
+	))
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Getting back to work --------------------------------------------------------------------------
+
+/// Walk back to our own department when we are not in it.
+/datum/bt_node/subtree/sp_crew_commute
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_commute.bt.json"
+
+/**
+ * True when we are somewhere that is not our department.
+ *
+ * Every job subtree looks for its work near where it is standing, so a crew member who ends up across
+ * the station quietly does nothing at all: the bartender finds no dispenser, fails, and falls through
+ * to wandering wherever they happen to be. Walking back to your post is the thing that makes the rest
+ * of it robust, and it is what a person would do.
+ */
+/datum/bt_node/decorator/sp_away_from_post
+
+/datum/bt_node/decorator/sp_away_from_post/check_condition(datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return FALSE
+	var/list/post_areas = controller.blackboard[BB_SP_WANDER_AREAS]
+	if(!length(post_areas))
+		return FALSE
+	var/area/where = get_area(pawn)
+	return !isnull(where) && !(where.type in post_areas)
+
+/// Picks a spot in our own department to head for.
+/datum/bt_node/ai_behavior/sp_pick_wander_turf/post
+	target_key = BB_SP_COMMUTE_TARGET

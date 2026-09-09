@@ -325,3 +325,21 @@
 
 /// How often the round prints what the AI crew have actually managed to do.
 #define SP_TALLY_INTERVAL (2 MINUTES)
+
+/// How many units each part of a house-menu ratio is worth. A drinking glass holds fifty.
+#define SP_DRINK_MEASURE 8
+/// How many units of a drink a made-to-order glass aims for.
+#define SP_DRINK_SERVING 30
+/// How deep the bartender will chase a recipe made of other drinks.
+#define SP_DRINK_MAX_DEPTH 3
+/// The temperature the bar's taps pour at, which gates the reactions that will fire in the glass.
+#define SP_DRINK_POUR_TEMP 274.5
+/// A drink somebody has asked for by name, and who asked.
+#define BB_SP_DRINK_ORDER "sp_drink_order"
+#define BB_SP_ORDER_FOR "sp_order_for"
+/// Cooldown on a patron asking for something.
+#define BB_SP_ORDER_COOLDOWN_PATRON "sp_order_cooldown_patron"
+
+/// Where in our own department we are heading when we are somewhere else.
+#define BB_SP_COMMUTE_TARGET "sp_commute_target"
+#define BB_SP_COMMUTE_COOLDOWN "sp_commute_cooldown"

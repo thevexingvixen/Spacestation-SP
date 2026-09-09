@@ -527,6 +527,39 @@
 	for(var/box in 1 to 2)
 		human_pawn.equip_to_storage(new /obj/item/storage/box/drinkingglasses(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
 
+/**
+ * Takes an order. Anyone standing at the bar naming a drink gets it made, whether they are a player or
+ * one of the crew — the bartender is not fussy about who is asking, only about what.
+ */
+/datum/ai_controller/sp_crew/bartender/on_pre_hear(datum/source, list/hearing_args)
+	SIGNAL_HANDLER
+	. = ..()
+	var/atom/movable/speaker = hearing_args[HEARING_SPEAKER]
+	var/raw_message = hearing_args[HEARING_RAW_MESSAGE]
+	if(QDELETED(speaker) || speaker == pawn || !istext(raw_message) || !isnull(hearing_args[HEARING_RADIO_FREQ]))
+		return
+	if(!isnull(blackboard[BB_SP_DRINK_ORDER]))
+		return // one at a time; the glass in hand comes first
+	var/datum/sp_cocktail/ordered = sp_drink_from_order(raw_message)
+	if(isnull(ordered))
+		return
+	set_blackboard_key(BB_SP_DRINK_ORDER, ordered)
+	set_blackboard_key(BB_SP_ORDER_FOR, speaker.name)
+	INVOKE_ASYNC(src, PROC_REF(acknowledge_order), ordered, speaker.name)
+
+/// Says the order back, which is half of what a bartender is for.
+/datum/ai_controller/sp_crew/bartender/proc/acknowledge_order(datum/sp_cocktail/ordered, who)
+	var/mob/living/carbon/human/human_pawn = pawn
+	if(!istype(human_pawn))
+		return
+	log_sp("[human_pawn.real_name] took an order for [ordered.name] from [who]")
+	sp_record("bar.ordered")
+	sp_crew_speak(human_pawn, pick(
+		"[ordered.name] coming up, [who].",
+		"One [ordered.name] for [who].",
+		"[ordered.name]? Give me a minute.",
+	))
+
 /datum/ai_controller/sp_crew/bartender/setup_job_blackboard(mob/living/carbon/human/human_pawn)
 	set_blackboard_key(BB_SP_WANDER_AREAS, sp_bar_areas())
 	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(

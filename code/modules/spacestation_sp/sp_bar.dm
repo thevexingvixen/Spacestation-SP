@@ -70,10 +70,19 @@
 	 */
 	var/result
 
-/datum/sp_cocktail/New(name, list/parts, result)
+	/// TRUE when `parts` are already absolute units rather than a ratio to be multiplied up.
+	var/absolute = FALSE
+
+/datum/sp_cocktail/New(name, list/parts, result, absolute = FALSE)
 	src.name = name
 	src.parts = parts
 	src.result = result
+	src.absolute = absolute
+
+/// How many units of this reagent the drink wants in the glass.
+/datum/sp_cocktail/proc/units_of(reagent_type)
+	var/amount = parts[reagent_type]
+	return absolute ? amount : amount * SP_DRINK_MEASURE
 
 GLOBAL_LIST_INIT(sp_cocktails, list(
 	new /datum/sp_cocktail("a gin and tonic", list(/datum/reagent/consumable/ethanol/gin = 1, /datum/reagent/consumable/tonic = 2), /datum/reagent/consumable/ethanol/gintonic),
@@ -89,8 +98,150 @@ GLOBAL_LIST_INIT(sp_cocktails, list(
 	new /datum/sp_cocktail("a coffee", list(/datum/reagent/consumable/coffee = 3, /datum/reagent/consumable/cream = 1)),
 ))
 
-/// How many units each part of a recipe is worth. A drinking glass holds fifty.
-#define SP_DRINK_MEASURE 8
+
+// --- Making anything, not just the house menu ---------------------------------------------------------
+
+/**
+ * Everything the bar could actually mix, worked out from /tg/'s own drink reactions.
+ *
+ * The house menu above is what a bartender pours when nobody has asked for anything in particular. This
+ * is the rest of the book: for every drink reaction in the game, walk its ingredients back until they
+ * are all things one of the two taps holds, and if that works out, the bartender can make it to order.
+ *
+ * The walk is recursive because plenty of drinks are made of other drinks — a cuba libre is a rum and
+ * coke with lime in it — and the reactions cascade on their own once everything is in the glass, so
+ * pouring the flattened base spirits in the right proportions gets there.
+ */
+/proc/sp_drink_catalogue()
+	var/static/list/datum/sp_cocktail/catalogue
+	if(!isnull(catalogue))
+		return catalogue
+	catalogue = list()
+	var/list/base = sp_bar_base_reagents()
+	if(!length(base))
+		return catalogue
+	for(var/reaction_type in GLOB.chemical_reactions_list)
+		var/datum/chemical_reaction/reaction = GLOB.chemical_reactions_list[reaction_type]
+		if(!istype(reaction, /datum/chemical_reaction/drink) || length(reaction.results) != 1)
+			continue
+		var/result_type = reaction.results[1]
+		if(!ispath(result_type, /datum/reagent/consumable))
+			continue
+		var/list/on_the_way = list()
+		var/list/recipe = sp_expand_drink(result_type, SP_DRINK_SERVING, base, on_the_way = on_the_way)
+		if(!length(recipe) || sp_recipe_is_ambiguous(recipe, result_type, on_the_way))
+			continue
+		var/datum/reagent/result_reagent = result_type
+		catalogue += new /datum/sp_cocktail(initial(result_reagent.name), recipe, result_type, TRUE)
+	return catalogue
+
+/**
+ * Would something else form in the glass instead?
+ *
+ * Everything goes into one glass here, and the reagent system fires whichever reaction it can — so a
+ * recipe that happens to contain vodka and orange juice makes a screwdriver on the way past, whatever
+ * it was supposed to be making. A drink whose ingredients can form some *other* drink is not one this
+ * bartender can be trusted with, so it stays off the list. Reactions on the intended path are fine:
+ * those are how a cuba libre becomes a cuba libre.
+ */
+/proc/sp_recipe_is_ambiguous(list/parts, target, list/on_the_way)
+	for(var/reaction_type in GLOB.chemical_reactions_list)
+		var/datum/chemical_reaction/reaction = GLOB.chemical_reactions_list[reaction_type]
+		if(!istype(reaction, /datum/chemical_reaction/drink) || length(reaction.results) != 1)
+			continue
+		var/makes = reaction.results[1]
+		if(makes == target || (makes in on_the_way))
+			continue
+		var/satisfiable = length(reaction.required_reagents) > 0
+		for(var/ingredient in reaction.required_reagents)
+			if(!(ingredient in parts))
+				satisfiable = FALSE
+				break
+		if(satisfiable)
+			return TRUE
+	return FALSE
+
+/// The reagents the bar's own taps hold between them.
+/proc/sp_bar_base_reagents()
+	var/static/list/base
+	if(!isnull(base))
+		return base
+	base = list()
+	for(var/dispenser_type in list(/obj/machinery/chem_dispenser/drinks, /obj/machinery/chem_dispenser/drinks/beer))
+		for(var/obj/machinery/chem_dispenser/dispenser as anything in SSmachines.get_machines_by_type_and_subtypes(dispenser_type))
+			if(dispenser.type != dispenser_type || !sp_in_bar(dispenser))
+				continue
+			base |= dispenser.dispensable_reagents
+	if(!length(base))
+		base = null // no bar on this map yet; try again later rather than caching nothing
+	return base || list()
+
+/**
+ * How much of each tap reagent it takes to end up with `want` units of this drink.
+ *
+ * Returns null when the drink cannot be got to from the taps at all — which is most of them, because
+ * half of /tg/'s drinks want fruit somebody has to grow or a bottle somebody has to buy.
+ */
+/proc/sp_expand_drink(reagent_type, want, list/base, list/seen, depth = 0, list/on_the_way)
+	if(want <= 0 || depth > SP_DRINK_MAX_DEPTH)
+		return null
+	if(reagent_type in base)
+		var/list/leaf_only = list()
+		leaf_only[reagent_type] = want
+		return leaf_only
+	seen = seen?.Copy() || list()
+	if(reagent_type in seen)
+		return null // a drink made of itself, somewhere down the line
+	seen += reagent_type
+
+	for(var/reaction_type in GLOB.chemical_reactions_list)
+		var/datum/chemical_reaction/reaction = GLOB.chemical_reactions_list[reaction_type]
+		if(length(reaction.results) != 1 || reaction.results[1] != reagent_type)
+			continue
+		// Catalysts have to be sitting in the glass too, and the taps do not pour most of them.
+		var/possible = TRUE
+		for(var/catalyst in reaction.required_catalysts)
+			if(!(catalyst in base))
+				possible = FALSE
+				break
+		if(!possible || reaction.is_cold_recipe || reaction.required_temp > SP_DRINK_POUR_TEMP)
+			continue
+
+		var/made = reaction.results[reagent_type]
+		if(made <= 0)
+			continue
+		var/multiplier = want / made
+		var/list/total = list()
+		if(!isnull(on_the_way) && depth > 0)
+			on_the_way |= reagent_type
+		for(var/ingredient in reaction.required_reagents)
+			var/needed = reaction.required_reagents[ingredient] * multiplier
+			var/list/part = sp_expand_drink(ingredient, needed, base, seen, depth + 1, on_the_way)
+			if(!length(part))
+				possible = FALSE
+				break
+			for(var/leaf in part)
+				total[leaf] += part[leaf]
+		for(var/catalyst in reaction.required_catalysts)
+			total[catalyst] += reaction.required_catalysts[catalyst]
+		if(possible && length(total))
+			return total
+	return null
+
+/// Finds a drink somebody has just asked for by name.
+/proc/sp_drink_from_order(text)
+	if(!istext(text) || !length(text))
+		return null
+	var/needle = lowertext(text)
+	var/datum/sp_cocktail/best
+	for(var/datum/sp_cocktail/drink as anything in sp_drink_catalogue())
+		var/drink_name = lowertext(drink.name)
+		if(!length(drink_name) || !findtext(needle, drink_name))
+			continue
+		// Longest match wins, so "vodka martini" does not get served as a martini.
+		if(isnull(best) || length(drink_name) > length(best.name))
+			best = drink
+	return best
 
 /// Which of a drink's parts come out of this particular dispenser.
 /proc/sp_parts_from(datum/sp_cocktail/drink, obj/machinery/chem_dispenser/dispenser)
@@ -119,7 +270,7 @@ GLOBAL_LIST_INIT(sp_cocktails, list(
 	if(drink.result && glass.reagents?.has_reagent(drink.result))
 		return missing
 	for(var/reagent_type in drink.parts)
-		var/wanted = drink.parts[reagent_type] * SP_DRINK_MEASURE
+		var/wanted = drink.units_of(reagent_type)
 		if(glass.reagents?.get_reagent_amount(reagent_type) < wanted)
 			missing[reagent_type] = wanted
 	return missing

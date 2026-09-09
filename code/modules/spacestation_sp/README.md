@@ -295,7 +295,30 @@ a drink, put a glass under the tap, measure the parts in, and the reaction does 
 the walking is that a gin and tonic needs gin from one dispenser and tonic from the other, so most
 drinks are two trips.
 
-`GLOB.sp_cocktails` is the menu, and each entry carries the reagent it *becomes* as well as the parts
+### Making anything, not just the house menu
+`GLOB.sp_cocktails` is the house menu — what a bartender pours when nobody has asked for anything. The
+rest of the book is worked out at runtime by `sp_drink_catalogue()`: for every drink reaction in the
+game, walk the ingredients back until they are all things one of the two taps holds. That comes to
+about seventy drinks on MetaStation, and it means anyone — a player or one of the crew — can name a
+drink and get it. The walk recurses, because plenty of drinks are made of other drinks: a cuba libre is
+a rum and coke with lime in it, and the reactions cascade on their own once it is all in the glass.
+
+Two things keep the catalogue honest, and both were found by pouring the whole book in a unit test:
+
+- **Ambiguity.** Everything goes in one glass and the reagent system fires whatever reaction it can, so
+  a recipe that happens to contain vodka and orange juice makes a screwdriver on the way past whatever
+  it was meant to be making. `sp_recipe_is_ambiguous()` drops any drink whose ingredients could form
+  some *other* drink — reactions on the intended path excepted, since those are the point. This is what
+  removed the Banzai-Tī, which turned into three different cocktails at once.
+- **Power.** The taps run off a cell, and `sp_dispense_into()` spends it. Pouring seventy drinks back to
+  back runs both machines flat, which in testing looked exactly like broken recipes until the test
+  started recharging between rounds of pouring.
+
+Orders are matched on the drink's own name, longest match first so a vodka martini is not served as a
+martini. Crew who wander into the bar order off the house menu on their own, which is what gives the
+place something to do with no players on.
+
+`GLOB.sp_cocktails` entries each carry the reagent they *become* as well as the parts
 that go in. That second field is not decoration: the reaction consumes the gin and the tonic to make
 the gin and tonic, so a glass that has just been made correctly contains neither, and asking "is it
 still short of gin?" answers yes forever. `sp_drink_ready()` asks the question the right way round.
@@ -340,6 +363,19 @@ The three decisions that separate a nosy crew member from a greytider are all ov
 
 Ordinary crew also shut lockers behind them, which a greytider will not: a corridor of hanging-open
 lockers is a tell, and skipping that one line is most of the visual difference.
+
+## Getting to work
+Two things make sure a crew member is where their job is.
+
+`sp_send_to_post()` runs at spawn. `SSticker.PostSetup()` deletes the roundstart landmarks the moment
+the populate callback yields, and that race is not reliably won — when it is lost, *every* job falls
+back to the arrival shuttle. That is worse than untidy: the shuttle then leaves, taking the whole crew
+to a z-level their department is not on, where every job subtree quietly finds nothing to do. So a
+crew member who lands at arrivals is put where they were assigned instead.
+
+`sp_crew_commute` is the safety net for everything else. Any crew member standing outside their own
+department walks back to it. Every job subtree looks for its work near where it is standing, so without
+this a displaced crew member does nothing at all and looks fine doing it.
 
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
