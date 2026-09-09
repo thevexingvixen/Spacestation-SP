@@ -182,6 +182,21 @@ SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from T
 `AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
 crew member can walk to medbay, the engine room, or an incident on the far side of the station.
 
+## Launching (`RUN_SP.cmd`)
+
+Use the launcher rather than double-clicking `tgstation.dmb`. It gets two things right:
+
+- **Trusted security.** Dream Daemon defaults to *Safe* on a fresh install, and at Safe BYOND raises a
+  "Safety check: allow access to ..." dialog for every file the game reads — hundreds of them at
+  startup, because each AI crew member loads several compiled behaviour trees. rust_g and dreamluau
+  cannot load at all. `/tg/station` requires Trusted (`RUNNING_A_SERVER.md`, `.tgs.yml`), so the
+  launcher passes `-trusted`. The GUI's Security dropdown is the equivalent for a manual launch;
+  `cfg/daemon.txt` does *not* govern command-line launches.
+- **Port 7777.** See the note at the bottom of this file.
+
+`RUN_SP.cmd [port]` finds BYOND through the registry and starts the server; connect Dream Seeker to
+`byond://127.0.0.1:7777`.
+
 ## Local dev config
 `config/dev_overrides.txt` (gitignored; copy from `../../docs/dev_overrides.example.txt`) enables
 AUTOADMIN, a 10 s lobby, `RESUME_AFTER_INITIALIZATIONS` for headless tests, `SP_AUTOPOPULATE`, and
