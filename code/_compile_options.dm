@@ -215,3 +215,6 @@
 
 // SPACESTATION SP: uncomment for verbose hull-breach repair logging (targets, moves, failures).
 //#define SP_BREACH_DEBUG
+
+// SPACESTATION SP: uncomment for verbose kitchen logging (what the chef tried and why it did not work).
+//#define SP_KITCHEN_DEBUG

@@ -68,6 +68,8 @@
 		return /datum/ai_controller/sp_crew/engineer
 	if(istype(job, /datum/job/botanist))
 		return /datum/ai_controller/sp_crew/botanist
+	if(istype(job, /datum/job/cook))
+		return /datum/ai_controller/sp_crew/chef
 	if(istype(job, /datum/job/quartermaster))
 		return /datum/ai_controller/sp_crew/cargo/quartermaster
 	if(/datum/job_department/cargo in job.departments_list)
@@ -76,8 +78,9 @@
 
 /**
  * Jobs the station cannot do without; populate fills one of each before anything else (after heads).
- * The botanist is here because they feed the kitchen, and a station with nobody growing anything is a
- * station where the chef has nothing to cook.
+ * Botany and the kitchen are here because they feed each other: a station with nobody growing anything
+ * is a station where the chef has nothing to cook, and a station with no chef is one where the crew
+ * eat out of a vending machine all shift.
  */
 /proc/sp_essential_job_types()
 	var/static/list/essential = list(
@@ -85,6 +88,7 @@
 		/datum/job/security_officer,
 		/datum/job/doctor,
 		/datum/job/botanist,
+		/datum/job/cook,
 		/datum/job/quartermaster,
 		/datum/job/cargo_technician,
 	)
@@ -117,7 +121,9 @@
 		log_sp("job pool is empty, cannot populate")
 		return 0
 
-	// Heads first, then one of each essential job (engineer, security, doctor), then everyone else shuffled.
+	// Heads first so the station has a command structure, then one of each essential job, then the rest
+	// shuffled. There are seven heads and seven essentials, so SP_AUTOPOPULATE below 14 will not staff
+	// every department.
 	var/list/datum/job/heads = list()
 	var/list/datum/job/essentials = list()
 	var/list/datum/job/rest = list()
@@ -129,7 +135,16 @@
 			essentials += job
 		else
 			rest += job
-	var/list/datum/job/order = shuffle(heads) + essentials + shuffle(rest)
+	// Essentials go in the order sp_essential_job_types() lists them rather than whatever order the job
+	// controller happens to hold: that list is a priority ranking, and a low SP_AUTOPOPULATE will not
+	// reach the end of it.
+	var/list/datum/job/ranked_essentials = list()
+	for(var/essential_type in essential_types)
+		for(var/datum/job/job as anything in essentials)
+			if(job.type == essential_type)
+				ranked_essentials += job
+				break
+	var/list/datum/job/order = shuffle(heads) + ranked_essentials + shuffle(rest)
 
 	var/spawned = 0
 	var/index = 0

@@ -21,8 +21,10 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 - `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
+- `sp_kitchen.dm` — the prep table and counter, the prep-step table, the mixes, and the recipe scan.
 - `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
 - `ai/sp_cargo_behaviors.dm` — the quartermaster's paperwork and the technicians' hauling.
+- `ai/sp_chef_behaviors.dm` — the chef's stocking, prep, mixing, cooking and serving leaves.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -55,6 +57,18 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_qm_shuttle` — send the supply shuttle out with the orders, and call it back with the goods.
 - `sp_cargo_haul` — drag a crate off the shuttle, to the department that requested it if it was
   asked for, otherwise into the cargo bay.
+- `sp_chef_stock` — carry ingredients out of the fridges, cabinets and off the kitchen floor and pile
+  them on one prep table. Also the unload half: an armful in hand always goes down before more is
+  fetched.
+- `sp_chef_mix` — take a bowl to the sink for water, back to the table for flour, and let the reaction
+  make dough. Cheese is the same trip without the sink.
+- `sp_chef_prep` — one rung of the cooking tree: cut with a knife, flatten with a rolling pin, or carry
+  something to the griddle, the oven or the processor and switch it on.
+- `sp_chef_collect` — take what has finished out of the oven and off the griddle, and switch the
+  griddle off behind them.
+- `sp_chef_cook` — stand at the prep table and craft whatever the pile currently supports.
+- `sp_chef_serve` — carry a finished dish to the counter, set it down, and say so on the service channel.
+- `sp_chef_supply` — when the kitchen has been picked clean, put a food crate on cargo's list.
 
 ## Conversation and standing (`sp_conversation.dm`)
 Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
@@ -177,6 +191,79 @@ Cargo is staffed as an essential job, because the chef and the rest of the stati
 `SP_DEBUG_SUPPLY_REQUEST` has a random crew member raise a request two minutes in, for testing the
 path without waiting for a department to want something.
 
+## The kitchen (`sp_kitchen.dm`)
+/tg/'s cooking is a tech tree, not a list of recipes. Almost nothing worth eating can be assembled
+straight from what a kitchen starts with: raw stock has to be cut, ground, mixed, baked and grilled
+into components first, and only then does the crafting menu have anything to offer. A chef that only
+knew how to craft would stand at a full table and make two things all shift.
+
+So the chef works the tree from the bottom, using the same interactions a player does.
+
+**The prep table** is the kitchen table with the most cooking machinery beside it, and everything hangs
+off that choice. Crafting only sees one tile around the crafter, so the table the ingredients are piled
+on decides which recipes are possible at all — and on MetaStation the winner is the table wedged
+between the two ovens, which puts them in reach too.
+
+**The counter** is a kitchen table with an open tile on the other side that is not the kitchen. That is
+the serving hatch on any map that has one; on MetaStation it picks out exactly the row of tables the
+bar stools face.
+
+**The rungs** are `GLOB.sp_kitchen_prep_steps`: an ingredient, an operation, and what comes out. /tg/
+hangs these transformations off elements and components on the ingredients themselves, so they cannot
+be enumerated from an item — poking every ingredient with every tool to find out would be both slow and
+absurd, so the rungs worth climbing are written down. The `result` is only used to know when to stop.
+Between them they produce cutlets and patties, bread and buns, cheese wedges, boiled eggs and cut
+produce, which is most of what the craftable dishes are actually made of. A slab of monkey meat is
+worth nothing on its own and becomes a burger four rungs later.
+
+**The mixes** (`GLOB.sp_kitchen_mixes`) are the one part of the tree crafting cannot reach: dough and
+cheese are chemical reactions in a bowl, not recipes. The chef carries a bowl to the sink for water,
+back to the table for the flour, and the reaction fires on its own. Without this there is no dough,
+which means no bread, no buns and no sandwiches.
+
+**The cooking** is not a menu. `sp_craftable_recipes()` runs /tg/'s own `check_contents` against
+everything within reach and returns what would actually work, so what comes out depends on what botany
+grew and what cargo delivered. Finished dishes are preferred, but half-made things get crafted too —
+a raw calzone goes back on the pile and the oven rung finishes it.
+
+**Serving** is the point of all of it. A dish counts as finished when it is cooked, is not itself an
+ingredient in one of the prep steps, and the game no longer considers it raw. It goes out on the
+counter with a line on the service channel, and the chef stops once eight of them are stacked up
+uneaten.
+
+**Running dry** goes through cargo: when the worktop is not stocked, the chef is carrying nothing, and
+there is no fridge, cabinet or pile left in the kitchen with anything in it, the chef
+raises a `/datum/supply_pack/organic/food` request through `sp_request_supplies()` and asks cargo for it
+over the supply channel. The quartermaster orders it, a technician walks the crate to the kitchen, and
+the chef takes it apart again. Six minutes between requests, so one slow shuttle run does not turn into
+a queue of crates.
+
+TG issues a chef an apron, a hat and a moustache. The knife, the rolling pin and the bowls are all
+things a real kitchen already owns or a character rolls as a family heirloom, so `equip_extra_gear`
+hands them over — bowls in particular are the gate, since a great many recipes want one and the
+dinnerware vendor charges most of a paycheck each.
+
+### Two things that cost a while to find
+**Click delay.** `ClickOn()` silently drops anything that arrives within a decisecond of the last
+click. Every SP behaviour before the chef clicked at most once per tick, so this never came up; the
+chef needs three clicks to bake something (open the oven, put the tray in, shut the door) and only the
+first was landing. `sp_chef_click()` waits out `next_click` first, which is why the chef's machine work
+runs in `perform_async()` — it has to be allowed to sleep.
+
+**The oven clock.** Baking only counts while the door is shut, and the default bake is two minutes. A
+chef who opened the oven every time they had one more thing to add stopped the clock over and over and
+never got bread out. The oven is now loaded in one go and left alone until it is empty again;
+`sp_machine_room()` is what enforces that, and it is also why the prep steps carry a batch rather than
+a single ingredient.
+
+Uncomment `SP_KITCHEN_DEBUG` in `code/_compile_options.dm` for a running commentary on what the chef
+tried and why it did not work, which is how both of those turned up.
+
+### Staffing
+The cook is an essential job, so `sp_populate_station()` fills the post before filling out the rest of
+the crew. There are seven heads of staff and seven essential jobs, and heads are placed first, so
+`SP_AUTOPOPULATE` below 14 will leave departments empty — the dev config ships at 16.
+
 ## Movement
 SP crew use `/datum/ai_movement/jps/sp_crew`, which raises the path limit from TG's
 `AI_MAX_PATH_LENGTH` (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
@@ -220,7 +307,7 @@ the game server logs nothing at all.
 - `code/game/machinery/doors/firedoor.dm` — `CanAStarPass` so AI can path through unwelded firelocks.
 - `code/datums/station_traits/{neutral,positive}_traits.dm` — null-guard the client argument, which
   AI crew do not have (two traits were throwing a runtime per spawned crew member).
-- `code/_compile_options.dm` — the optional `SP_BREACH_DEBUG` flag.
+- `code/_compile_options.dm` — the optional `SP_BREACH_DEBUG` and `SP_KITCHEN_DEBUG` flags.
 - `tgstation.dme` — include lines for this module.
 
 ## Known limitations

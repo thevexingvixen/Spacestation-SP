@@ -1,0 +1,71 @@
+{
+	"dm_type": "/datum/ai_controller/sp_crew/chef",
+	"type": "parallel",
+	"failure_policy": "BT_PARALLEL_FAILURE_CHILD_ONE",
+	"success_policy": "BT_PARALLEL_SUCCESS_CHILD_ONE",
+	"repeat_secondary": true,
+	"repeat_secondary_delay": "1 SECONDS",
+	"finish_on_primary": true,
+	"children": [
+		{
+			"type": "selector",
+			"children": [
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_crew_core"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_serve"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_cook"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_collect"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_prep"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_mix"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_stock"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_chef_supply"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_crew_chatter"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_department_wander"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/idle_random_walk",
+					"vars": {
+						"walk_chance": 15
+					}
+				}
+			]
+		},
+		{
+			"type": "subtree",
+			"subtype": "/datum/bt_node/subtree/random_speech_loop"
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_scan_threats"
+		}
+	]
+}

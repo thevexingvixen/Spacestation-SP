@@ -1,0 +1,30 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_chef_supply",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/cooldown",
+	"vars": {
+		"cooldown_key": "BB_SP_KITCHEN_SUPPLY_COOLDOWN",
+		"cooldown_duration": "SP_KITCHEN_SUPPLY_INTERVAL",
+		"lock_on_succeed": true
+	},
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/sp_kitchen_needs_supplies",
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_ask_for_food"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "5 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

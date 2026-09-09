@@ -217,3 +217,61 @@
 #define BB_SP_HAUL_DEADLINE "sp_haul_deadline"
 /// How long one crate may be dragged before we give up on it.
 #define SP_HAUL_TIMEOUT (2 MINUTES)
+
+// --- Kitchen ---------------------------------------------------------------------------------------
+
+/// The kitchen table the chef works at: ingredients are piled on it and dishes are assembled beside it.
+#define BB_SP_PREP_TABLE "sp_prep_table"
+/// The counter finished food is left on for the crew to take.
+#define BB_SP_COUNTER "sp_counter"
+/// A finished dish we are carrying out to the counter.
+#define BB_SP_DISH "sp_dish"
+/// The /datum/sp_prep_step we are carrying out, the item it applies to, and where we have to stand.
+#define BB_SP_PREP_STEP "sp_prep_step"
+#define BB_SP_PREP_ITEM "sp_prep_item"
+/// The rest of the load going into the same machine on the same trip.
+#define BB_SP_PREP_BATCH "sp_prep_batch"
+#define BB_SP_PREP_TARGET "sp_prep_target"
+/// The /datum/sp_kitchen_mix we are mixing, the bowl we are mixing it in, and where we are going next.
+#define BB_SP_MIX "sp_mix"
+#define BB_SP_MIX_BOWL "sp_mix_bowl"
+#define BB_SP_MIX_TARGET "sp_mix_target"
+/// A cooking machine holding food that has finished cooking.
+#define BB_SP_COOK_MACHINE "sp_cook_machine"
+/// Where the next load of ingredients is coming from.
+#define BB_SP_STOCK_SOURCE "sp_stock_source"
+/// Cooldowns for each strand of kitchen work.
+#define BB_SP_COOK_COOLDOWN "sp_cook_cooldown"
+#define BB_SP_PREP_COOLDOWN "sp_prep_cooldown"
+#define BB_SP_MIX_COOLDOWN "sp_mix_cooldown"
+#define BB_SP_COLLECT_COOLDOWN "sp_collect_cooldown"
+#define BB_SP_STOCK_COOLDOWN "sp_stock_cooldown"
+#define BB_SP_SERVE_COOLDOWN "sp_serve_cooldown"
+/// Cooldown on asking cargo for another food crate.
+#define BB_SP_KITCHEN_SUPPLY_COOLDOWN "sp_kitchen_supply_cooldown"
+
+/// What a prep step does to its ingredient.
+/// Use a held tool on it while it sits on the prep table (knife, rolling pin).
+#define SP_PREP_TOOL "tool"
+/// Lay it on the griddle and switch the griddle on.
+#define SP_PREP_GRILL "grill"
+/// Open the oven, put it on the tray, close the oven.
+#define SP_PREP_BAKE "bake"
+/// Feed it to the food processor and run it.
+#define SP_PREP_PROCESS "process"
+
+/// Verbose kitchen tracing, enabled by SP_KITCHEN_DEBUG in code/_compile_options.dm.
+#ifdef SP_KITCHEN_DEBUG
+#define log_kitchen(msg) log_sp("kitchen: " + (msg))
+#else
+#define log_kitchen(msg)
+#endif
+
+/// How many finished dishes may sit on the counter before the chef stops cooking.
+#define SP_COUNTER_LIMIT 8
+/// How much the chef gathers before walking it back to the prep table.
+#define SP_STOCK_ARMFUL 6
+/// How many items the chef keeps piled on the prep table.
+#define SP_PANTRY_TARGET 14
+/// The chef waits at least this long between food crates.
+#define SP_KITCHEN_SUPPLY_INTERVAL (6 MINUTES)

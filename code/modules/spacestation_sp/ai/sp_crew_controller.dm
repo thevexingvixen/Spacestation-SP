@@ -431,3 +431,37 @@
 		),
 		BB_EMOTE_SEE = list("thumbs through a stack of forms.", "taps at the supply console."),
 	))
+
+/// Chef: stocks the prep table, works the cooking tree, and puts what comes out on the counter.
+/datum/ai_controller/sp_crew/chef
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_chef.bt.json"
+
+/**
+ * TG issues a chef an apron, a hat and a moustache. The knife, the rolling pin and the bowls are all
+ * things a real kitchen already owns or a character rolls as an heirloom, so without them an AI chef
+ * can cut nothing, roll nothing and serve no salad. Bowls in particular are the gate: a great many
+ * recipes want one and the dinnerware vendor charges most of a paycheck for each.
+ */
+/datum/ai_controller/sp_crew/chef/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/knife)))
+		human_pawn.equip_to_storage(new /obj/item/knife/kitchen(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/kitchen/rollingpin)))
+		human_pawn.equip_to_storage(new /obj/item/kitchen/rollingpin(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+	// Two only: a bowl is a bulky thing and the rest of the bag would be deleted for not fitting. The
+	// kitchen's dinnerware vendor is the restock, and the chef buys from it out of their own wages.
+	for(var/bowl in 1 to 2)
+		human_pawn.equip_to_storage(new /obj/item/reagent_containers/cup/bowl(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
+/datum/ai_controller/sp_crew/chef/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	set_blackboard_key(BB_SP_WANDER_AREAS, sp_kitchen_areas())
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"Nobody comes to the kitchen until it's on fire.",
+			"You can't rush dough.",
+			"If botany would send more tomatoes I'd send more food.",
+			"Everything on the counter is free, that's the point.",
+			"I'm not making anything special until somebody asks nicely.",
+		),
+		BB_EMOTE_SEE = list("wipes down a knife.", "checks the oven.", "tastes something and frowns."),
+	))

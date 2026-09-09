@@ -1,0 +1,40 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_chef_stock",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_stocking_needed",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_STOCK_COOLDOWN",
+			"cooldown_duration": "5 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_prep_table"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_stock"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_STOCK_SOURCE",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_take_stock"
+				}
+			]
+		}
+	}
+}
