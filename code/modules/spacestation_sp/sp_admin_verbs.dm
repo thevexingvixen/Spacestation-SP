@@ -21,3 +21,13 @@ ADMIN_VERB(sp_spawn_crew_job, R_SPAWN, "SP: Spawn Crew (Job)", "Spawn one AI-con
 		return
 	message_admins("[key_name_admin(user)] spawned AI crew [crew.real_name] ([job.title]) at [ADMIN_VERBOSEJMP(crew)].")
 	log_admin("[key_name(user)] spawned AI crew [crew.real_name] ([job.title]) at [AREACOORD(crew)].")
+
+ADMIN_VERB(sp_behaviour_tally, R_DEBUG, "SP: Behaviour Tally", "Show what the AI crew have actually managed to do so far this round.", ADMIN_CATEGORY_DEBUG)
+	var/list/tally = SSspacestation_sp.event_tally
+	if(!length(tally))
+		to_chat(user, span_notice("The AI crew have not done anything worth counting yet."))
+		return
+	var/list/lines = list("<b>Spacestation SP — what the crew have done this round</b>")
+	for(var/event in sort_list(tally))
+		lines += "[event]: [tally[event]]"
+	to_chat(user, boxed_message(jointext(lines, "<br>")))

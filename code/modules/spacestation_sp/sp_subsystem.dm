@@ -34,12 +34,34 @@ SUBSYSTEM_DEF(spacestation_sp)
 	var/breach_count_last_sweep = 0
 	/// TRUE while an AI engineer has declared the engine online (loop set up, chamber full). Drives the simulated output.
 	var/engine_running = FALSE
+	/// Tally of everything the AI crew have actually done this round, keyed by event name.
+	var/list/event_tally = list()
+	/// Timer id of the tally report loop.
+	var/tally_timer
 
 /datum/controller/subsystem/spacestation_sp/Initialize()
 	SSticker.OnRoundstart(CALLBACK(src, PROC_REF(on_roundstart)))
 	watchdog_timer = addtimer(CALLBACK(src, PROC_REF(engine_watchdog)), 10 SECONDS, TIMER_LOOP | TIMER_STOPPABLE)
 	breach_timer = addtimer(CALLBACK(src, PROC_REF(scan_breaches)), 5 SECONDS, TIMER_LOOP | TIMER_STOPPABLE)
+	tally_timer = addtimer(CALLBACK(src, PROC_REF(report_tally)), SP_TALLY_INTERVAL, TIMER_LOOP | TIMER_STOPPABLE)
 	return SS_INIT_SUCCESS
+
+/**
+ * Prints what the crew have actually got done, every couple of minutes.
+ *
+ * Emergent behaviour is miserable to check by reading a log: you grep for a hopeful string, find
+ * nothing, and cannot tell a broken behaviour from one that has simply not come up yet. A running
+ * count turns that into a scoreboard — "bar.poured=0" after twenty minutes is an answer, and so is
+ * "crew.door_tried=11".
+ */
+/datum/controller/subsystem/spacestation_sp/proc/report_tally()
+	if(!length(event_tally))
+		log_sp("tally: nothing yet")
+		return
+	var/list/parts = list()
+	for(var/event in sort_list(event_tally))
+		parts += "[event]=[event_tally[event]]"
+	log_sp("tally: [jointext(parts, " ")]")
 
 /**
  * Rolling hull-breach scan. Walks a slice of the station's areas on every call so a full sweep is
@@ -71,8 +93,14 @@ SUBSYSTEM_DEF(spacestation_sp)
 		CHECK_TICK
 
 /datum/controller/subsystem/spacestation_sp/stat_entry(msg)
-	msg = "AI crew: [length(ai_crew)] | supply reqs: [length(supply_requests)] | scram: [engine_scrammed() ? "ON" : "off"] | breaches: [length(breach_turfs)]"
+	msg = "AI crew: [length(ai_crew)] | supply reqs: [length(supply_requests)] | scram: [engine_scrammed() ? "ON" : "off"] | breaches: [length(breach_turfs)] | events: [length(event_tally)]"
 	return ..()
+
+/// Counts one thing an AI crew member did. See report_tally().
+/proc/sp_record(event, amount = 1)
+	if(isnull(SSspacestation_sp) || !length(event))
+		return
+	SSspacestation_sp.event_tally[event] += amount
 
 /// Fires once the round has started and player characters have been placed.
 /datum/controller/subsystem/spacestation_sp/proc/on_roundstart()

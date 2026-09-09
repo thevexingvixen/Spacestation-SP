@@ -112,6 +112,7 @@
 	if(!pawn.transferItemToLoc(dish, counter_turf, silent = TRUE))
 		log_kitchen("[pawn.real_name] could not put [dish_name] down on the counter")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_record("chef.served")
 	log_sp("[pawn.real_name] served [dish_name] on the counter in [get_area_name(counter)]")
 	sp_crew_speak(pawn, pick(
 		"[dish_name], up on the counter. Come and get it.",
@@ -170,6 +171,7 @@
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	var/obj/item/made = result
+	sp_record("chef.cooked")
 	log_sp("[pawn.real_name] cooked [made.name]")
 	// Crafting drops the result at our feet. Anything half-made (a raw pizza, say) goes back on the pile
 	// for the oven rung; a finished dish goes straight into our hands, because the next craft reads the
@@ -262,6 +264,7 @@
 		log_kitchen("[pawn.real_name] could not get [length(done)] finished item(s) out of [machine.name]")
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
+	sp_record("chef.collected")
 	log_sp("[pawn.real_name] took [taken] item(s) off the [machine.name]: [english_list(names)]")
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 
@@ -423,6 +426,7 @@
 		log_kitchen("[pawn.real_name] failed the [step.operation] step on [ingredient] at [target]")
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
+	sp_record("chef.prepped")
 	log_sp("[pawn.real_name] prepped [step.name]")
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 
@@ -518,6 +522,7 @@
 		// The reaction did not fire, so something was short. Empty the bowl and start over later.
 		bowl.reagents.clear_reagents()
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_record("chef.mixed")
 	log_sp("[pawn.real_name] mixed [made]")
 	// The reaction drops what it made on the floor under us; it belongs on the pile.
 	for(var/obj/item/food/fresh in get_turf(pawn))
@@ -724,6 +729,7 @@
 	var/datum/sp_supply_request/request = sp_request_supplies(/datum/supply_pack/organic/food, pawn, /area/station/service/kitchen)
 	if(isnull(request))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_record("chef.asked_cargo")
 	log_sp("[pawn.real_name] asked cargo for a food crate")
 	sp_crew_speak(pawn, pick(
 		"Kitchen's out of everything. Can I get a food crate down here?",

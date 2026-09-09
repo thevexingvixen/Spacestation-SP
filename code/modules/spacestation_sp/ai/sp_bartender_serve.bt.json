@@ -1,0 +1,39 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_bartender_serve",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_has_drink",
+	"vars": {
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_BAR_SERVE_COOLDOWN",
+			"cooldown_duration": "5 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_take_drink"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_BAR_COUNTER",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_place_drink"
+				}
+			]
+		}
+	}
+}

@@ -22,11 +22,13 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
+- `sp_bar.dm` — the drinks menu, the two dispensers, and what counts as a made drink.
 - `sp_kitchen.dm` — the prep table and counter, the prep-step table, the mixes, and the recipe scan.
 - `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
 - `ai/sp_cargo_behaviors.dm` — the quartermaster's paperwork and the technicians' hauling.
 - `ai/sp_chef_behaviors.dm` — the chef's stocking, prep, mixing, cooking and serving leaves.
 - `ai/sp_curiosity_behaviors.dm` — the idle leaves every job shares: roam, rummage, try a door.
+- `ai/sp_bartender_behaviors.dm` — the bartender's pouring, serving and glassware leaves.
 
 ## Behaviour trees (`ai/*.bt.json`, compiled into `build/behavior_trees/`)
 - `sp_crew_core` — shared priority ladder: escape captivity > defense > safety > threat > social.
@@ -74,6 +76,10 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crew_rummage` — open a locker or crate in sight and pocket anything that takes their fancy.
 - `sp_crew_try_door` — walk up to a door they have no access to and try it anyway.
 - `sp_crew_roam` — wander off to somewhere else on the station for a while.
+- `sp_bartender_pour` — take a glass to whichever tap holds the next thing the drink needs, and measure
+  it in. Most cocktails want something from each of the two dispensers, so this runs twice per glass.
+- `sp_bartender_serve` — carry the finished drink to the bar counter and call it out.
+- `sp_bartender_glasses` — buy more glasses from the dinnerware vendor when the shelf is bare.
 
 ## Conversation and standing (`sp_conversation.dm`)
 Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
@@ -282,6 +288,28 @@ The cook is an essential job, so `sp_populate_station()` fills the post before f
 the crew. There are seven heads of staff and seven essential jobs, and heads are placed first, so
 `SP_AUTOPOPULATE` below 14 will leave departments empty — the dev config ships at 16.
 
+## The bar (`sp_bar.dm`)
+Drinks are much easier than food. A cocktail is a chemical reaction rather than a crafting recipe, and
+the bar's two dispensers between them hold every base spirit and mixer, so there is no tech tree: pick
+a drink, put a glass under the tap, measure the parts in, and the reaction does the rest. What takes
+the walking is that a gin and tonic needs gin from one dispenser and tonic from the other, so most
+drinks are two trips.
+
+`GLOB.sp_cocktails` is the menu, and each entry carries the reagent it *becomes* as well as the parts
+that go in. That second field is not decoration: the reaction consumes the gin and the tonic to make
+the gin and tonic, so a glass that has just been made correctly contains neither, and asking "is it
+still short of gin?" answers yes forever. `sp_drink_ready()` asks the question the right way round.
+Without it the bartender tops the same glass up until the end of the shift and never serves anything.
+
+The dispenser has no clientless route through its interface, so `sp_dispense_into()` reproduces what
+pressing the button does — including spending the cell charge, which is what stops a bartender pouring
+out of an unpowered machine. Getting the glass in and out is real clicking: in with the glass in hand,
+out with a right-click.
+
+TG gives a bartender a bowtie, sunglasses and a box of beanbag shells, and the station has no drinking
+glasses on it anywhere, so `equip_extra_gear` hands over two boxes and they buy more from the kitchen's
+dinnerware vendor when those run out.
+
 ## Idle curiosity (`sp_curiosity.dm`)
 What a crew member does when they have nothing to do, shared by every job because it is character
 rather than work. It sits below the job subtrees and above the department wander, so it never competes
@@ -337,6 +365,48 @@ Use the launcher rather than double-clicking `tgstation.dmb`. It gets two things
 `config/dev_overrides.txt` (gitignored; copy from `../../docs/dev_overrides.example.txt`) enables
 AUTOADMIN, a 10 s lobby, `RESUME_AFTER_INITIALIZATIONS` for headless tests, `SP_AUTOPOPULATE`, and
 the engine settings.
+
+## Testing
+
+There are two loops, and the first one is the one to reach for.
+
+### Unit tests (fast, deterministic, gives a verdict)
+`code/modules/unit_tests/spacestation_sp.dm`. Emergent crew are miserable to check by playing: you
+start a round, wait, grep the log for a hopeful string, and silence tells you nothing — a behaviour
+that is broken and a behaviour that has not come up yet look identical. Every bug that has actually
+bitten this module has lived in ordinary deterministic logic, so that is what these assert:
+
+- `sp_finished_dish` — a cheese sandwich is dinner, dough is not, a bread slice is a component, raw
+  meat is raw. This is the exact rule that once classified every sandwich as an ingredient and left the
+  counter empty for a whole session.
+- `sp_prep_steps` / `sp_kitchen_mixes` / `sp_cocktails` — the data tables are real typepaths, the tools
+  named are actually tools, and every drink on the bar menu comes out of a tap the bar actually has.
+- `sp_pour_a_drink` — pours a gin and tonic out of both dispensers and asserts the reaction fired.
+- `sp_cook_a_dish` — stands a chef beside bread and cheese, asserts a cheese sandwich is craftable,
+  crafts it, and asserts the result is servable. The whole pipeline, in milliseconds.
+- `sp_curiosity` — tastes are respected, IDs are never pocketed, interests roll without duplicates.
+- `sp_behaviour_trees` — every SP controller points at a tree that was actually compiled.
+
+```
+tools\build\build.bat build --define=CIBUILDING
+E:\games\BYOND\bin\dd.exe tgstation.dmb -close -trusted -verbose -params log-directory=ci > tests.out
+```
+`PASS`/`FAIL` lines go to stdout, so capture it; `data/logs/ci/clean_run.lk` says `Success!` when the
+whole suite passed. Stop any running server first — a live `dd.exe` holds `tgstation.rsc` open and the
+compile fails with a confusing "cannot find file" on an unrelated resource.
+
+### Live rounds (for what only emerges in play)
+Some things genuinely only show up with a station running — pathing, whether a chef can reach the
+coldroom, whether anybody ever walks past a locker. For those, `SSspacestation_sp` keeps a tally of
+everything the crew actually manage and prints it every two minutes:
+
+```
+SP: tally: bar.served=2 chef.cooked=7 chef.served=3 crew.door_refused=11 crew.pocketed=1
+```
+
+That is the difference between "nothing happened" and an answer. `crew.door_refused=11` with
+`crew.pocketed=0` says door-trying works and rummaging does not, which is a bug report rather than a
+shrug. The same counts are on the Debug tab as **SP: Behaviour Tally**, and in `stat_entry`.
 
 ## Headless test loop
 ```

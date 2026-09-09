@@ -305,3 +305,23 @@
 #define SP_RUMMAGE_TAKE_LIMIT 2
 /// How many interests each character rolls.
 #define SP_INTEREST_COUNT 4
+
+// --- Bar ---------------------------------------------------------------------------------------------
+
+/// The /datum/sp_cocktail we are making, and the glass we are making it in.
+#define BB_SP_DRINK "sp_drink"
+#define BB_SP_GLASS "sp_glass"
+/// The dispenser holding the next thing that has to go in the glass.
+#define BB_SP_DISPENSER "sp_dispenser"
+/// The bar counter finished drinks go out on.
+#define BB_SP_BAR_COUNTER "sp_bar_counter"
+/// Cooldowns for pouring, serving, and fetching more glassware.
+#define BB_SP_POUR_COOLDOWN "sp_pour_cooldown"
+#define BB_SP_BAR_SERVE_COOLDOWN "sp_bar_serve_cooldown"
+#define BB_SP_GLASSWARE_COOLDOWN "sp_glassware_cooldown"
+
+/// How many drinks may stand on the counter untouched before the bartender stops pouring.
+#define SP_BAR_COUNTER_LIMIT 5
+
+/// How often the round prints what the AI crew have actually managed to do.
+#define SP_TALLY_INTERVAL (2 MINUTES)

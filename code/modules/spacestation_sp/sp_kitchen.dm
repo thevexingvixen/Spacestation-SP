@@ -69,36 +69,50 @@
 			best_distance = distance
 	return best
 
-/**
- * The counter: a kitchen table with an open tile on the other side that is not the kitchen. That is
- * the serving hatch on every map that has one, and the crew sit on the far side of it.
- */
+/// The kitchen's counter.
 /proc/sp_find_counter(mob/living/carbon/human/chef)
-	var/turf/origin = get_turf(chef)
-	if(isnull(origin))
+	return sp_find_service_counter(chef, sp_kitchen_areas())
+
+/**
+ * The counter of a service department: one of its tables with an open tile on the other side that is
+ * not part of the department. That is the serving hatch on every map that has one — on MetaStation it
+ * picks out exactly the row of kitchen tables the bar stools face, and the bar's own counter likewise.
+ * Falls back to any table in the department, so a map without a hatch still gets somewhere to put things.
+ */
+/proc/sp_find_service_counter(mob/living/carbon/human/crew, list/department_areas)
+	var/turf/origin = get_turf(crew)
+	if(isnull(origin) || !length(department_areas))
 		return null
 	var/obj/structure/table/best
 	var/best_distance = INFINITY
-	for(var/turf/candidate as anything in sp_kitchen_turfs(origin.z))
+	var/obj/structure/table/fallback
+	var/fallback_distance = INFINITY
+	var/list/turf/department_turfs = list()
+	for(var/area_type in department_areas)
+		department_turfs += get_area_turfs(area_type, origin.z)
+	for(var/turf/candidate as anything in department_turfs)
 		var/obj/structure/table/table = locate() in candidate
 		if(isnull(table))
 			continue
+		var/distance = get_dist(origin, table)
+		if(distance < fallback_distance)
+			fallback = table
+			fallback_distance = distance
 		var/faces_out = FALSE
 		for(var/direction in GLOB.cardinals)
 			var/turf/beyond = get_step(candidate, direction)
 			if(!isopenturf(beyond) || isspaceturf(beyond))
 				continue
 			var/area/beyond_area = get_area(beyond)
-			if(beyond_area && !(beyond_area.type in sp_kitchen_areas()))
+			if(beyond_area && !(beyond_area.type in department_areas))
 				faces_out = TRUE
 				break
 		if(!faces_out)
 			continue
-		var/distance = get_dist(origin, table)
 		if(distance < best_distance)
 			best = table
 			best_distance = distance
-	return best
+	return best || fallback
 
 /// The nearest working machine of this type inside the kitchen.
 /proc/sp_find_kitchen_machine(mob/living/carbon/human/chef, machine_type)
@@ -612,26 +626,7 @@ GLOBAL_LIST_INIT(sp_kitchen_stock_blacklist, typecacheof(list(
 
 /// Buys one bowl out of the chef's own wages, the way the botanist buys seeds.
 /proc/sp_buy_bowl(mob/living/carbon/human/chef, obj/machinery/vending/dinnerware/vendor)
-	if(QDELETED(vendor) || QDELETED(chef))
-		return null
-	var/datum/data/vending_product/chosen
-	for(var/datum/data/vending_product/record as anything in vendor.product_records)
-		if(record.product_path == /obj/item/reagent_containers/cup/bowl && record.amount > 0)
-			chosen = record
-			break
-	if(isnull(chosen))
-		return null
-	var/price = vendor.all_products_free ? 0 : (chosen.price || vendor.default_price)
-	if(price > 0)
-		var/obj/item/card/id/id_card = chef.get_idcard(hand_first = FALSE)
-		var/datum/bank_account/account = id_card?.registered_account
-		if(isnull(account) || !account.adjust_money(-price, "Vending: [chosen.name]"))
-			return null
-	var/obj/item/bought = vendor.dispense(chosen, get_turf(chef))
-	if(isnull(bought))
-		return null
-	log_sp("[chef.real_name] bought a bowl from the dinnerware vendor for [price] credits")
-	return bought
+	return sp_vend_product(chef, vendor, /obj/item/reagent_containers/cup/bowl)
 
 /// The ingredients inside a fridge, cabinet or smartfridge.
 /proc/sp_stock_in(atom/store)

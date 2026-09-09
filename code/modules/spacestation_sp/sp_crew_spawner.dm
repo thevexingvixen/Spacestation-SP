@@ -70,6 +70,8 @@
 		return /datum/ai_controller/sp_crew/botanist
 	if(istype(job, /datum/job/cook))
 		return /datum/ai_controller/sp_crew/chef
+	if(istype(job, /datum/job/bartender))
+		return /datum/ai_controller/sp_crew/bartender
 	if(istype(job, /datum/job/quartermaster))
 		return /datum/ai_controller/sp_crew/cargo/quartermaster
 	if(/datum/job_department/cargo in job.departments_list)
@@ -89,6 +91,7 @@
 		/datum/job/doctor,
 		/datum/job/botanist,
 		/datum/job/cook,
+		/datum/job/bartender,
 		/datum/job/quartermaster,
 		/datum/job/cargo_technician,
 	)
@@ -122,7 +125,7 @@
 		return 0
 
 	// Heads first so the station has a command structure, then one of each essential job, then the rest
-	// shuffled. There are seven heads and seven essentials, so SP_AUTOPOPULATE below 14 will not staff
+	// shuffled. There are seven heads and eight essentials, so SP_AUTOPOPULATE below 15 will not staff
 	// every department.
 	var/list/datum/job/heads = list()
 	var/list/datum/job/essentials = list()

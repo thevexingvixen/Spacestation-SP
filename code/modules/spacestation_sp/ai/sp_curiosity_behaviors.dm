@@ -113,6 +113,7 @@
 	if(!async_still_valid())
 		return
 	if(taken)
+		sp_record("crew.pocketed")
 		log_sp("[pawn.real_name] helped themselves to [english_list(names)] from [container.name] in [get_area_name(container)]")
 		crew_controller.remark_on_find(names)
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
@@ -177,6 +178,7 @@
 
 	if(!door.density)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED // it opened after all; nothing to be sour about
+	sp_record("crew.door_refused")
 	log_sp("[pawn.real_name] tried [door.name] in [get_area_name(door)] and was refused")
 	crew_controller.on_door_denied(door)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED

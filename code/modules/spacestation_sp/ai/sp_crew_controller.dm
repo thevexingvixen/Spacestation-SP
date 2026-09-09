@@ -44,7 +44,9 @@
 	RegisterSignal(human_pawn, COMSIG_MOVABLE_BUMP, PROC_REF(on_bump))
 	// Until a proper needs subtree exists, AI crew do not starve. Documented limitation.
 	ADD_TRAIT(human_pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
-	set_blackboard_key(BB_SP_INTERESTS, sp_roll_interests())
+	// A list value has to go in with override_blackboard_key: set_blackboard_key refuses to write over
+	// one, and the CRASH left every crew member with no tastes at all, so nothing was ever worth taking.
+	override_blackboard_key(BB_SP_INTERESTS, sp_roll_interests())
 	setup_job_blackboard(human_pawn)
 	return ..()
 
@@ -509,4 +511,32 @@
 			"I'm not making anything special until somebody asks nicely.",
 		),
 		BB_EMOTE_SEE = list("wipes down a knife.", "checks the oven.", "tastes something and frowns."),
+	))
+
+/// Bartender: mixes drinks at the taps and lines them up on the bar.
+/datum/ai_controller/sp_crew/bartender
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_bartender.bt.json"
+
+/**
+ * TG gives a bartender a bowtie, sunglasses and a box of beanbag shells, and no glassware whatsoever.
+ * The station has no glasses on it either — the boozeomat sells bottles, not glasses — so without a
+ * couple of boxes there is nothing to pour into. They buy more from the kitchen's dinnerware vendor,
+ * which is next door on most maps, when these run out.
+ */
+/datum/ai_controller/sp_crew/bartender/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	for(var/box in 1 to 2)
+		human_pawn.equip_to_storage(new /obj/item/storage/box/drinkingglasses(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
+/datum/ai_controller/sp_crew/bartender/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	set_blackboard_key(BB_SP_WANDER_AREAS, sp_bar_areas())
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"What'll it be?",
+			"Everything on the bar is free. That's the arrangement.",
+			"I don't want to hear about your shift. I want to hear your order.",
+			"There's a reason the good stuff is behind me.",
+			"One each. I'm not carrying anybody to medbay tonight.",
+		),
+		BB_EMOTE_SEE = list("polishes a glass.", "wipes down the bar.", "checks the taps."),
 	))

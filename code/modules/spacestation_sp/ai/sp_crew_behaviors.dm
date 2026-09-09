@@ -114,6 +114,35 @@
 	return controller.ai_interact(target, combat_mode = FALSE, modifiers = modifiers)
 
 /**
+ * Buys one of something out of a vending machine, paid for from the buyer's own wages.
+ *
+ * Service departments are short of their own glassware — TG hands a chef no bowls and a bartender no
+ * glasses — and the vendor that stocks them charges. Returns the item, or null if it is sold out, the
+ * machine is dead, or they cannot afford it.
+ */
+/proc/sp_vend_product(mob/living/carbon/human/buyer, obj/machinery/vending/vendor, product_path)
+	if(QDELETED(vendor) || QDELETED(buyer) || !vendor.is_operational)
+		return null
+	var/datum/data/vending_product/chosen
+	for(var/datum/data/vending_product/record as anything in vendor.product_records)
+		if(record.product_path == product_path && record.amount > 0)
+			chosen = record
+			break
+	if(isnull(chosen))
+		return null
+	var/price = vendor.all_products_free ? 0 : (chosen.price || vendor.default_price)
+	if(price > 0)
+		var/obj/item/card/id/id_card = buyer.get_idcard(hand_first = FALSE)
+		var/datum/bank_account/account = id_card?.registered_account
+		if(isnull(account) || !account.adjust_money(-price, "Vending: [chosen.name]"))
+			return null
+	var/obj/item/bought = vendor.dispense(chosen, get_turf(buyer))
+	if(isnull(bought))
+		return null
+	log_sp("[buyer.real_name] bought [bought.name] from [vendor.name] for [price] credits")
+	return bought
+
+/**
  * Speaks for an AI crew member. If `channel` is given and the crew member wears a headset that has that
  * channel (common is on every headset), the line goes over the radio; otherwise it is said out loud.
  */
