@@ -57,12 +57,56 @@
 					]
 				},
 				{
-					"type": "leaf",
-					"behavior": "/datum/bt_node/ai_behavior/sp_find_kitchen"
+					"type": "selector",
+					"children": [
+						{
+							"type": "decorator",
+							"decorator": "/datum/bt_node/decorator/sp_request_needs_cooking",
+							"child": {
+								"type": "decorator",
+								"decorator": "/datum/bt_node/decorator/cooldown",
+								"vars": {
+									"cooldown_key": "BB_SP_COOK_COOLDOWN",
+									"cooldown_duration": "2 MINUTES",
+									"lock_on_succeed": false
+								},
+								"child": {
+									"type": "sequence",
+									"children": [
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_find_microwave"
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+											"vars": {
+												"target_key": "BB_SP_MICROWAVE_SPOT",
+												"required_dist": 0,
+												"finish_on_arrival": true
+											}
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_microwave_request"
+										}
+									]
+								}
+							}
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/succeed"
+						}
+					]
 				},
 				{
 					"type": "leaf",
-					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_produce_drop"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
 					"vars": {
 						"target_key": "BB_SP_DELIVERY_TARGET",
 						"required_dist": 1,

@@ -67,13 +67,20 @@
  * the shuttle leaves, and it takes the whole crew with it to a z-level their department is not on.
  * Nobody is watching at this point in the round, so placing them where they were assigned is both
  * honest and the only thing that works.
+ *
+ * Assistants have no department to start in, and one of MetaStation's assistant spawn points is inside
+ * the cargo delivery office, behind shipping-access doors and delivery flaps that no standing person gets
+ * through. A player crawls under the flaps; the assistant who spawned there spent the round walking into
+ * them. An assistant who starts anywhere but their usual haunts starts in one of those instead.
  */
 /proc/sp_send_to_post(mob/living/carbon/human/crew, datum/ai_controller/sp_crew/controller)
 	var/area/where = get_area(crew)
-	if(isnull(where) || !(istype(where, /area/shuttle/arrival) || istype(where, /area/station/hallway/secondary/entry)))
-		return FALSE
 	var/list/post_areas = controller?.blackboard[BB_SP_WANDER_AREAS]
-	if(!length(post_areas))
+	if(isnull(where) || !length(post_areas))
+		return FALSE
+	var/stranded = istype(where, /area/shuttle/arrival) || istype(where, /area/station/hallway/secondary/entry)
+	var/shut_in = istype(controller, /datum/ai_controller/sp_crew/assistant) && !(where.type in post_areas)
+	if(!stranded && !shut_in)
 		return FALSE
 	var/turf/here = get_turf(crew)
 	for(var/area_type in shuffle(post_areas.Copy()))
@@ -85,12 +92,16 @@
 			if(spot.density || isgroundlessturf(spot) || spot.is_blocked_turf(exclude_mobs = TRUE))
 				continue
 			crew.forceMove(spot)
-			log_sp("[crew.real_name] was assigned to [get_area_name(spot)] rather than left on the arrival shuttle")
+			log_sp("[crew.real_name] was assigned to [get_area_name(spot)] rather than left in [where.name]")
 			return TRUE
 	return FALSE
 
 /// Picks the AI controller type for a job based on its department.
 /proc/sp_controller_for_job(datum/job/job)
+	if(is_assistant_job(job))
+		return /datum/ai_controller/sp_crew/assistant
+	if(istype(job, /datum/job/chemist))
+		return /datum/ai_controller/sp_crew/medical/chemist
 	if(/datum/job_department/medical in job.departments_list)
 		return /datum/ai_controller/sp_crew/medical
 	if(/datum/job_department/security in job.departments_list)
@@ -120,6 +131,7 @@
 		/datum/job/station_engineer,
 		/datum/job/security_officer,
 		/datum/job/doctor,
+		/datum/job/chemist,
 		/datum/job/botanist,
 		/datum/job/cook,
 		/datum/job/bartender,
@@ -137,6 +149,9 @@
 		if(job.spawn_type != /mob/living/carbon/human)
 			continue
 		if(job.spawn_positions == 0)
+			continue
+		// Assistants come separately, as many as SP_ASSISTANTS_MIN and MAX say (sp_spawn_assistants).
+		if(is_assistant_job(job))
 			continue
 		pool += job
 	return pool
@@ -156,7 +171,7 @@
 		return 0
 
 	// Heads first so the station has a command structure, then one of each essential job, then the rest
-	// shuffled. There are seven heads and eight essentials, so SP_AUTOPOPULATE below 15 will not staff
+	// shuffled. There are seven heads and nine essentials, so SP_AUTOPOPULATE below 16 will not staff
 	// every department.
 	var/list/datum/job/heads = list()
 	var/list/datum/job/essentials = list()
@@ -199,4 +214,18 @@
 		// Deliberately no CHECK_TICK: at round start we run from an async OnRoundstart callback and
 		// SSticker.PostSetup() deletes the roundstart landmarks as soon as we yield. Spawning the whole
 		// batch in one tick keeps everyone in their department instead of falling back to arrivals.
+	return spawned
+
+/// Spawns `count` AI assistants, the station's greytide. Returns how many made it.
+/proc/sp_spawn_assistants(count, latejoin = null)
+	if(isnull(latejoin))
+		latejoin = SSticker.HasRoundStarted()
+	var/datum/job/assistant = SSjob.get_job_type(/datum/job/assistant)
+	if(isnull(assistant))
+		return 0
+	var/spawned = 0
+	for(var/i in 1 to count)
+		if(isnull(sp_spawn_crew_member(assistant, latejoin = latejoin)))
+			break
+		spawned++
 	return spawned

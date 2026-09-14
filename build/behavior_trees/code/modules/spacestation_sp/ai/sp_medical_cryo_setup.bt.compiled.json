@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/sp_cryo_needs_setup","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_plan_cryo_task"},{"type":"/datum/bt_node/ai_behavior/move_to_target","target_key":"sp_cryo_target","required_dist":1,"finish_on_arrival":true},{"type":"/datum/bt_node/ai_behavior/sp_do_cryo_task"}]}]}

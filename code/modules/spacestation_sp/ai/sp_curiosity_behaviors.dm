@@ -82,40 +82,15 @@
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/datum/ai_controller/sp_crew/crew_controller = controller
 	var/obj/structure/closet/container = rummage_container
-	sp_free_hands(pawn)
-
-	if(container.locked)
-		sp_ai_click(controller, container, list(RIGHT_CLICK = "1"))
-	if(!container.opened)
-		sp_ai_click(controller, container)
-	if(!container.opened)
-		if(async_still_valid())
-			finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
-		return
-
-	var/list/obj/item/tempting = sp_tempting_contents(container, crew_controller)
-	var/taken = 0
-	var/list/names = list()
-	for(var/obj/item/thing as anything in tempting)
-		if(taken >= SP_RUMMAGE_TAKE_LIMIT)
-			break
-		if(!pawn.back || !thing.forceMove(pawn.back))
-			if(!pawn.put_in_hands(thing))
-				continue
-		names |= thing.name
-		taken++
-
-	// Shut it behind us. An ordinary crew member is nosy, not a vandal — leaving lockers hanging open
-	// is a greytide tell, and a greytide controller will want to skip this.
-	if(container.opened)
-		sp_ai_click(controller, container)
-
+	var/list/names = sp_rummage_container(crew_controller, container)
 	if(!async_still_valid())
 		return
-	if(taken)
-		sp_record("crew.pocketed")
-		log_sp("[pawn.real_name] helped themselves to [english_list(names)] from [container.name] in [get_area_name(container)]")
-		crew_controller.remark_on_find(names)
+	if(!length(names))
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	sp_record("crew.pocketed")
+	log_sp("[pawn.real_name] helped themselves to [english_list(names)] from [container.name] in [get_area_name(container)]")
+	crew_controller.remark_on_find(names)
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 
 /datum/bt_node/ai_behavior/sp_rummage/finish_action(datum/ai_controller/controller, succeeded)
@@ -135,6 +110,40 @@
 		"Finders keepers.",
 		"Somebody left [english_list(names)] lying about.",
 	))
+
+// --- Pocketing something off the floor --------------------------------------------------------------
+
+/// Finds something lying on the floor nearby that we fancy.
+/datum/bt_node/ai_behavior/sp_find_loose_item
+	time_between_perform = 5 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_loose_item/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/datum/ai_controller/sp_crew/crew_controller = controller
+	if(!istype(pawn) || !istype(crew_controller))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/item/thing = sp_find_loose_item(pawn, crew_controller, controller.blackboard[BB_SP_LOOT_IGNORE])
+	if(isnull(thing))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_LOOT_TARGET, thing)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Standing over it: picks it up.
+/datum/bt_node/ai_behavior/sp_pocket_item
+
+/datum/bt_node/ai_behavior/sp_pocket_item/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/datum/ai_controller/sp_crew/crew_controller = controller
+	var/obj/item/thing = controller.blackboard[BB_SP_LOOT_TARGET]
+	controller.clear_blackboard_key(BB_SP_LOOT_TARGET)
+	if(!istype(pawn) || !istype(crew_controller) || QDELETED(thing) || !isturf(thing.loc) || !pawn.Adjacent(thing))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// However it goes, we have had our look at this one.
+	controller.set_blackboard_key_assoc_lazylist(BB_SP_LOOT_IGNORE, thing, world.time + SP_LOOT_IGNORE_TIME)
+	pawn.face_atom(thing)
+	if(!sp_pocket_loose_item(crew_controller, thing))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 // --- Trying doors ----------------------------------------------------------------------------------
 

@@ -1,0 +1,43 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_scheme",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_has_active_scheme",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_SCHEME_COOLDOWN",
+			"cooldown_duration": "3 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_scheme_goal"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+					"vars": {
+						"target_key": "BB_SP_SCHEME_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_take_scheme_item"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "2 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

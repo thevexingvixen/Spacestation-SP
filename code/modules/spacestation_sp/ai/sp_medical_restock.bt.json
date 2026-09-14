@@ -1,0 +1,49 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_medical_restock",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_needs_restock",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_RESTOCK_COOLDOWN",
+			"cooldown_duration": "30 SECONDS",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "selector",
+			"children": [
+				{
+					"type": "sequence",
+					"children": [
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_find_supply_store"
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+							"vars": {
+								"target_key": "BB_SP_RESTOCK_TARGET",
+								"required_dist": 1,
+								"finish_on_arrival": true
+							}
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_take_supplies"
+						}
+					]
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_ask_cargo_for_supplies"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_ask_botany_for_aloe"
+				}
+			]
+		}
+	}
+}

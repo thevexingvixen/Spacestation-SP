@@ -1,0 +1,43 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_greytide_try_door",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_tries_doors",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_DOOR_COOLDOWN",
+			"cooldown_duration": "2 MINUTES",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_find_locked_door"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+					"vars": {
+						"target_key": "BB_SP_DOOR_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_try_door"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/wait",
+					"vars": {
+						"duration": "4 SECONDS"
+					}
+				}
+			]
+		}
+	}
+}

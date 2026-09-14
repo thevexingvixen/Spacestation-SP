@@ -1,0 +1,12 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_patient",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_under_care",
+	"vars": {
+		"observer_abort": "BT_ABORT_BOTH"
+	},
+	"child": {
+		"type": "leaf",
+		"behavior": "/datum/bt_node/ai_behavior/sp_hold_still"
+	}
+}

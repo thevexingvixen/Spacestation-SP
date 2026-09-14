@@ -141,6 +141,109 @@ GLOBAL_LIST_INIT(sp_interest_blacklist, typecacheof(list(
 			wanted += thing
 	return wanted
 
+/**
+ * Opens a container, takes what this person fancies out of it, and shuts it again unless they are the
+ * sort to leave it hanging open. Returns the names of what was taken. Sleeps.
+ */
+/proc/sp_rummage_container(datum/ai_controller/sp_crew/controller, obj/structure/closet/container)
+	var/mob/living/carbon/human/pawn = controller?.pawn
+	var/list/names = list()
+	if(!istype(pawn) || QDELETED(container))
+		return names
+	sp_free_hands(pawn)
+	// What we fancy, picked out before it is opened: TG's closets tip their whole contents onto the floor
+	// as they open, so a look inside afterwards finds an empty box and everybody goes home empty-handed.
+	var/list/obj/item/tempting = sp_tempting_contents(container, controller)
+	var/unlocked_it = FALSE
+	if(container.locked)
+		sp_ai_click(controller, container, list(RIGHT_CLICK = "1"))
+		unlocked_it = !container.locked
+	if(!container.opened)
+		sp_ai_click(controller, container)
+	if(!container.opened)
+		sp_relock(controller, container, unlocked_it)
+		return names
+	var/taken = 0
+	for(var/obj/item/thing as anything in tempting)
+		if(taken >= controller.rummage_take_limit())
+			break
+		if(QDELETED(thing))
+			continue
+		if(!(pawn.back && thing.forceMove(pawn.back)) && !pawn.put_in_hands(thing))
+			continue
+		names |= thing.name
+		taken++
+	// Shut it behind us. An ordinary crew member is nosy, not a vandal; leaving lockers hanging open is a
+	// greytide tell, and the assistants do (closes_lockers()).
+	if(container.opened && controller.closes_lockers())
+		sp_ai_click(controller, container)
+	sp_relock(controller, container, unlocked_it)
+	return names
+
+/**
+ * Locks a closet again if we were the ones who unlocked it. A research director who took their headset out and
+ * left the locker unlocked behind them left it for the next scientist to help themselves, and one did.
+ * Sleeps, like any click.
+ */
+/proc/sp_relock(datum/ai_controller/controller, obj/structure/closet/container, unlocked_it)
+	if(!unlocked_it || QDELETED(container) || container.opened || container.locked)
+		return
+	sp_ai_click(controller, container, list(RIGHT_CLICK = "1"))
+
+// --- Things lying about ----------------------------------------------------------------------------
+
+/**
+ * Rooms where something on the floor is somebody's work in progress rather than a find: the botanist's
+ * harvest lands at their feet before they gather it, and the chef stocks up off the kitchen floor.
+ */
+GLOBAL_LIST_INIT(sp_no_pocketing_areas, typecacheof(list(
+	/area/station/service/hydroponics,
+	/area/station/service/kitchen,
+)))
+
+/**
+ * Something worth picking up off the floor. Only the floor: anything on a table or a rack was put there
+ * by somebody — the chef's ingredients, the chemist's patches, a beaker of cryoxadone waiting for a tube —
+ * and helping yourself to that is theft rather than magpie curiosity.
+ */
+/proc/sp_find_loose_item(mob/living/carbon/human/crew, datum/ai_controller/sp_crew/controller, list/ignored)
+	if(QDELETED(crew) || isnull(controller))
+		return null
+	var/obj/item/best
+	var/best_distance = INFINITY
+	for(var/obj/item/thing in oview(SP_CURIOSITY_RANGE, crew))
+		if(!isturf(thing.loc) || thing.anchored)
+			continue
+		if(ignored?[thing] > world.time)
+			continue
+		if((locate(/obj/structure/table) in thing.loc) || (locate(/obj/structure/rack) in thing.loc))
+			continue
+		// Held in a variable: is_type_in_typecache() is a macro, and a get_area() call inside it does not parse.
+		var/area/thing_area = get_area(thing)
+		if(is_type_in_typecache(thing_area, GLOB.sp_no_pocketing_areas))
+			continue
+		if(!controller.wants_item(thing))
+			continue
+		var/distance = get_dist(crew, thing)
+		if(distance >= best_distance)
+			continue
+		best = thing
+		best_distance = distance
+	return best
+
+/// Picks something up off the floor: into the bag if it fits, otherwise a hand. TRUE if we have it.
+/proc/sp_pocket_loose_item(datum/ai_controller/sp_crew/controller, obj/item/thing)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn) || QDELETED(thing))
+		return FALSE
+	var/thing_name = thing.name
+	if(!(pawn.back && thing.forceMove(pawn.back)) && !pawn.put_in_hands(thing))
+		return FALSE
+	sp_record("crew.pocketed")
+	log_sp("[pawn.real_name] picked [thing_name] up off the floor in [get_area_name(pawn)]")
+	controller.remark_on_find(list(thing_name))
+	return TRUE
+
 // --- Doors -----------------------------------------------------------------------------------------
 
 /**

@@ -116,11 +116,21 @@
 
 // --- Cargo technicians: hauling ------------------------------------------------------------------
 
-/// Finds a crate on the shuttle and works out where it belongs.
+/**
+ * Finds a crate on the shuttle and works out where it belongs. Async for a crate somebody asked for: how close
+ * to them a technician can actually get is a question for the pathfinder, and the pathfinder makes you wait.
+ */
 /datum/bt_node/ai_behavior/sp_find_crate
 	time_between_perform = 3 SECONDS
+	/// Held across the async half: the crate, the request it answers, and the spot in their department.
+	VAR_PRIVATE/obj/structure/closet/crate/planned_crate
+	VAR_PRIVATE/datum/sp_supply_request/planned_request
+	VAR_PRIVATE/turf/planned_spot
 
 /datum/bt_node/ai_behavior/sp_find_crate/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/async_flags = handle_async()
+	if(async_flags)
+		return async_flags
 	var/mob/living/carbon/human/pawn = controller.pawn
 	if(!istype(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
@@ -140,6 +150,7 @@
 		if(pawn.pulling == carrying)
 			pawn.stop_pulling()
 		log_sp("[pawn.real_name] gave up hauling [carrying.name] in [get_area_name(carrying)]")
+		controller.clear_blackboard_key(BB_SP_CRATE_FOR)
 		controller.clear_blackboard_key(BB_SP_CRATE)
 		controller.clear_blackboard_key(BB_SP_CRATE_DESTINATION)
 		controller.clear_blackboard_key(BB_SP_CRATE_ANNOUNCE)
@@ -148,21 +159,54 @@
 	var/obj/structure/closet/crate/crate = sp_find_crate_on_shuttle(pawn)
 	if(QDELETED(crate))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// Ours from here, before the walk over, so the other technician picks a different one.
+	controller.set_blackboard_key(BB_SP_CRATE, crate)
 
 	// A crate somebody asked for goes to them; anything else just comes off the shuttle.
-	var/turf/destination
 	var/datum/sp_supply_request/request = sp_request_for_crate(crate)
+	var/turf/spot
 	if(!isnull(request))
-		destination = sp_find_delivery_spot(request.area_type, get_turf(crate))
-		if(!isnull(destination))
-			request.status = SP_REQUEST_DELIVERED
-			controller.set_blackboard_key(BB_SP_CRATE_ANNOUNCE, request.requester_name)
-	if(isnull(destination))
-		destination = sp_find_cargo_dropoff(pawn)
-	if(isnull(destination))
-		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+		spot = sp_find_delivery_spot(request.area_type, get_turf(crate))
+	if(isnull(spot))
+		return sp_start_haul(controller, sp_find_cargo_dropoff(pawn))
+	planned_crate = crate
+	planned_request = request
+	planned_spot = spot
+	return start_async()
 
-	controller.set_blackboard_key(BB_SP_CRATE, crate)
+/datum/bt_node/ai_behavior/sp_find_crate/perform_async(datum/ai_controller/controller)
+	var/turf/spot = sp_reachable_drop_spot(controller.pawn, planned_spot)
+	if(!async_still_valid())
+		return
+	if(QDELETED(planned_crate) || planned_request.status != SP_REQUEST_ORDERED)
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	if(isnull(spot))
+		// No way there even with every door open: it waits in the bay like anything else.
+		finish_async(sp_start_haul(controller, sp_find_cargo_dropoff(controller.pawn)))
+		return
+	planned_request.status = SP_REQUEST_DELIVERED
+	planned_request.crate = WEAKREF(planned_crate)
+	controller.set_blackboard_key(BB_SP_CRATE_ANNOUNCE, planned_request.requester_name)
+	controller.set_blackboard_key(BB_SP_CRATE_FOR, planned_request.requester_name)
+	finish_async(sp_start_haul(controller, spot))
+
+/datum/bt_node/ai_behavior/sp_find_crate/finish_action(datum/ai_controller/controller, succeeded)
+	// A crate we claimed but never set off with goes back to the pool.
+	if(!succeeded && !controller.blackboard[BB_SP_CRATE_DESTINATION])
+		controller.clear_blackboard_key(BB_SP_CRATE)
+		controller.clear_blackboard_key(BB_SP_CRATE_FOR)
+		controller.clear_blackboard_key(BB_SP_CRATE_ANNOUNCE)
+	planned_crate = null
+	planned_request = null
+	planned_spot = null
+	return ..()
+
+/// Sets a claimed crate off towards `destination`, or lets it go again if there is nowhere to take it.
+/proc/sp_start_haul(datum/ai_controller/controller, turf/destination)
+	if(isnull(destination))
+		controller.clear_blackboard_key(BB_SP_CRATE)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	controller.set_blackboard_key(BB_SP_CRATE_DESTINATION, destination)
 	controller.set_blackboard_key(BB_SP_HAUL_DEADLINE, world.time + SP_HAUL_TIMEOUT)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
@@ -177,6 +221,9 @@
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	if(pawn.pulling == crate)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+	// Somebody else has hold of it. Taking the pull off them only starts a tug of war that nobody wins.
+	if(!isnull(crate.pulledby))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.start_pulling(crate, supress_message = TRUE)
 	if(pawn.pulling != crate)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
@@ -197,6 +244,12 @@
 		pawn.stop_pulling()
 	if(!QDELETED(crate))
 		log_sp("[pawn?.real_name] left [crate.name] in [get_area_name(crate)]")
+		// Tell whoever asked where it ended up, which is short of their department when the door was not ours to open.
+		var/for_whom = controller.blackboard[BB_SP_CRATE_FOR]
+		if(for_whom && istype(pawn))
+			sp_record("cargo.delivered")
+			sp_crew_speak(pawn, "[for_whom], your [crate.name] is in [get_area_name(crate)].", RADIO_CHANNEL_COMMON)
+	controller.clear_blackboard_key(BB_SP_CRATE_FOR)
 	controller.clear_blackboard_key(BB_SP_CRATE)
 	controller.clear_blackboard_key(BB_SP_CRATE_DESTINATION)
 	controller.clear_blackboard_key(BB_SP_HAUL_DEADLINE)

@@ -1,0 +1,27 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_medical_cryo_setup",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_cryo_needs_setup",
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_plan_cryo_task"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"vars": {
+					"target_key": "BB_SP_CRYO_TARGET",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_do_cryo_task"
+			}
+		]
+	}
+}

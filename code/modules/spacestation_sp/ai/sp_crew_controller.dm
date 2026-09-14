@@ -85,6 +85,19 @@
 /datum/ai_controller/sp_crew/proc/may_try_doors()
 	return TRUE
 
+/// Whether we tell anyone about a crime we see (sp_crime.dm). Not while we have a scheme of our own on the go:
+/// drawing security's attention is the last thing we want.
+/datum/ai_controller/sp_crew/proc/reports_crimes()
+	return isnull(blackboard[BB_SP_SCHEME])
+
+/// Whether we shut a locker again after going through it. A greytider leaves it hanging open.
+/datum/ai_controller/sp_crew/proc/closes_lockers()
+	return TRUE
+
+/// How many things we take from one locker.
+/datum/ai_controller/sp_crew/proc/rummage_take_limit()
+	return SP_RUMMAGE_TAKE_LIMIT
+
 /**
  * The door said no. Crew take it personally for about a second and then get on with their shift; this
  * is the hook a greytider overrides to reach for a crowbar instead.
@@ -102,19 +115,62 @@
 		"Huh. Thought that one was open.",
 	))
 
+/// Being seen out of medbay (sp_see_out()): for a while our route may go through its doors.
+/datum/ai_controller/sp_crew/get_access()
+	. = ..()
+	if(blackboard[BB_SP_SHOWN_OUT_UNTIL] > world.time)
+		var/list/ours = islist(.) ? . : list()
+		. = ours | SSid_access.get_region_access_list(list(REGION_MEDBAY))
+
 /datum/ai_controller/sp_crew/UnpossessPawn(destroy)
 	if(!isnull(pawn))
 		REMOVE_TRAIT(pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
 		UnregisterSignal(pawn, list(COMSIG_ATOM_WAS_ATTACKED, COMSIG_MOVABLE_PRE_HEAR, COMSIG_MOVABLE_BUMP, COMSIG_MOB_INCAPACITATE_CHANGED, COMSIG_DO_AFTER_BEGAN, COMSIG_DO_AFTER_ENDED))
 	return ..()
 
-/// Walked into a closed firelock: push it open, the way a crew member would, so we can keep going.
+/**
+ * Walked into something. A closed firelock is pushed open, the way a crew member would, so we can keep going;
+ * an animal that will not let us past is stepped round.
+ */
 /datum/ai_controller/sp_crew/proc/on_bump(datum/source, atom/bumped)
 	SIGNAL_HANDLER
 	var/obj/machinery/door/firedoor/firelock = bumped
-	if(!istype(firelock) || !firelock.density || firelock.welded)
+	if(istype(firelock))
+		if(firelock.density && !firelock.welded)
+			INVOKE_ASYNC(firelock, TYPE_PROC_REF(/obj/machinery/door, open))
 		return
-	INVOKE_ASYNC(firelock, TYPE_PROC_REF(/obj/machinery/door, open))
+	var/obj/machinery/door/airlock/airlock = bumped
+	if(istype(airlock) && sp_buzz_through(pawn, airlock))
+		return
+	var/mob/living/animal = bumped
+	if(isliving(animal) && !ishuman(animal) && sp_animal_in_the_way(animal))
+		sp_step_past(pawn, animal)
+
+/**
+ * An animal that is only in the way: one TG will not swap places with (it is in combat mode, as basic mobs
+ * are), not fixed in place, and not after anybody. The HoS's giant spider sits beside the desk, in the one
+ * gap between the tables and the security consoles, and the pathfinder, which ignores mobs, plans straight
+ * through it; the HoS bumped into their own pet until every walk gave up, all shift. People step round a pet
+ * that will not budge.
+ */
+/proc/sp_animal_in_the_way(mob/living/animal)
+	if(animal.stat == DEAD || animal.anchored || animal.buckled || animal.has_buckled_mobs())
+		return FALSE
+	if(!animal.combat_mode && !HAS_TRAIT(animal, TRAIT_NOMOBSWAP))
+		return FALSE // TG swaps places with it by itself, and would only swap us straight back
+	return isnull(animal.ai_controller?.blackboard[BB_CURRENT_TARGET])
+
+/// Swaps places with an animal in the way, the way mobs swap places when neither minds.
+/proc/sp_step_past(mob/living/walker, mob/living/animal)
+	var/turf/ours = get_turf(walker)
+	var/turf/theirs = get_turf(animal)
+	if(isnull(ours) || isnull(theirs) || get_dist(ours, theirs) != 1)
+		return FALSE
+	animal.forceMove(ours)
+	walker.forceMove(theirs)
+	sp_record("crew.stepped_past")
+	log_sp("[walker.real_name] stepped past [animal] in [get_area_name(theirs)]")
+	return TRUE
 
 /// Someone hurt us: remember them so the defense subtree can report and flee (or, for security, fight back).
 /datum/ai_controller/sp_crew/proc/on_attacked(datum/source, atom/attacker)
@@ -186,7 +242,7 @@
  */
 /datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
 	var/mob/living/carbon/human/human_pawn = pawn
-	if(!istype(human_pawn) || human_pawn.stat != STABLE)
+	if(!istype(human_pawn) || human_pawn.stat != STABLE || busy_with_work())
 		return
 	var/reply_ready_at = blackboard[BB_SP_GREET_COOLDOWN]
 	if(!isnull(reply_ready_at) && reply_ready_at > world.time)
@@ -214,6 +270,19 @@
 	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 8 SECONDS)
 	set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
 	set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
+
+/**
+ * Whether we are in the middle of a job that a chat should not pull us off. A reply outranks the job
+ * subtrees and aborts them, and an async job — a brew, an operation — keeps running after the abort while
+ * the tree starts it over, so it can end up running twice at the same bench. In the third live round the
+ * CMO stopped walking a patient to the table to answer a doctor's idle question. Base crew are never busy.
+ */
+/datum/ai_controller/sp_crew/proc/busy_with_work()
+	return FALSE
+
+/// A player has taken our job and we are going off shift (sp_send_off_shift): let go of anything held for work.
+/datum/ai_controller/sp_crew/proc/on_sent_off_shift()
+	return
 
 /// Another crew member reported an attack within earshot (or on a channel we hear). Base crew ignore it.
 /datum/ai_controller/sp_crew/proc/on_heard_incident(mob/living/carbon/human/reporter, list/incident)
@@ -267,6 +336,12 @@
 		/area/station/medical/exam_room,
 		/area/station/medical/office,
 		/area/station/medical/break_room,
+		/area/station/medical/cryo,
+		// Every map names its operating theatres differently; the ones missing from this one are skipped.
+		/area/station/medical/surgery,
+		/area/station/medical/surgery/fore,
+		/area/station/medical/surgery/aft,
+		/area/station/medical/surgery/theatre,
 	)
 	set_blackboard_key(BB_SP_WANDER_AREAS, medical_areas)
 	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
@@ -278,6 +353,143 @@
 			"Where did I leave that health analyzer?",
 		),
 		BB_EMOTE_SEE = list("checks a clipboard.", "adjusts a pair of gloves."),
+	))
+
+/**
+ * Keeps an eye on a cryo tube we put somebody in. The tube lets them out by itself once they are mended
+ * (or dead, or the gas runs out), and this is how the round's tally hears about it.
+ */
+/datum/ai_controller/sp_crew/medical/proc/watch_cryo(obj/machinery/cryo_cell/cryo)
+	RegisterSignal(cryo, COMSIG_ATOM_EXITED, PROC_REF(on_cryo_exited), override = TRUE)
+
+/datum/ai_controller/sp_crew/medical/proc/on_cryo_exited(obj/machinery/cryo_cell/source, atom/movable/gone, direction)
+	SIGNAL_HANDLER
+	var/mob/living/carbon/patient = gone
+	// The beaker leaving counts as an exit too.
+	if(!iscarbon(patient))
+		return
+	UnregisterSignal(source, COMSIG_ATOM_EXITED)
+	sp_release_patient(patient, pawn)
+	sp_record(patient.stat == DEAD ? "med.cryo_lost" : "med.cryo_discharged")
+	log_sp("[patient.real_name] came out of [source.name] at [round(sp_patch_damage(patient), 1)] brute and burn[patient.stat == DEAD ? ", dead" : ""]")
+
+/**
+ * A medic with a patient has their hands full. Only the patient counts: sp_find_patient clears it whenever
+ * there is nobody to see, where a cryo setup job can be left set by a walk that failed, which would keep the
+ * medic "busy" all shift. A setup job is a few quick clicks, and one started over does no harm.
+ */
+/datum/ai_controller/sp_crew/medical/busy_with_work()
+	return blackboard_key_exists(BB_SP_PATIENT)
+
+/// Going off shift with a patient: they are unstrapped from the table and no longer told to wait for us.
+/datum/ai_controller/sp_crew/medical/on_sent_off_shift()
+	var/mob/living/carbon/patient = blackboard[BB_SP_PATIENT]
+	if(!istype(patient))
+		return
+	if(istype(patient.buckled, /obj/structure/table/optable))
+		patient.buckled.unbuckle_mob(patient)
+	sp_release_patient(patient, pawn)
+
+/// Chemists: brew medicine for medbay and keep the cryo tubes in cryoxadone; otherwise medical staff like the rest.
+/datum/ai_controller/sp_crew/medical/chemist
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_chemist.bt.json"
+
+/datum/ai_controller/sp_crew/medical/chemist/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	var/static/list/lab_areas = list(
+		/area/station/medical/chemistry,
+		/area/station/medical/pharmacy,
+	)
+	set_blackboard_key(BB_SP_WANDER_AREAS, lab_areas)
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"Nobody touch the dispenser.",
+			"Who left a beaker of acid on the bench?",
+			"If it's glowing, don't drink it.",
+			"Patches are in the chem fridge.",
+		),
+		BB_EMOTE_SEE = list("holds a beaker up to the light.", "writes out a label."),
+	))
+
+/// TG hands a chemist a dropper and a bottle of buffer, and nothing to brew in.
+/datum/ai_controller/sp_crew/medical/chemist/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	for(var/beaker_type in list(/obj/item/reagent_containers/cup/beaker/large, /obj/item/reagent_containers/cup/beaker))
+		human_pawn.equip_to_storage(new beaker_type(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
+/// A chemist with an order in hand is at the bench, or on the way to it.
+/datum/ai_controller/sp_crew/medical/chemist/busy_with_work()
+	return ..() || blackboard_key_exists(BB_SP_CHEM_PRODUCT)
+
+/**
+ * Assistants: no department, no work, and the whole shift to fill. Everything the rest of the crew do, plus a
+ * trip to tool storage for gloves and a tool, lockers left hanging open, cheekier grumbling at locked doors,
+ * and a little harmless mischief now and then (sp_greytide.dm). Greytide, gently.
+ */
+/datum/ai_controller/sp_crew/assistant
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_assistant.bt.json"
+
+/datum/ai_controller/sp_crew/assistant/setup_job_blackboard(mob/living/carbon/human/human_pawn)
+	set_blackboard_key(BB_SP_WANDER_AREAS, sp_greytide_haunts())
+	override_blackboard_key(BB_SP_INTERESTS, sp_greytide_interests())
+	// Some of them have a bit of an edge, and will break a light where the harmless lot only draw on the floor.
+	if(prob(SP_TROUBLEMAKER_CHANCE))
+		set_blackboard_key(BB_SP_TROUBLEMAKER, TRUE)
+	// The first prank waits until they have had a look round and been to tool storage.
+	set_blackboard_key(BB_SP_MISCHIEF_NEXT, world.time + rand(2 MINUTES, 4 MINUTES))
+	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(
+		BB_SPEAK_CHANCE = 2,
+		BB_EMOTE_SAY = list(
+			"Anyone got a spare pair of insuls?",
+			"I'm not loitering. I'm waiting.",
+			"What does this button do?",
+			"HoP, any chance of all access?",
+			"Maintenance is the best part of the station.",
+			"I'm basically an engineer.",
+		),
+		BB_EMOTE_SEE = list("fidgets with a crayon.", "looks around for something to do.", "whistles innocently."),
+	))
+
+/// Every assistant brings a crayon, and about half of them a horn or a rubber duck as well.
+/datum/ai_controller/sp_crew/assistant/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	var/static/list/crayons = list(
+		/obj/item/toy/crayon/red,
+		/obj/item/toy/crayon/orange,
+		/obj/item/toy/crayon/yellow,
+		/obj/item/toy/crayon/green,
+		/obj/item/toy/crayon/blue,
+		/obj/item/toy/crayon/purple,
+	)
+	var/list/extras = list(pick(crayons))
+	if(prob(50))
+		extras += pick(/obj/item/bikehorn, /obj/item/bikehorn/rubberducky)
+	for(var/extra_type in extras)
+		human_pawn.equip_to_storage(new extra_type(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
+
+/datum/ai_controller/sp_crew/assistant/closes_lockers()
+	return FALSE
+
+/datum/ai_controller/sp_crew/assistant/rummage_take_limit()
+	return SP_GREYTIDE_TAKE_LIMIT
+
+/// A prank under way is not dropped for a chat: the lights have to come back on.
+/datum/ai_controller/sp_crew/assistant/busy_with_work()
+	return blackboard_key_exists(BB_SP_PRANKING)
+
+/// Assistants do not grass on each other, or on anybody else.
+/datum/ai_controller/sp_crew/assistant/reports_crimes()
+	return FALSE
+
+/datum/ai_controller/sp_crew/assistant/on_door_denied(obj/machinery/door/airlock/door)
+	var/mob/living/carbon/human/human_pawn = pawn
+	var/quiet_until = blackboard[BB_SP_NOSY_SPEAK_COOLDOWN] || 0
+	if(!istype(human_pawn) || world.time < quiet_until)
+		return
+	set_blackboard_key(BB_SP_NOSY_SPEAK_COOLDOWN, world.time + 45 SECONDS)
+	sp_crew_speak(human_pawn, pick(
+		"Aw, come on. I only want a look.",
+		"One of these days I'm getting in there.",
+		"What are they hiding in there, anyway?",
+		"Rude.",
 	))
 
 /// Security: patrol hallways and the brig, respond to reports, subdue and cuff attackers.
@@ -422,6 +634,42 @@
 		for(var/packet in 1 to 2)
 			human_pawn.equip_to_storage(new seed_type(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
 	log_sp("[human_pawn.real_name] starts with seeds: [english_list(chosen)]")
+
+/**
+ * Somebody asking botany for a plant, over the radio or across the room: remember what and where, so the
+ * next load goes to them rather than the kitchen. Medbay asks for aloe when they run out of burn cream.
+ */
+/datum/ai_controller/sp_crew/botanist/on_pre_hear(datum/source, list/hearing_args)
+	SIGNAL_HANDLER
+	. = ..()
+	var/mob/living/carbon/human/human_pawn = pawn
+	var/atom/movable/speaker = hearing_args[HEARING_SPEAKER]
+	var/raw_message = hearing_args[HEARING_RAW_MESSAGE]
+	if(!istype(human_pawn) || QDELETED(speaker) || speaker == human_pawn || !istext(raw_message))
+		return
+	var/plant = sp_plant_asked_for(raw_message)
+	if(isnull(plant))
+		return
+	var/atom/movable/real_speaker = speaker
+	if(istype(speaker, /atom/movable/virtualspeaker))
+		var/atom/movable/virtualspeaker/virtual = speaker
+		real_speaker = virtual.source || speaker
+	var/area/where = get_area(real_speaker)
+	if(isnull(where))
+		return
+	set_blackboard_key(BB_SP_PLANT_REQUEST, plant)
+	// Where they said to send it, if they said ("up to medbay"); otherwise wherever they are standing.
+	var/deliver_to = sp_named_delivery_area(raw_message) || where.type
+	set_blackboard_key(BB_SP_PLANT_REQUEST_AREA, deliver_to)
+	if(ismob(real_speaker))
+		set_blackboard_key(BB_SP_PLANT_REQUESTER, real_speaker)
+	else
+		clear_blackboard_key(BB_SP_PLANT_REQUESTER)
+	log_sp("[human_pawn.real_name] took a request for [plant] from [real_speaker] in [where.name], to go to [deliver_to]")
+	sp_crew_speak(human_pawn, pick(
+		"[capitalize(plant)]? I will see what I have got.",
+		"Someone wants [plant]. I will bring some over.",
+	), RADIO_CHANNEL_COMMON)
 
 /datum/ai_controller/sp_crew/botanist/setup_job_blackboard(mob/living/carbon/human/human_pawn)
 	set_blackboard_key(BB_SP_WANDER_AREAS, sp_botany_areas())

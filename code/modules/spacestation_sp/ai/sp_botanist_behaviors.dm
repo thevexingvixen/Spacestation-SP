@@ -26,11 +26,14 @@
 	var/mob/living/carbon/human/pawn = controller.pawn
 	if(!istype(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-	var/list/found = sp_find_tray_job(pawn)
+	var/list/found = sp_find_tray_job(pawn, preferred_species = controller.blackboard[BB_SP_PLANT_REQUEST], ignored = controller.blackboard[BB_SP_TRAY_IGNORE])
 	if(isnull(found))
 		controller.clear_blackboard_key(BB_SP_TRAY)
 		controller.clear_blackboard_key(BB_SP_TRAY_JOB)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// Passed over for a little while however this goes: a tray in sight behind glass would otherwise be the nearest
+	// job every two seconds, and a walk that cannot get there fails every time without a word.
+	controller.set_blackboard_key_assoc_lazylist(BB_SP_TRAY_IGNORE, found[1], world.time + 30 SECONDS)
 	controller.set_blackboard_key(BB_SP_TRAY, found[1])
 	controller.set_blackboard_key(BB_SP_TRAY_JOB, found[2])
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
@@ -61,11 +64,16 @@
 		if(SP_TRAY_JOB_WATER)
 			wanted = sp_botany_watering_can(pawn, TRUE)
 		if(SP_TRAY_JOB_PLANT)
-			wanted = sp_pick_seed(pawn)
+			wanted = sp_pick_seed(pawn, controller.blackboard[BB_SP_PLANT_REQUEST])
 
 	if(isnull(wanted))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	if(!sp_equip_from_inventory(pawn, list(wanted.type)))
+		// Said out loud, at most once a minute: a tray job that cannot get its tool in hand fails the same way every
+		// two seconds, and nothing in the log said why the planting had stopped.
+		if(world.time >= (controller.blackboard[BB_SP_EQUIP_WARNED] || 0))
+			controller.set_blackboard_key(BB_SP_EQUIP_WARNED, world.time + 1 MINUTES)
+			log_sp("[pawn.real_name] could not get [wanted] in hand to [job] a tray, holding [pawn.get_active_held_item() || "nothing"] and [pawn.get_inactive_held_item() || "nothing"]")
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	controller.set_blackboard_key(BB_SP_BOTANY_TOOL, pawn.get_active_held_item())
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
@@ -138,7 +146,64 @@
 	var/mob/living/carbon/human/pawn = controller.pawn
 	if(!istype(pawn))
 		return FALSE
-	return length(sp_carried_produce(pawn)) >= SP_PRODUCE_DELIVERY_BATCH
+	if(length(sp_carried_produce(pawn)) >= SP_PRODUCE_DELIVERY_BATCH)
+		return TRUE
+	// One of something somebody asked for is worth the walk on its own.
+	return !isnull(sp_requested_produce(pawn, controller))
+
+/**
+ * Finds where this load goes: whoever asked for produce, when we are carrying what they asked for, and a
+ * kitchen table otherwise. Async for a request, since how close to them we can get is the pathfinder's to
+ * say: the second aloe of a round went to a medic standing in an operating room, behind doors no botanist opens.
+ */
+/datum/bt_node/ai_behavior/sp_find_produce_drop
+	time_between_perform = 5 SECONDS
+	/// Held across the async half: their table, or a clear tile in their room when it has no table.
+	VAR_PRIVATE/atom/request_target
+
+/datum/bt_node/ai_behavior/sp_find_produce_drop/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/async_flags = handle_async()
+	if(async_flags)
+		return async_flags
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.clear_blackboard_key(BB_SP_REQUEST_DROP)
+	if(sp_requested_produce(pawn, controller))
+		var/area_type = controller.blackboard[BB_SP_PLANT_REQUEST_AREA]
+		// A table in their room, or a clear bit of floor when the room has none, rather than giving up on them for the kitchen.
+		request_target = sp_find_request_table(pawn, area_type) || sp_find_delivery_spot(area_type, get_turf(pawn))
+		if(!isnull(request_target))
+			return start_async()
+	return sp_aim_at_kitchen(controller)
+
+/datum/bt_node/ai_behavior/sp_find_produce_drop/perform_async(datum/ai_controller/controller)
+	var/turf/table_turf = get_turf(request_target)
+	var/turf/spot = sp_reachable_drop_spot(controller.pawn, table_turf, isturf(request_target) ? 0 : 1)
+	if(!async_still_valid())
+		return
+	if(isnull(spot))
+		finish_async(sp_aim_at_kitchen(controller))
+		return
+	// All the way there: their table. Short of it: a table by where we had to stop, or failing that the floor.
+	var/atom/drop = request_target
+	if(spot != table_turf)
+		drop = sp_table_beside(spot) || spot
+	controller.set_blackboard_key(BB_SP_DELIVERY_TARGET, drop)
+	controller.set_blackboard_key(BB_SP_REQUEST_DROP, TRUE)
+	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
+
+/datum/bt_node/ai_behavior/sp_find_produce_drop/finish_action(datum/ai_controller/controller, succeeded)
+	request_target = null
+	return ..()
+
+/// Points the delivery at the nearest kitchen table. Returns behaviour flags, to hand straight back out of a leaf.
+/proc/sp_aim_at_kitchen(datum/ai_controller/controller)
+	var/obj/structure/table/table = sp_find_kitchen_table(controller.pawn)
+	if(isnull(table))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_DELIVERY_TARGET, table)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 /// Finds the kitchen table we are going to unload onto.
 /datum/bt_node/ai_behavior/sp_find_kitchen
@@ -167,11 +232,14 @@
 
 /datum/bt_node/ai_behavior/sp_unload_produce/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
-	var/obj/structure/table/table = controller.blackboard[table_key]
+	// A table, usually. The floor, when a request had to be left short of a door with no table by it.
+	var/atom/table = controller.blackboard[table_key]
 	if(!istype(pawn) || QDELETED(table) || !table.Adjacent(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 
-	var/list/carrying = sp_carried_produce(pawn)
+	// A load for somebody who asked is what they asked for, and none of whatever else we happen to be carrying.
+	var/for_request = table_key == BB_SP_DELIVERY_TARGET && controller.blackboard[BB_SP_REQUEST_DROP]
+	var/list/carrying = for_request ? sp_request_items(pawn, controller) : sp_carried_produce(pawn)
 	var/to_place = max_place ? min(max_place, length(carrying)) : length(carrying)
 	if(to_place <= 0)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
@@ -179,19 +247,35 @@
 	var/turf/table_turf = get_turf(table)
 	var/placed = 0
 	var/list/names = list()
+	var/list/obj/item/placed_items = list()
 	for(var/obj/item/produce as anything in carrying)
 		if(placed >= to_place)
 			break
 		if(!produce.forceMove(table_turf))
 			continue
 		names |= produce.name
+		placed_items += produce
 		placed++
 	if(!placed)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 
 	controller.clear_blackboard_key(table_key)
-	log_sp("[pawn.real_name] left [placed] produce on a table in [get_area_name(table)]")
-	if(announcement)
+	var/surface = isturf(table) ? "the floor" : "a table"
+	log_sp("[pawn.real_name] left [placed] produce on [surface] in [get_area_name(table)]")
+	// A delivery somebody asked for is announced to them, left for them, and settles the request, wherever it had
+	// to be put down.
+	var/requested = controller.blackboard[BB_SP_PLANT_REQUEST]
+	if(for_request && requested)
+		var/where = get_area_name(table)
+		sp_leave_for(controller.blackboard[BB_SP_PLANT_REQUESTER], placed_items)
+		controller.clear_blackboard_key(BB_SP_PLANT_REQUEST)
+		controller.clear_blackboard_key(BB_SP_PLANT_REQUEST_AREA)
+		controller.clear_blackboard_key(BB_SP_PLANT_REQUESTER)
+		controller.clear_blackboard_key(BB_SP_REQUEST_DROP)
+		sp_record("botany.request_delivered")
+		log_sp("[pawn.real_name] delivered [english_list(names)] for the [requested] somebody asked for, on [surface] in [where]")
+		sp_crew_speak(pawn, "That is the [requested] you wanted: [english_list(names)], on [surface] in [where].", RADIO_CHANNEL_COMMON)
+	else if(announcement)
 		var/line = replacetext(announcement, "%COUNT%", "[placed]")
 		line = replacetext(line, "%WHAT%", english_list(names))
 		sp_crew_speak(pawn, line, radio_channel)
@@ -348,7 +432,7 @@
 	if(!istype(pawn) || QDELETED(vendor) || !vendor.Adjacent(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.face_atom(vendor)
-	var/obj/item/bought = sp_buy_seed_packet(pawn, vendor)
+	var/obj/item/bought = sp_buy_seed_packet(pawn, vendor, controller.blackboard[BB_SP_PLANT_REQUEST])
 	controller.clear_blackboard_key(BB_SP_SEED_VENDOR)
 	if(isnull(bought))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
@@ -411,3 +495,65 @@
 		"Running an experiment on the [plant_name]. Might get something new.",
 	), RADIO_CHANNEL_SERVICE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// True when we carry raw produce for a request that ought to be cooked before it is handed over.
+/datum/bt_node/decorator/sp_request_needs_cooking
+
+/datum/bt_node/decorator/sp_request_needs_cooking/check_condition(datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	return istype(pawn) && length(sp_request_needs_cooking(pawn, controller))
+
+/// Finds a microwave for requested produce, and a tile beside it to stand on.
+/datum/bt_node/ai_behavior/sp_find_microwave
+	time_between_perform = 5 SECONDS
+
+/datum/bt_node/ai_behavior/sp_find_microwave/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!istype(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/machinery/microwave/microwave = sp_find_microwave(pawn)
+	if(isnull(microwave))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/turf/stand = sp_reach_spot(microwave, pawn)
+	if(isnull(stand))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	controller.set_blackboard_key(BB_SP_MICROWAVE, microwave)
+	controller.set_blackboard_key(BB_SP_MICROWAVE_SPOT, stand)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Standing at the microwave: cooks what was asked for and takes out what it makes. Async, for the whole cook.
+/datum/bt_node/ai_behavior/sp_microwave_request
+	/// Held across the async half.
+	VAR_PRIVATE/obj/machinery/microwave/microwave
+
+/datum/bt_node/ai_behavior/sp_microwave_request/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/async_flags = handle_async()
+	if(async_flags)
+		return async_flags
+	var/mob/living/carbon/human/pawn = controller.pawn
+	microwave = controller.blackboard[BB_SP_MICROWAVE]
+	controller.clear_blackboard_key(BB_SP_MICROWAVE)
+	controller.clear_blackboard_key(BB_SP_MICROWAVE_SPOT)
+	if(!istype(pawn) || !sp_microwave_usable(microwave) || !microwave.Adjacent(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	return start_async()
+
+/datum/bt_node/ai_behavior/sp_microwave_request/perform_async(datum/ai_controller/controller)
+	var/plant = controller.blackboard[BB_SP_PLANT_REQUEST]
+	var/where = get_area_name(microwave)
+	var/list/obj/item/raw = sp_request_needs_cooking(controller.pawn, controller)
+	var/list/obj/item/made = sp_cook_in_microwave(controller, microwave, raw, GLOB.sp_request_cooked_forms[plant])
+	if(!async_still_valid())
+		return
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!length(made))
+		log_sp("[pawn.real_name] got nothing out of the microwave in [where] for the [plant] somebody asked for")
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	sp_record("botany.cooked")
+	log_sp("[pawn.real_name] microwaved the [plant] somebody asked for into [english_list(made)] in [where]")
+	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
+
+/datum/bt_node/ai_behavior/sp_microwave_request/finish_action(datum/ai_controller/controller, succeeded)
+	microwave = null
+	return ..()

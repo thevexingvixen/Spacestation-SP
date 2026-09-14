@@ -104,11 +104,22 @@ SUBSYSTEM_DEF(spacestation_sp)
 
 /// Fires once the round has started and player characters have been placed.
 /datum/controller/subsystem/spacestation_sp/proc/on_roundstart()
+#ifdef UNIT_TESTS
+	// The unit tests run with a round going. Seventeen AI crew getting on with their shift in the background
+	// — hurt by the debug helpers, operated on, walking into things — made TG's own tests nondeterministic,
+	// and SP's tests build whatever they need themselves.
+	return
+#endif
 	var/count = CONFIG_GET(number/sp_autopopulate)
 	if(count <= 0)
 		return
 	var/spawned = sp_populate_station(count)
 	log_sp("auto-populated the station with [spawned]/[count] AI crew")
+	// The assistants on top, in the same tick for the same reason as the rest (sp_populate_station).
+	var/assistants_min = CONFIG_GET(number/sp_assistants_min)
+	var/assistants = rand(assistants_min, max(assistants_min, CONFIG_GET(number/sp_assistants_max)))
+	if(assistants > 0)
+		log_sp("spawned [sp_spawn_assistants(assistants)]/[assistants] AI assistants")
 	var/debug_breaches = CONFIG_GET(number/sp_debug_breach_count)
 	if(debug_breaches > 0)
 		addtimer(CALLBACK(GLOBAL_PROC, GLOBAL_PROC_REF(sp_debug_make_breach), debug_breaches), 1 MINUTES)
@@ -116,6 +127,51 @@ SUBSYSTEM_DEF(spacestation_sp)
 		addtimer(CALLBACK(src, PROC_REF(debug_supply_request)), 2 MINUTES)
 	if(CONFIG_GET(flag/sp_debug_kitchen_stock))
 		addtimer(CALLBACK(src, PROC_REF(debug_kitchen_stock)), 1 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_medical_patients))
+		addtimer(CALLBACK(src, PROC_REF(debug_medical_patients)), 90 SECONDS)
+	if(CONFIG_GET(flag/sp_debug_medbay_dry))
+		addtimer(CALLBACK(src, PROC_REF(debug_empty_medics)), 2 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_antagonist))
+		addtimer(CALLBACK(src, PROC_REF(debug_make_antagonist)), 90 SECONDS)
+
+/**
+ * Debug helper: empties the medics' pockets of treatment supplies, so restocking can be watched without
+ * waiting for a shift's worth of patients to use them up.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_empty_medics()
+	var/emptied = 0
+	for(var/mob/living/carbon/human/crew as anything in ai_crew)
+		if(!istype(crew.ai_controller, /datum/ai_controller/sp_crew/medical) || istype(crew.ai_controller, /datum/ai_controller/sp_crew/medical/chemist))
+			continue
+		for(var/obj/item/supplies as anything in crew.get_all_contents_type(/obj/item/stack/medical))
+			qdel(supplies)
+		for(var/obj/item/patch as anything in crew.get_all_contents_type(/obj/item/reagent_containers/applicator/patch))
+			qdel(patch)
+		emptied++
+		log_sp("debug: emptied [crew.real_name] of treatment supplies")
+	if(!emptied)
+		log_sp("debug: nobody in medical to empty out")
+
+/**
+ * Debug helper: spawns one AI crew member with a thief's scheme, so the antagonist path can be watched
+ * without an admin doing it by hand. Picks a random non-security job, so they have somewhere to belong
+ * and are not the one meant to be catching them.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_make_antagonist()
+	var/list/datum/job/pool = sp_get_crew_job_pool()
+	for(var/datum/job/job as anything in shuffle(pool))
+		if(ispath(sp_controller_for_job(job), /datum/ai_controller/sp_crew/security))
+			continue
+		var/mob/living/carbon/human/crew = sp_spawn_crew_member(job, controller_type = /datum/ai_controller/sp_crew/antagonist)
+		if(isnull(crew))
+			continue
+		var/datum/sp_scheme/scheme = sp_make_thief(crew.ai_controller)
+		if(isnull(scheme))
+			log_sp("debug: spawned antagonist [crew.real_name] but found nothing worth stealing")
+			return
+		log_sp("debug: spawned antagonist [crew.real_name] ([job.title]) with scheme: [scheme.name]")
+		return
+	log_sp("debug: could not spawn an antagonist")
 
 /// Debug helper: has a random non-cargo crew member ask cargo for something.
 /datum/controller/subsystem/spacestation_sp/proc/debug_supply_request()
@@ -157,6 +213,40 @@ SUBSYSTEM_DEF(spacestation_sp)
 		log_sp("debug: put [placed] ready-made components on [crew.real_name]'s prep table")
 		return
 	log_sp("debug: no chef to stock a prep table for")
+
+/**
+ * Debug helper: hurt four crew members, one of each sort of patient medbay has to handle — a cut arm
+ * and a burned leg for the medkit, one bad enough to want the cryo tubes, and a broken arm for the
+ * operating table. Random wounds are ruled out so each case stays what it says it is.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_medical_patients()
+	var/list/mob/living/carbon/human/candidates = list()
+	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
+		if(crew.stat != STABLE || istype(crew.ai_controller, /datum/ai_controller/sp_crew/medical))
+			continue
+		candidates += crew
+		if(length(candidates) >= 4)
+			break
+	if(!length(candidates))
+		log_sp("debug: nobody to send to medbay")
+		return
+	var/mob/living/carbon/human/patient = candidates[1]
+	patient.apply_damage(25, BRUTE, BODY_ZONE_L_ARM, wound_bonus = CANT_WOUND)
+	log_sp("debug: [patient.real_name] cut their arm (25 brute)")
+	if(length(candidates) >= 2)
+		patient = candidates[2]
+		patient.apply_damage(25, BURN, BODY_ZONE_R_LEG, wound_bonus = CANT_WOUND)
+		log_sp("debug: [patient.real_name] burned their leg (25 burn)")
+	if(length(candidates) >= 3)
+		patient = candidates[3]
+		patient.apply_damage(40, BRUTE, BODY_ZONE_CHEST, wound_bonus = CANT_WOUND)
+		patient.apply_damage(30, BURN, BODY_ZONE_CHEST, wound_bonus = CANT_WOUND)
+		log_sp("debug: [patient.real_name] was badly hurt (40 brute, 30 burn)")
+	if(length(candidates) >= 4)
+		patient = candidates[4]
+		var/datum/wound/blunt/bone/severe/fracture = new
+		fracture.apply_wound(patient.get_bodypart(BODY_ZONE_L_ARM), wound_source = "a bad fall")
+		log_sp("debug: [patient.real_name] broke their arm (hairline fracture)")
 
 /// Registers a spawned AI crew member so we can track and clean it up.
 /datum/controller/subsystem/spacestation_sp/proc/register_crew(mob/living/carbon/human/crew)

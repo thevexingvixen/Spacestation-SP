@@ -1,0 +1,50 @@
+## Spacestation SP — local development overrides (gitignored, applied after config.txt)
+## See config/dev_overrides_readme.txt. A committed copy of this file lives at ../docs/dev_overrides.example.txt
+
+## Every connecting client gets the AUTOADMIN_RANK (Game Master). Local singleplayer only.
+AUTOADMIN
+
+## Short lobby so a solo round starts quickly (seconds).
+LOBBY_COUNTDOWN 10
+
+## Cosmetic
+SERVERNAME Spacestation SP
+HOSTEDBY localhost
+STATIONNAME Spacestation SP
+
+## Solo play: no map vote, use the map marked "default" in config/maps.txt
+PREFERENCE_MAP_VOTING 0
+
+## Keep the world ticking with no clients connected (lets headless test rounds start; TG otherwise sleeps the world after init)
+RESUME_AFTER_INITIALIZATIONS
+
+## Spacestation SP: auto-spawn this many AI crew when the round starts (0 = off)
+SP_AUTOPOPULATE 17
+
+## Spacestation SP: AI assistants (the greytide) on top of that, a random number between these two
+SP_ASSISTANTS_MIN 1
+SP_ASSISTANTS_MAX 3
+
+## Spacestation SP: simulated engine output in kW while an AI engineer has the engine online
+SP_ENGINE_SIMULATED_OUTPUT 1500
+
+## EXPERIMENTAL: let AI engineers fire the real emitters instead (needs a correct coolant loop)
+#SP_ENGINE_REAL_EMITTERS
+
+## Debug: punch this many hull breaches a minute after round start (0 = off)
+SP_DEBUG_BREACH_COUNT 0
+
+## Debug: have a random crew member ask cargo for a crate two minutes in (tests the request path)
+#SP_DEBUG_SUPPLY_REQUEST
+
+## Debug: a minute in, lay ready-made components on the chef prep table (tests cooking and serving)
+#SP_DEBUG_KITCHEN_STOCK
+
+## Debug: ninety seconds in, hurt a few crew members (tests triage, treatment and cryo)
+#SP_DEBUG_MEDICAL_PATIENTS
+
+## Debug: two minutes in, empty the medics' supplies (tests restocking from a locker, cargo and botany)
+#SP_DEBUG_MEDBAY_DRY
+
+## Debug: ninety seconds in, turn one crew member into a thief with a scheme (tests the antagonist path)
+#SP_DEBUG_ANTAGONIST

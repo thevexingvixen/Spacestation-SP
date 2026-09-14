@@ -75,18 +75,36 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 			return can
 	return null
 
-/// The nearest tray in view that wants attention, along with the job it wants. Returns a list(tray, job).
-/proc/sp_find_tray_job(mob/living/carbon/human/botanist, range = 12)
+/**
+ * The nearest tray in view that wants attention, along with the job it wants. Returns a list(tray, job).
+ * `preferred_species` is a plant somebody has asked for, `ignored` trays picked too recently to pick again.
+ */
+/proc/sp_find_tray_job(mob/living/carbon/human/botanist, range = 12, preferred_species, list/ignored)
+	// A seed somebody asked for goes in ahead of the routine work, unless it is already growing: medbay's aloe
+	// packet sat in a bag for ten minutes while the botanist watered, harvested and dosed tomatoes.
+	var/rush_planting = FALSE
+	if(preferred_species)
+		for(var/obj/item/seeds/carried in botanist.get_all_contents_type(/obj/item/seeds))
+			if(carried.plantname && findtext(LOWER_TEXT(carried.plantname), preferred_species))
+				rush_planting = TRUE
+				break
+	var/list/obj/machinery/hydroponics/trays = list()
+	for(var/obj/machinery/hydroponics/tray in oview(range, botanist))
+		trays += tray
+		if(rush_planting && tray.myseed?.plantname && findtext(LOWER_TEXT(tray.myseed.plantname), preferred_species))
+			rush_planting = FALSE
 	var/obj/machinery/hydroponics/best_tray
 	var/best_job
 	var/best_distance = INFINITY
-	for(var/obj/machinery/hydroponics/tray in oview(range, botanist))
+	for(var/obj/machinery/hydroponics/tray as anything in trays)
+		if(ignored?[tray] > world.time)
+			continue
 		var/job = sp_tray_job(tray, botanist)
 		if(isnull(job))
 			continue
 		var/distance = get_dist(botanist, tray)
 		// Harvesting beats everything else at equal distance: ripe plants rot and block the tray.
-		if(job == SP_TRAY_JOB_HARVEST)
+		if(job == SP_TRAY_JOB_HARVEST || (job == SP_TRAY_JOB_PLANT && rush_planting))
 			distance -= 6
 		if(distance >= best_distance)
 			continue
@@ -98,12 +116,17 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 	return list(best_tray, best_job)
 
 /// A seed to plant, picked at random from what the botanist is carrying.
-/proc/sp_pick_seed(mob/living/carbon/human/botanist)
+/proc/sp_pick_seed(mob/living/carbon/human/botanist, preferred_species)
 	var/list/seeds = botanist.get_all_contents_type(/obj/item/seeds)
 	// Grafts and other seed subtypes that are not plantable packets would just fail on the tray.
 	for(var/obj/item/seeds/candidate in seeds)
 		if(isnull(candidate.plantname))
 			seeds -= candidate
+	// Somebody has asked for this one, so it goes into the next free tray.
+	if(preferred_species)
+		for(var/obj/item/seeds/wanted in seeds)
+			if(findtext(LOWER_TEXT(wanted.plantname), preferred_species))
+				return wanted
 	return length(seeds) ? pick(seeds) : null
 
 /**
@@ -122,6 +145,122 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 		var/distance = get_dist(botanist, loose)
 		if(distance < best_distance)
 			best = loose
+			best_distance = distance
+	return best
+
+/// Plants another department can ask botany for by name. Aloe bakes into the cream medics use on burns.
+GLOBAL_LIST_INIT(sp_requestable_plants, list(
+	"aloe" = /obj/item/food/grown/aloe,
+))
+
+/**
+ * What a request is really for, when the plant is only the start of it. Medbay asks for aloe because
+ * microwaved aloe is the cream they put on burns, and a raw leaf handed over is a chore handed over with it.
+ */
+GLOBAL_LIST_INIT(sp_request_cooked_forms, list(
+	"aloe" = /obj/item/stack/medical/aloe,
+))
+
+/**
+ * The plant somebody just asked botany for, or null. The line has to name botany and the plant: the crew
+ * talk about food all shift, so a request is addressed, where a passing mention of aloe is not.
+ */
+/proc/sp_plant_asked_for(message)
+	var/lowered = LOWER_TEXT(message)
+	if(!findtext(lowered, "botan"))
+		return null
+	for(var/plant in GLOB.sp_requestable_plants)
+		if(findtext(lowered, plant))
+			return plant
+	return null
+
+/// Where a request says its delivery should go ("up to medbay"), as an area type, or null if it names nowhere.
+/proc/sp_named_delivery_area(message)
+	var/lowered = LOWER_TEXT(message)
+	if(findtext(lowered, "medbay") || findtext(lowered, "medical"))
+		return sp_medbay_delivery_area()
+	return null
+
+/// Whether a botanist is already working on a request for this plant.
+/proc/sp_plant_requested(plant)
+	for(var/mob/living/carbon/human/crew as anything in SSspacestation_sp.ai_crew)
+		var/datum/ai_controller/sp_crew/botanist/controller = crew.ai_controller
+		if(istype(controller) && controller.blackboard[BB_SP_PLANT_REQUEST] == plant)
+			return TRUE
+	return FALSE
+
+/// Produce we are carrying that somebody asked for, if anybody has.
+/proc/sp_requested_produce(mob/living/carbon/human/botanist, datum/ai_controller/sp_crew/controller)
+	var/list/obj/item/carried = sp_request_items(botanist, controller)
+	return length(carried) ? carried[1] : null
+
+/// Everything we carry for the request in hand: what it cooks into, if we have made that, then the plant itself.
+/proc/sp_request_items(mob/living/carbon/human/botanist, datum/ai_controller/sp_crew/controller)
+	var/list/obj/item/carried = list()
+	var/plant = controller?.blackboard[BB_SP_PLANT_REQUEST]
+	if(isnull(plant))
+		return carried
+	var/cooked_type = GLOB.sp_request_cooked_forms[plant]
+	if(cooked_type)
+		carried += botanist.get_all_contents_type(cooked_type)
+	var/produce_type = GLOB.sp_requestable_plants[plant]
+	if(produce_type)
+		carried += botanist.get_all_contents_type(produce_type)
+	return carried
+
+/// The raw produce we carry for a request that still wants cooking before it is handed over.
+/proc/sp_request_needs_cooking(mob/living/carbon/human/botanist, datum/ai_controller/sp_crew/controller)
+	var/plant = controller?.blackboard[BB_SP_PLANT_REQUEST]
+	if(isnull(plant) || isnull(GLOB.sp_request_cooked_forms[plant]))
+		return list()
+	var/produce_type = GLOB.sp_requestable_plants[plant]
+	return produce_type ? botanist.get_all_contents_type(produce_type) : list()
+
+/// Whether a microwave would take something and cook it right now.
+/proc/sp_microwave_usable(obj/machinery/microwave/microwave)
+	if(QDELETED(microwave) || !microwave.anchored || microwave.operating || microwave.broken || microwave.panel_open)
+		return FALSE
+	if(microwave.machine_stat & (NOPOWER|BROKEN))
+		return FALSE
+	// 100 is the microwave's MAX_MICROWAVE_DIRTINESS, which microwave.dm undefines behind itself.
+	return microwave.dirty < 100 && !microwave.vampire_charging_enabled
+
+/**
+ * The nearest microwave on our level that would cook something for us now. Not sight-limited: the kitchen's
+ * pair are a wall away from the hydroponics trays.
+ */
+/proc/sp_find_microwave(mob/living/carbon/human/botanist)
+	var/turf/origin = get_turf(botanist)
+	if(isnull(origin))
+		return null
+	var/obj/machinery/microwave/best
+	var/best_distance = INFINITY
+	for(var/obj/machinery/microwave/microwave as anything in SSmachines.get_machines_by_type_and_subtypes(/obj/machinery/microwave))
+		if(!sp_microwave_usable(microwave))
+			continue
+		var/turf/there = get_turf(microwave)
+		if(there?.z != origin.z)
+			continue
+		var/distance = get_dist(origin, there)
+		if(distance < best_distance)
+			best = microwave
+			best_distance = distance
+	return best
+
+/// A table in the area that asked for produce, to leave their delivery on.
+/proc/sp_find_request_table(mob/living/carbon/human/botanist, area_type)
+	var/turf/origin = get_turf(botanist)
+	if(isnull(origin) || !ispath(area_type, /area))
+		return null
+	var/obj/structure/table/best
+	var/best_distance = INFINITY
+	for(var/turf/candidate as anything in get_area_turfs(area_type, origin.z))
+		var/obj/structure/table/table = locate() in candidate
+		if(isnull(table))
+			continue
+		var/distance = get_dist(origin, table)
+		if(distance < best_distance)
+			best = table
 			best_distance = distance
 	return best
 
@@ -248,7 +387,7 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
  * Buys one packet of a seed the botanist does not already carry, paid for out of their own wages.
  * Returns the seed, or null. Botanists earn a paycheck at spawn, so a few packets a shift is affordable.
  */
-/proc/sp_buy_seed_packet(mob/living/carbon/human/botanist, obj/machinery/vending/hydroseeds/vendor)
+/proc/sp_buy_seed_packet(mob/living/carbon/human/botanist, obj/machinery/vending/hydroseeds/vendor, preferred_species)
 	if(QDELETED(vendor) || QDELETED(botanist))
 		return null
 	var/obj/item/card/id/id_card = botanist.get_idcard(hand_first = FALSE)
@@ -270,7 +409,15 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 	if(!length(affordable))
 		return null
 
-	var/datum/data/vending_product/chosen = pick(affordable)
+	var/datum/data/vending_product/chosen
+	// If somebody has asked for a plant we do not own, that is what the wages go on.
+	if(preferred_species)
+		for(var/datum/data/vending_product/record as anything in affordable)
+			if(findtext(LOWER_TEXT(record.name), preferred_species))
+				chosen = record
+				break
+	if(isnull(chosen))
+		chosen = pick(affordable)
 	var/price = chosen.price || vendor.default_price
 	if(!account.adjust_money(-price, "Vending: [chosen.name]"))
 		return null
@@ -322,3 +469,67 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 
 #undef SP_TRAY_WATER_THRESHOLD
 #undef SP_TRAY_WEED_THRESHOLD
+
+/**
+ * Puts produce in a microwave the way a player does, one item in hand at a time, starts it, waits out the cook
+ * and takes whatever `cooked_type` comes out. Returns what was taken. Sleeps for the whole cook, ten seconds or
+ * so on a microwave nobody has upgraded.
+ */
+/proc/sp_cook_in_microwave(datum/ai_controller/controller, obj/machinery/microwave/microwave, list/obj/item/raw, cooked_type)
+	var/mob/living/carbon/human/pawn = controller?.pawn
+	var/list/obj/item/taken = list()
+	if(!istype(pawn) || !sp_microwave_usable(microwave) || !microwave.Adjacent(pawn))
+		return taken
+	for(var/obj/item/produce as anything in raw)
+		if(QDELETED(produce) || QDELETED(microwave) || length(microwave.ingredients) >= microwave.max_n_of_items)
+			continue
+		sp_free_hands(pawn)
+		if(!pawn.put_in_active_hand(produce))
+			continue
+		sp_ai_click(controller, microwave)
+	sp_free_hands(pawn)
+	if(QDELETED(microwave) || !length(microwave.ingredients))
+		return taken
+	sp_ai_click(controller, microwave, list(RIGHT_CLICK = "1"))
+	var/give_up_at = world.time + SP_MICROWAVE_WAIT
+	UNTIL(QDELETED(microwave) || QDELETED(pawn) || !microwave.operating || world.time > give_up_at)
+	if(QDELETED(microwave) || QDELETED(pawn))
+		return taken
+	// Never started, or stopped part way: get the produce back out rather than leave it in there.
+	if(length(microwave.ingredients) && !microwave.operating)
+		microwave.eject()
+	var/turf/counter = get_turf(microwave)
+	for(var/obj/item/result in counter)
+		if(!istype(result, cooked_type))
+			continue
+		if(!(pawn.back && result.forceMove(pawn.back)) && !pawn.put_in_hands(result))
+			continue
+		taken += result
+	for(var/obj/item/produce as anything in raw)
+		if(!QDELETED(produce) && produce.loc == counter && !(pawn.back && produce.forceMove(pawn.back)))
+			pawn.put_in_hands(produce)
+	return taken
+
+/// A table within a couple of tiles of `spot` and in the same room, to leave a delivery on rather than the floor.
+/proc/sp_table_beside(turf/spot)
+	var/area/room = get_area(spot)
+	var/obj/structure/table/best
+	var/best_distance = INFINITY
+	for(var/obj/structure/table/table in range(2, spot))
+		var/area/table_room = get_area(table)
+		if(table_room != room)
+			continue
+		var/distance = get_dist(spot, table)
+		if(distance < best_distance)
+			best = table
+			best_distance = distance
+	return best
+
+/// Tells a crew member something was left for them, so they go and fetch it from wherever it had to be put down.
+/proc/sp_leave_for(mob/living/requester, list/obj/item/items)
+	var/datum/ai_controller/their_ai = QDELETED(requester) ? null : requester.ai_controller
+	if(isnull(their_ai))
+		return
+	for(var/obj/item/thing as anything in items)
+		if(!QDELETED(thing))
+			their_ai.set_blackboard_key_assoc_lazylist(BB_SP_LEFT_FOR_ME, thing, world.time + SP_LEFT_FOR_TIME)

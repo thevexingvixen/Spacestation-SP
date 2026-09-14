@@ -1,0 +1,40 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_checkup",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_wants_checkup",
+	"child": {
+		"type": "decorator",
+		"decorator": "/datum/bt_node/decorator/cooldown",
+		"vars": {
+			"cooldown_key": "BB_SP_CHECKUP_COOLDOWN",
+			"cooldown_duration": "3 MINUTES",
+			"lock_on_succeed": false
+		},
+		"child": {
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_pick_wander_turf/medbay"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+					"vars": {
+						"target_key": "BB_SP_MEDBAY_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_say/want_checkup"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_await_treatment"
+				}
+			]
+		}
+	}
+}

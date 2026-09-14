@@ -35,8 +35,16 @@
 
 /// Medical: the mob we are treating.
 #define BB_SP_PATIENT "sp_patient"
-/// Medical: the medical item we equipped for the current patient.
-#define BB_SP_MEDICAL_ITEM "sp_medical_item"
+
+/// Patient side: the medic looking after us, and the world.time until which we hold still for them.
+#define BB_SP_CARER "sp_carer"
+#define BB_SP_CARE_UNTIL "sp_care_until"
+/// Patient side: cooldown between trips to medbay to have a minor injury looked at.
+#define BB_SP_CHECKUP_COOLDOWN "sp_checkup_cooldown"
+/// Brute plus burn at which a crew member with nothing better to do goes to have it looked at.
+#define SP_CHECKUP_DAMAGE 15
+/// How long a patient waits in medbay to be seen before giving up on it.
+#define SP_CHECKUP_PATIENCE (2 MINUTES)
 
 // --- Heard-entry fields ----------------------------------------------------------------------
 
@@ -88,6 +96,41 @@
 #define SP_INCIDENT_VICTIM "victim"
 #define SP_INCIDENT_TURF "turf"
 #define SP_INCIDENT_TIME "time"
+/// Incident record: what kind of crime it was (SP_CRIME_*), and who did it, when they are a suspect to look for
+/// rather than an attacker to stop.
+#define SP_INCIDENT_CRIME "crime"
+#define SP_INCIDENT_SUSPECT "suspect"
+
+// --- Crime and witnesses (sp_crime.dm) -------------------------------------------------------------
+/// How far away a witness can see a crime from.
+#define SP_WITNESS_RANGE 7
+/// The chance that a crew member who could see a crime actually notices it.
+#define SP_WITNESS_NOTICE_CHANCE 70
+/// How much a witness thinks less of the culprit.
+#define SP_WITNESS_REPUTATION_HIT -3
+/// Kinds of crime, for incident records and the tally.
+#define SP_CRIME_THEFT "theft"
+#define SP_CRIME_VANDALISM "vandalism"
+#define SP_CRIME_TRESPASS "trespass"
+/// Until when a witness who just called a crime out keeps quiet about the next one.
+#define BB_SP_CRIME_CALLOUT_COOLDOWN "sp_crime_callout_cooldown"
+#define SP_CRIME_CALLOUT_COOLDOWN (30 SECONDS)
+/// Antagonists: the scheme this crew member is working on (/datum/sp_scheme), if any.
+#define BB_SP_SCHEME "sp_scheme"
+/// The atom the scheme has us heading for: the thing to steal, or the locker it is in.
+#define BB_SP_SCHEME_TARGET "sp_scheme_target"
+/// Cooldown between scheme steps.
+#define BB_SP_SCHEME_COOLDOWN "sp_scheme_cooldown"
+/// How long the theft itself takes once we are standing over the thing.
+#define SP_THEFT_TIME (3 SECONDS)
+
+// --- Malicious greytide ----------------------------------------------------------------------------
+/// Rolled at spawn: only some assistants have a malicious streak. The rest keep it to harmless pranks.
+#define BB_SP_TROUBLEMAKER "sp_troublemaker"
+/// The chance an assistant is a troublemaker.
+#define SP_TROUBLEMAKER_CHANCE 45
+/// A prank with a bit of an edge: a broken light tube. Sits in the same menu as the harmless ones.
+#define SP_MISCHIEF_VANDALISM "vandalism"
 
 // --- Engineering -----------------------------------------------------------------------------
 
@@ -145,6 +188,34 @@
 #define SP_TRAY_JOB_WEED "weed"
 #define SP_TRAY_JOB_WATER "water"
 #define SP_TRAY_JOB_PLANT "plant"
+
+/// Botany: a plant another department asked us for, and the area it goes to (medbay asking for aloe).
+#define BB_SP_PLANT_REQUEST "sp_plant_request"
+#define BB_SP_PLANT_REQUEST_AREA "sp_plant_request_area"
+/// Who asked for it, so whatever is delivered can be left for them in particular. The mob itself: the blackboard
+/// tracks deletion on its own and treats a weakref as a bug.
+#define BB_SP_PLANT_REQUESTER "sp_plant_requester"
+/// Set while a load is going to whoever asked rather than the kitchen, so unloading it settles the request wherever it had to be left.
+#define BB_SP_REQUEST_DROP "sp_request_drop"
+/// The microwave requested produce is being taken to, and the tile to stand on beside it.
+#define BB_SP_MICROWAVE "sp_microwave"
+#define BB_SP_MICROWAVE_SPOT "sp_microwave_spot"
+/// Cooldown between tries at microwaving requested produce, so a broken or unreachable microwave does not hold the delivery up.
+#define BB_SP_COOK_COOLDOWN "sp_cook_cooldown"
+/// Things somebody left for this crew member in particular: an assoc list of thing -> when to stop looking for it.
+#define BB_SP_LEFT_FOR_ME "sp_left_for_me"
+/// How long a crew member remembers something was left for them.
+#define SP_LEFT_FOR_TIME (20 MINUTES)
+/// How long to wait on a microwave before deciding the cook is not going to finish.
+#define SP_MICROWAVE_WAIT (30 SECONDS)
+/// Until when a patient let go inside medbay may route through its doors on the way back out (sp_see_out()).
+#define BB_SP_SHOWN_OUT_UNTIL "sp_shown_out_until"
+/// How long that lasts: plenty to walk out of the furthest operating room.
+#define SP_SHOWN_OUT_TIME (3 MINUTES)
+/// Trays the botanist picked recently, tray -> until when to pass them over, so one they cannot reach does not pin them.
+#define BB_SP_TRAY_IGNORE "sp_tray_ignore"
+/// Until when a tray job that could not get its tool in hand stays quiet about it.
+#define BB_SP_EQUIP_WARNED "sp_equip_warned"
 
 /// How much produce a botanist gathers before walking a delivery to the kitchen.
 #define SP_PRODUCE_DELIVERY_BATCH 5
@@ -217,6 +288,10 @@
 #define BB_SP_HAUL_DEADLINE "sp_haul_deadline"
 /// How long one crate may be dragged before we give up on it.
 #define SP_HAUL_TIMEOUT (2 MINUTES)
+/// Who a crate on its way over is for, kept until it is set down so they can be told where it was left.
+#define BB_SP_CRATE_FOR "sp_crate_for"
+/// How many tiles back from the first door they cannot open a courier looks for somewhere out of the way to leave a delivery.
+#define SP_DROP_STEP_BACK 4
 
 // --- Kitchen ---------------------------------------------------------------------------------------
 
@@ -305,6 +380,11 @@
 #define SP_RUMMAGE_TAKE_LIMIT 2
 /// How many interests each character rolls.
 #define SP_INTEREST_COUNT 4
+/// Curiosity: something lying on the floor we fancy, and the ones we have already had our look at.
+#define BB_SP_LOOT_TARGET "sp_loot_target"
+#define BB_SP_LOOT_IGNORE "sp_loot_ignore"
+/// How long we leave a thing on the floor alone once we have decided about it.
+#define SP_LOOT_IGNORE_TIME (10 MINUTES)
 
 // --- Bar ---------------------------------------------------------------------------------------------
 
@@ -343,3 +423,175 @@
 /// Where in our own department we are heading when we are somewhere else.
 #define BB_SP_COMMUTE_TARGET "sp_commute_target"
 #define BB_SP_COMMUTE_COOLDOWN "sp_commute_cooldown"
+
+// --- Medbay ----------------------------------------------------------------------------------
+
+/// Medical: what the medic decided after looking the patient over (SP_TRIAGE_*).
+#define BB_SP_TREATMENT "sp_treatment"
+/// Medical: the cryo tube the current patient is going into.
+#define BB_SP_CRYO_CELL "sp_cryo_cell"
+/// Medical: assoc list of patient => world.time we last ran a health analyzer over them.
+#define BB_SP_SCANNED "sp_scanned"
+/// Medical: assoc list of patient => world.time until which we leave them be.
+#define BB_SP_PATIENT_IGNORE "sp_patient_ignore"
+/// Medical: the patient we have been trying to see to, and since when.
+#define BB_SP_PATIENT_ATTEMPT "sp_patient_attempt"
+#define BB_SP_PATIENT_ATTEMPT_AT "sp_patient_attempt_at"
+/// Medical: the next cryo setup job, and what it is done to.
+#define BB_SP_CRYO_TASK "sp_cryo_task"
+#define BB_SP_CRYO_TARGET "sp_cryo_target"
+/// Medical: the setup target we have been working towards, and since when.
+#define BB_SP_CRYO_ATTEMPT "sp_cryo_attempt"
+#define BB_SP_CRYO_ATTEMPT_AT "sp_cryo_attempt_at"
+/// Medical: world.time before which cryo setup is not looked at again.
+#define BB_SP_CRYO_SETUP_RETRY "sp_cryo_setup_retry"
+
+/// What triage decides to do with a patient.
+#define SP_TRIAGE_NONE "none"
+#define SP_TRIAGE_TREAT "treat"
+#define SP_TRIAGE_CRYO "cryo"
+
+/// Cryo setup jobs, in the order they need doing.
+#define SP_CRYO_TASK_GET_WRENCH "fetch a wrench"
+#define SP_CRYO_TASK_CONNECT_GAS "connect the gas"
+#define SP_CRYO_TASK_FREEZER "set the freezer"
+#define SP_CRYO_TASK_GET_BEAKER "fetch a cryoxadone beaker"
+#define SP_CRYO_TASK_LOAD_BEAKER "load a beaker"
+
+/// Brute or burn a patient needs before a medic bothers with the medkit.
+#define SP_TREAT_DAMAGE 10
+/// Brute plus burn at which a patient goes in the cryo tube instead.
+#define SP_CRYO_DAMAGE 50
+/// Toxin plus suffocation damage that sends a patient to cryo: no medkit touches either.
+#define SP_CRYO_INTERNAL_DAMAGE 30
+/// How far a medic out and about notices somebody hurt.
+#define SP_MEDIC_SIGHT 7
+/// How long a scan stays current before a player who walks into medbay is looked over again.
+#define SP_RESCAN_TIME (10 MINUTES)
+/// How long a patient we could not get to, or could not help, is left alone.
+#define SP_PATIENT_IGNORE_TIME (3 MINUTES)
+/// How long we keep trying to see to one patient before giving up on them.
+#define SP_PATIENT_ATTEMPT_TIMEOUT (90 SECONDS)
+/// Most rounds of treatment one visit gets: every limb twice over, and some.
+#define SP_TREAT_MAX_ROUNDS 14
+/// Gas a cryo loop needs before it is worth putting anyone in. The tube itself gives up below 5 mol.
+#define SP_CRYO_MIN_MOLES 10
+/// Cryoxadone left in a beaker before it counts as spent.
+#define SP_CRYO_MIN_REAGENT 5
+/// How long cryo setup waits after a job went wrong, or when there was nothing to do.
+#define SP_CRYO_SETUP_RETRY_TIME (2 MINUTES)
+#define SP_CRYO_SETUP_IDLE_TIME (20 SECONDS)
+/// How long we keep working towards one setup job before giving up on it.
+#define SP_CRYO_ATTEMPT_TIMEOUT (60 SECONDS)
+/// How long an AI patient is asked to stay in the tube. A working tube keeps them regardless.
+#define SP_CRYO_STAY (10 MINUTES)
+
+/// Surgery: a surgeon puts the patient on the operating table.
+#define SP_TRIAGE_SURGERY "surgery"
+/// Medical: the operating table the current patient is going on, and the tray we are fetching tools from.
+#define BB_SP_OPTABLE "sp_optable"
+#define BB_SP_SURGERY_TRAY "sp_surgery_tray"
+/// Medical: the tile to stand on to reach that tray (sp_reach_spot).
+#define BB_SP_SURGERY_TRAY_SPOT "sp_surgery_tray_spot"
+/// Medical: cooldown between trips to the theatre for surgical tools.
+#define BB_SP_SURGICAL_KIT_COOLDOWN "sp_surgical_kit_cooldown"
+/// Most operations one visit to the table gets before the surgeon closes up and lets the patient go.
+#define SP_SURGERY_MAX_STEPS 12
+/// Medical restock: the locker or crate being emptied, the ones already looked in, and the waits between
+/// a trip, an ask to cargo and an ask to botany.
+#define BB_SP_RESTOCK_TARGET "sp_restock_target"
+#define BB_SP_RESTOCK_IGNORE "sp_restock_ignore"
+#define BB_SP_RESTOCK_COOLDOWN "sp_restock_cooldown"
+#define BB_SP_CARGO_ASK_COOLDOWN "sp_cargo_ask_cooldown"
+#define BB_SP_BOTANY_ASK_COOLDOWN "sp_botany_ask_cooldown"
+/// Uses of treatment (stack charges plus patches) a medic wants on them before they go looking for more.
+#define SP_MEDIC_LOW_SUPPLIES 8
+/// How much a medic takes out of one locker.
+#define SP_RESTOCK_TAKE_LIMIT 4
+/// How long a looked-in locker is left alone, and how long between asking cargo or botany for more.
+#define SP_RESTOCK_IGNORE_TIME (5 MINUTES)
+#define SP_CARGO_ASK_TIME (10 MINUTES)
+#define SP_BOTANY_ASK_TIME (10 MINUTES)
+
+/// How long a surgeon leaves a patient waiting while they go and fetch the tools for the job.
+#define SP_FETCH_TOOLS_TIME (45 SECONDS)
+
+// --- Chemistry -------------------------------------------------------------------------------
+
+/// Chemist: what they are making next, and in what form (SP_CHEM_FORM_*).
+#define BB_SP_CHEM_PRODUCT "sp_chem_product"
+#define BB_SP_CHEM_FORM "sp_chem_form"
+/// Chemist: the tile to brew from, and the three machines within reach of it.
+#define BB_SP_CHEM_BENCH "sp_chem_bench"
+#define BB_SP_CHEM_DISPENSER "sp_chem_dispenser"
+#define BB_SP_CHEM_HEATER "sp_chem_heater"
+#define BB_SP_CHEM_MASTER "sp_chem_master"
+/// Chemist: where finished medicine is going.
+#define BB_SP_CHEM_DROP "sp_chem_drop"
+/// Chemist: world.time before which the order board is not looked at again.
+#define BB_SP_CHEM_IDLE_UNTIL "sp_chem_idle_until"
+
+/// What a chemist order comes out as.
+#define SP_CHEM_FORM_PATCH "patch"
+#define SP_CHEM_FORM_BEAKER "beaker"
+/// Buffer, drawn into the bench's heater for the brews after it.
+#define SP_CHEM_FORM_HEATER "heater"
+
+/// How deep the planner follows a recipe made of other recipes.
+#define SP_BREW_MAX_DEPTH 4
+/// A reaction making less than this, in units a second, at room temperature gets the heater.
+#define SP_BREW_SLOW_RATE 2
+/// The longest one stage of a brew is waited on.
+#define SP_BREW_STAGE_TIMEOUT (60 SECONDS)
+/// Patches of each kind kept in the chemistry fridge.
+#define SP_CHEM_PATCH_STOCK 4
+/// Units of medicine in each printed patch.
+#define SP_CHEM_PATCH_UNITS 9
+/// Cryoxadone for the tubes, in units, below which the chemist makes more.
+#define SP_CRYOXADONE_LOW 40
+/// Units of either buffer in the bench's heater below which the chemist brews more before anything else. A
+/// batch of libital takes seven, and a brew that runs short of buffer mid-reaction comes out a third pure.
+#define SP_CHEM_BUFFER_LOW 12
+/// How long the chemist leaves the order board alone when there is nothing to make.
+#define SP_CHEM_IDLE_TIME (1 MINUTES)
+/// A short wait after a delivery run that did not work out, so an unreachable fridge is not walked at every tick.
+#define BB_SP_CHEM_DELIVER_COOLDOWN "sp_chem_deliver_cooldown"
+
+// --- Greytide: assistants and their mischief ---------------------------------------------------
+
+/// Assistant: world.time before which they will not think about another prank.
+#define BB_SP_MISCHIEF_NEXT "sp_mischief_next"
+/// Assistant: the prank planned (SP_MISCHIEF_*), what it is done to, and the tile to do it from.
+#define BB_SP_MISCHIEF "sp_mischief"
+#define BB_SP_MISCHIEF_TARGET "sp_mischief_target"
+#define BB_SP_MISCHIEF_SPOT "sp_mischief_spot"
+/// Assistant: set only while a prank is under way, so a chat does not interrupt it halfway.
+#define BB_SP_PRANKING "sp_pranking"
+/// Assistant: TRUE once they have their gloves and a tool from tool storage, or have given up on it.
+#define BB_SP_GEARED_UP "sp_geared_up"
+/// Assistant: the item being fetched from tool storage, the tile to reach it from, and trips made so far.
+#define BB_SP_GEAR_TARGET "sp_gear_target"
+#define BB_SP_GEAR_SPOT "sp_gear_spot"
+#define BB_SP_GEAR_TRIPS "sp_gear_trips"
+
+/// The pranks. The tally counts each one as tide.<name>.
+#define SP_MISCHIEF_GRAFFITI "graffiti"
+#define SP_MISCHIEF_LIGHTS "lights"
+#define SP_MISCHIEF_KNOCK "knock"
+#define SP_MISCHIEF_BELL "bell"
+#define SP_MISCHIEF_HONK "honk"
+
+/// How long an assistant goes between pranks, and how soon they look again when there was nothing to do.
+#define SP_MISCHIEF_INTERVAL_MIN (3 MINUTES)
+#define SP_MISCHIEF_INTERVAL_MAX (6 MINUTES)
+#define SP_MISCHIEF_RETRY_TIME (1 MINUTES)
+/// Chance an assistant who could pull a prank actually bothers, each time one comes round.
+#define SP_MISCHIEF_MOOD_CHANCE 60
+/// How far an assistant looks for somewhere to pull a prank.
+#define SP_MISCHIEF_RANGE 9
+/// How long the lights stay off before "just kidding".
+#define SP_MISCHIEF_DARK_TIME (6 SECONDS)
+/// Things an assistant takes from one locker, which they then leave hanging open.
+#define SP_GREYTIDE_TAKE_LIMIT 3
+/// Trips to tool storage before an assistant stops bothering: gloves, a tool, and one spare.
+#define SP_GEAR_MAX_TRIPS 3

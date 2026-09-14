@@ -1,0 +1,97 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_medical_patient",
+	"type": "sequence",
+	"children": [
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_find_patient"
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+			"vars": {
+				"target_key": "BB_SP_PATIENT",
+				"required_dist": 1,
+				"finish_on_arrival": true
+			}
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_examine_patient"
+		},
+		{
+			"type": "selector",
+			"children": [
+				{
+					"type": "decorator",
+					"decorator": "/datum/bt_node/decorator/sp_treatment_is",
+					"vars": {
+						"plan": "SP_TRIAGE_CRYO"
+					},
+					"child": {
+						"type": "sequence",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_bring_to_cryo"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+								"vars": {
+									"target_key": "BB_SP_CRYO_CELL",
+									"required_dist": 1,
+									"finish_on_arrival": true
+								}
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_load_cryo"
+							}
+						]
+					}
+				},
+				{
+					"type": "decorator",
+					"decorator": "/datum/bt_node/decorator/sp_treatment_is",
+					"vars": {
+						"plan": "SP_TRIAGE_SURGERY"
+					},
+					"child": {
+						"type": "sequence",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_bring_to_table"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+								"vars": {
+									"target_key": "BB_SP_OPTABLE",
+									"required_dist": 1,
+									"finish_on_arrival": true
+								}
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_operate"
+							}
+						]
+					}
+				},
+				{
+					"type": "decorator",
+					"decorator": "/datum/bt_node/decorator/sp_treatment_is",
+					"vars": {
+						"plan": "SP_TRIAGE_TREAT"
+					},
+					"child": {
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_treat_patient"
+					}
+				}
+			]
+		}
+	]
+}

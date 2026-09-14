@@ -36,3 +36,43 @@
 /// the cooking and serving half of the kitchen can be exercised without first waiting out the whole
 /// cutting, mixing and baking chain. Config key: SP_DEBUG_KITCHEN_STOCK
 /datum/config_entry/flag/sp_debug_kitchen_stock
+
+/// Debug: ninety seconds into the round, hurt a few crew members — a cut arm, a burned leg, and one
+/// badly enough to need cryo — so triage, treatment and the cryo tubes can be watched without waiting
+/// for an accident. Config key: SP_DEBUG_MEDICAL_PATIENTS
+/datum/config_entry/flag/sp_debug_medical_patients
+
+/// Debug: two minutes in, empty the medics' pockets of treatment supplies, so restocking out of a locker,
+/// from cargo and from botany can be watched without waiting for a shift's worth of patients to use them
+/// up. Config key: SP_DEBUG_MEDBAY_DRY
+/datum/config_entry/flag/sp_debug_medbay_dry
+
+/// Whether the greytide's malicious streak is switched on: some assistants breaking a light tube here and
+/// there, on top of the harmless pranks. On by default; it is still gated per-assistant and never turns
+/// violent. Config key: SP_GREYTIDE_MALICE
+/datum/config_entry/flag/sp_greytide_malice
+	default = TRUE
+
+/// Debug: shortly into the round, turn one random AI crew member into a thief with a scheme, so the
+/// antagonist path can be watched in a headless round. Config key: SP_DEBUG_ANTAGONIST
+/datum/config_entry/flag/sp_debug_antagonist
+
+/// Whether an SP antagonist should also be given a silent TG traitor datum, so the rest of the game counts
+/// them as a real antagonist (codewords, round-end report). Off by default: with no client the round-end
+/// report prints a blank key and codewords are broadcast to a crew of NPCs. The scheme drives behaviour
+/// either way. Config key: SP_ANTAG_TG_DATUM
+/datum/config_entry/flag/sp_antag_tg_datum
+
+/// How many AI assistants join the station at roundstart, on top of SP_AUTOPOPULATE: a random number between
+/// these two. They are the station's greytide (sp_greytide.dm). Config keys: SP_ASSISTANTS_MIN, SP_ASSISTANTS_MAX
+/datum/config_entry/number/sp_assistants_min
+	default = 1
+	integer = TRUE
+	min_val = 0
+	max_val = 20
+
+/datum/config_entry/number/sp_assistants_max
+	default = 3
+	integer = TRUE
+	min_val = 0
+	max_val = 20

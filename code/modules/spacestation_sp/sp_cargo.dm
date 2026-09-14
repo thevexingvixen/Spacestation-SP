@@ -25,6 +25,8 @@
 	var/status = SP_REQUEST_PENDING
 	/// The supply order once it has been placed, so we can match the crate that comes back.
 	var/order_id
+	/// The crate once a technician has it, so whoever asked can go and find it wherever it was left.
+	var/datum/weakref/crate
 	/// When it was raised.
 	var/made_at = 0
 
@@ -60,6 +62,13 @@
 	SSspacestation_sp.supply_requests += request
 	log_sp("[requester?.real_name || "someone"] requested [pack.name] from cargo")
 	return request
+
+/// Whether cargo already has this pack on the way: asked for, and not yet delivered.
+/proc/sp_supplies_on_order(pack_type)
+	for(var/datum/sp_supply_request/request as anything in SSspacestation_sp.supply_requests)
+		if(request.pack?.type == pack_type && request.status != SP_REQUEST_DELIVERED)
+			return TRUE
+	return FALSE
 
 /// Requests cargo has not ordered yet.
 /proc/sp_pending_requests()
@@ -149,19 +158,34 @@ GLOBAL_LIST_INIT(sp_cargo_standing_order, list(
 /**
  * A crate still sitting on the supply shuttle that nobody else has hold of.
  * Two technicians grabbing at the same crate just steal the pull off each other and neither finishes,
- * so anything already being dragged is left to whoever has it.
+ * so anything somebody already has hold of, or is on their way over to, is left to them.
  */
 /proc/sp_find_crate_on_shuttle(mob/living/asking)
+	// Only while it is docked here. Away at CentCom its deck is another z-level entirely, and a technician who
+	// picked the mail crate off it stood in the cargo bay for two minutes, unable to walk there, before giving up.
+	if(!sp_supply_docked_home())
+		return null
 	for(var/turf/deck as anything in sp_supply_shuttle_turfs())
 		for(var/obj/structure/closet/crate/crate in deck)
-			var/taken = FALSE
-			for(var/mob/living/carbon/human/other as anything in SSspacestation_sp.ai_crew)
-				if(other != asking && other.pulling == crate)
-					taken = TRUE
-					break
-			if(!taken)
+			if(!sp_crate_claimed(crate, asking))
 				return crate
 	return null
+
+/**
+ * Whether somebody other than `asking` already has this crate: dragging it, or on their way over to. Checking
+ * only who was dragging left a gap the length of the walk to the shuttle, and two technicians who picked the
+ * same crate inside it took the pull off each other all the way across the station until both gave up.
+ */
+/proc/sp_crate_claimed(obj/structure/closet/crate/crate, mob/living/asking)
+	if(!isnull(crate.pulledby) && crate.pulledby != asking)
+		return TRUE
+	for(var/mob/living/carbon/human/other as anything in SSspacestation_sp.ai_crew)
+		if(other == asking)
+			continue
+		var/datum/ai_controller/their_ai = other.ai_controller
+		if(!isnull(their_ai) && their_ai.blackboard[BB_SP_CRATE] == crate)
+			return TRUE
+	return FALSE
 
 /// Somewhere in the cargo bay to leave a crate that nobody asked for.
 /proc/sp_find_cargo_dropoff(mob/living/carbon/human/who)
@@ -205,23 +229,111 @@ GLOBAL_LIST_INIT(sp_cargo_standing_order, list(
 		return null
 	var/turf/best
 	var/best_distance = INFINITY
+	var/turf/fallback
+	var/fallback_distance = INFINITY
 	for(var/turf/candidate as anything in candidates)
 		if(candidate.density || candidate.is_blocked_turf(exclude_mobs = TRUE))
 			continue
 		var/distance = get_dist(origin, candidate)
-		if(distance < best_distance)
-			best = candidate
-			best_distance = distance
-	return best
+		// Clear of the doorway with room to walk round beats the tile just inside the door.
+		if(sp_good_drop_spot(candidate))
+			if(distance < best_distance)
+				best = candidate
+				best_distance = distance
+		else if(distance < fallback_distance)
+			fallback = candidate
+			fallback_distance = distance
+	return best || fallback
 
-/// The request a delivered crate belongs to, matched on the pack that made it.
+/**
+ * The request a delivered crate belongs to. The supply shuttle ends every ordered crate's name with
+ * " - #<order number>", and the quartermaster keeps that number on the request, so the match is exact.
+ * Matching on the pack's name was not: a pack and its crate are often called different things, and the
+ * Medical Supplies Crate medbay asked for arrived as a "DeForest Medical crate", matched nothing, and was
+ * left in the cargo bay as if nobody wanted it.
+ */
 /proc/sp_request_for_crate(obj/structure/closet/crate/crate)
 	if(QDELETED(crate))
 		return null
 	for(var/datum/sp_supply_request/request as anything in SSspacestation_sp.supply_requests)
-		if(request.status != SP_REQUEST_ORDERED || isnull(request.pack))
+		if(request.status != SP_REQUEST_ORDERED || isnull(request.order_id))
 			continue
-		// Crates are named after the pack that produced them.
-		if(findtext(crate.name, request.pack.name) || crate.name == request.pack.name)
+		var/suffix = " - #[request.order_id]"
+		var/suffix_at = length(crate.name) - length(suffix) + 1
+		if(suffix_at >= 1 && findtext(crate.name, suffix, suffix_at))
 			return request
 	return null
+
+/// Crates cargo has brought over for this pack and handed off, wherever they ended up.
+/proc/sp_delivered_crates(pack_type)
+	var/list/obj/structure/closet/crate/crates = list()
+	for(var/datum/sp_supply_request/request as anything in SSspacestation_sp.supply_requests)
+		if(request.status != SP_REQUEST_DELIVERED || request.pack?.type != pack_type)
+			continue
+		var/obj/structure/closet/crate/crate = request.crate?.resolve()
+		if(!QDELETED(crate))
+			crates += crate
+	return crates
+
+/**
+ * Somewhere a delivery can sit without being in the way: open floor with room to walk round it, and neither
+ * in a doorway, where it jams the door, nor right in front of one, where everybody has to squeeze past it.
+ */
+/proc/sp_good_drop_spot(turf/spot)
+	if(isnull(spot) || spot.density || spot.is_blocked_turf(exclude_mobs = TRUE))
+		return FALSE
+	if(locate(/obj/machinery/door) in spot)
+		return FALSE
+	var/open_sides = 0
+	for(var/direction in GLOB.cardinals)
+		var/turf/beside = get_step(spot, direction)
+		if(isnull(beside))
+			continue
+		if(locate(/obj/machinery/door) in beside)
+			return FALSE
+		if(!beside.density && !beside.is_blocked_turf(exclude_mobs = TRUE))
+			open_sides++
+	return open_sides >= 3
+
+/**
+ * Where somebody carrying a delivery can actually leave it, on the way to `destination`. Sleeps: it asks the
+ * pathfinder, and the pathfinder makes you wait.
+ *
+ * A request is addressed to wherever the asker was standing, and that is often behind a door the person
+ * delivering cannot open: a doctor in the operating theatre, a chef in the kitchen. Planned with our own ID
+ * there is no route at all, so the walk fails on the spot, over and over, until the haul times out in the
+ * cargo bay. What a technician does instead is bring it as far as they can and leave it at the door: so plan
+ * the route as if every door opened, follow it up to the first one ours does not, and stop a little short.
+ *
+ * `min_distance` is how near counts as there: 1 for a table, which nobody stands on.
+ *
+ * Returns `destination` when we can get there, a spot short of it when we cannot, and null when there is no
+ * way there even with every door open.
+ */
+/proc/sp_reachable_drop_spot(mob/living/walker, turf/destination, min_distance = 0)
+	var/turf/start = get_turf(walker)
+	if(isnull(start) || isnull(destination))
+		return null
+	if(get_dist(start, destination) <= min_distance)
+		return destination
+	var/datum/ai_movement/jps/sp_crew/movement = /datum/ai_movement/jps/sp_crew
+	var/max_length = initial(movement.maximum_length)
+	var/list/own_access = walker.get_access()
+	if(length(get_path_to(walker, destination, max_length, min_distance, access = own_access)))
+		return destination
+	var/list/path = get_path_to(walker, destination, max_length, min_distance, access = SSid_access.get_region_access_list(list(REGION_ALL_STATION)))
+	if(QDELETED(walker) || !length(path))
+		return null
+	var/datum/can_pass_info/pass_info = new(walker, own_access)
+	var/list/turf/walked = list(start)
+	var/turf/last = start
+	for(var/turf/next as anything in path)
+		if(last.LinkBlockedWithAccess(next, pass_info))
+			break
+		walked += next
+		last = next
+	for(var/i in length(walked) to max(1, length(walked) - SP_DROP_STEP_BACK) step -1)
+		var/turf/spot = walked[i]
+		if(sp_good_drop_spot(spot))
+			return spot
+	return last

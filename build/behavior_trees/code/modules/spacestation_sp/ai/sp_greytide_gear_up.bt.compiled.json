@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/sp_wants_gear","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_pick_gear"},{"type":"/datum/bt_node/ai_behavior/move_to_target/sp_reported","target_key":"sp_gear_spot","required_dist":0,"finish_on_arrival":true},{"type":"/datum/bt_node/ai_behavior/sp_take_gear"}]}]}

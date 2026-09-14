@@ -22,6 +22,26 @@ ADMIN_VERB(sp_spawn_crew_job, R_SPAWN, "SP: Spawn Crew (Job)", "Spawn one AI-con
 	message_admins("[key_name_admin(user)] spawned AI crew [crew.real_name] ([job.title]) at [ADMIN_VERBOSEJMP(crew)].")
 	log_admin("[key_name(user)] spawned AI crew [crew.real_name] ([job.title]) at [AREACOORD(crew)].")
 
+ADMIN_VERB(sp_spawn_antagonist, R_SPAWN, "SP: Spawn Antagonist (Thief)", "Spawn an AI crew member with a hidden scheme to steal something, at your location.", ADMIN_CATEGORY_FUN)
+	var/list/datum/job/pool = sp_get_crew_job_pool()
+	var/list/titles = list()
+	for(var/datum/job/job as anything in pool)
+		titles[job.title] = job
+	var/picked = tgui_input_list(user, "Which job should the antagonist hold?", "Spawn Antagonist", sort_list(titles))
+	if(isnull(picked))
+		return
+	var/datum/job/job = titles[picked]
+	var/mob/living/carbon/human/crew = sp_spawn_crew_member(job, spawn_point = get_turf(user.mob), controller_type = /datum/ai_controller/sp_crew/antagonist)
+	if(isnull(crew))
+		to_chat(user, span_warning("Failed to spawn an AI antagonist."))
+		return
+	var/datum/sp_scheme/scheme = sp_make_thief(crew.ai_controller)
+	if(isnull(scheme))
+		to_chat(user, span_warning("Spawned [crew.real_name], but found nothing on the map worth stealing to scheme about."))
+		return
+	message_admins("[key_name_admin(user)] spawned AI antagonist [crew.real_name] ([job.title]) at [ADMIN_VERBOSEJMP(crew)], scheme: [scheme.name].")
+	log_admin("[key_name(user)] spawned AI antagonist [crew.real_name] ([job.title]); scheme: [scheme.name].")
+
 ADMIN_VERB(sp_behaviour_tally, R_DEBUG, "SP: Behaviour Tally", "Show what the AI crew have actually managed to do so far this round.", ADMIN_CATEGORY_DEBUG)
 	var/list/tally = SSspacestation_sp.event_tally
 	if(!length(tally))

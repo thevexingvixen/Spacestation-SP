@@ -20,7 +20,7 @@
 			},
 			{
 				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/move_to_target",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
 				"vars": {
 					"target_key": "BB_SP_TRAY",
 					"required_dist": 1,

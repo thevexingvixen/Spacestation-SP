@@ -26,10 +26,6 @@
 /datum/bt_node/subtree/sp_crew_threat
 	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_threat.bt.json"
 
-/// Medical: find a treatable patient, equip the right medical stack, walk over and apply it.
-/datum/bt_node/subtree/sp_medical_treat
-	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_medical_treat.bt.json"
-
 /// Security: respond to a reported incident, subdue and cuff the suspect.
 /datum/bt_node/subtree/sp_security_respond
 	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_security_respond.bt.json"
@@ -53,6 +49,32 @@
 	max_pathing_attempts = 40
 	maximum_length = 220
 
+/**
+ * Plastic flaps tell the pathfinder that anyone may walk through them, then stop anyone standing up. The Head
+ * of Personnel, whose access opens the bridge's delivery windoor, was routed into the maintenance flaps in
+ * front of it on the way to medbay and stood there until the walk gave up — and again every few minutes, for
+ * the rest of the round. What CanAllowThrough is going to refuse, the pathfinder should not plan through.
+ */
+/obj/structure/plasticflaps/CanAStarPass(to_dir, datum/can_pass_info/pass_info)
+	if(require_resting && pass_info.is_living && !pass_info.is_bot && pass_info.mob_size != MOB_SIZE_TINY && !(pass_info.pass_flags & PASSFLAPS))
+		return FALSE
+	return ..()
+
+/**
+ * A move_to_target that says so in the log when a walk fails. Inside a cooldown a failed walk is otherwise
+ * silent, and looks like somebody who set off and changed their mind: it took a whole round's log to spot a
+ * doctor who could never reach the theatre trays and a Head of Personnel stuck at a set of flaps.
+ */
+/datum/bt_node/ai_behavior/move_to_target/sp_reported
+
+/datum/bt_node/ai_behavior/move_to_target/sp_reported/perform(seconds_per_tick, datum/ai_controller/controller)
+	. = ..()
+	if(!(. & AI_BEHAVIOR_FAILED))
+		return
+	var/atom/target = controller.blackboard[target_key]
+	var/mob/living/pawn = controller.pawn
+	log_sp("[pawn.real_name] could not walk to [QDELETED(target) ? "a target that is gone" : "[target] at [AREACOORD(target)]"] from [AREACOORD(pawn)]")
+
 // --- Helpers ----------------------------------------------------------------------------------
 
 /// Is this human holding something we would call a weapon?
@@ -67,6 +89,18 @@
 		if(held.force >= 12)
 			return TRUE
 	return FALSE
+
+/**
+ * Whether somebody armed is a worry. Not security or command, who are allowed; and not a monkey with a knife
+ * until it starts swinging it. Pun Pun arms themselves with whatever turns up behind the bar, and crew in the
+ * bar spent whole minutes shouting for security about a monkey that was minding its own business.
+ */
+/proc/sp_armed_threat(mob/living/carbon/human/candidate)
+	if(candidate.stat != STABLE || !sp_is_armed(candidate) || sp_is_authority(candidate))
+		return FALSE
+	if(ismonkey(candidate))
+		return candidate.combat_mode || candidate.ai_controller?.blackboard[BB_MONKEY_AGGRESSIVE]
+	return TRUE
 
 /// Security and command are allowed to carry weapons without scaring the crew.
 /proc/sp_is_authority(mob/living/carbon/human/who)
@@ -96,22 +130,63 @@
 		crew.dropItemToGround(held)
 
 /**
- * One click, waiting out the click delay first.
+ * An open tile to stand on with this in arm's reach, the nearest to `near`, or null if there is none; the
+ * thing's own tile counts when nothing there is in the way, as under a light switch. Walk there rather than
+ * to "within a tile" of the thing: the pathfinder will not end a walk on a diagonal whose two corners are
+ * both blocked, though an arm reaches across a table there. The theatre's surgery trays sit in corners with
+ * a table on one side and the operating table on the other, and the doctor sent to them never set off.
+ */
+/proc/sp_reach_spot(atom/thing, atom/near)
+	var/turf/target_turf = get_turf(thing)
+	if(isnull(target_turf))
+		return null
+	var/turf/best
+	for(var/turf/open/spot in range(1, target_turf))
+		if(spot.is_blocked_turf(exclude_mobs = TRUE) || !spot.Adjacent(thing))
+			continue
+		if(isnull(best) || get_dist(near, spot) < get_dist(near, best))
+			best = spot
+	return best
+
+/**
+ * One click, waiting out the click delays first.
  *
  * ClickOn() drops anything that arrives within a decisecond of the last click, which is invisible when
  * a behaviour clicks once but silently eats every second click of a sequence — open the oven, put the
- * tray in, shut the door becomes open the oven and nothing else. Only safe from an async behaviour,
+ * tray in, shut the door becomes open the oven and nothing else. It also drops any click made during the
+ * attack cooldown (next_move) that a patch or a hit leaves behind. Only safe from an async behaviour,
  * because it sleeps.
  */
 /proc/sp_ai_click(datum/ai_controller/controller, atom/target, list/modifiers)
 	var/mob/living/pawn = controller.pawn
 	if(QDELETED(pawn) || QDELETED(target))
 		return FALSE
-	if(world.time <= pawn.next_click)
-		sleep(pawn.next_click - world.time + 1)
+	var/wait = max(pawn.next_click + 1, pawn.next_move) - world.time
+	if(wait > 0)
+		sleep(wait)
 	if(QDELETED(pawn) || QDELETED(target))
 		return FALSE
 	return controller.ai_interact(target, combat_mode = FALSE, modifiers = modifiers)
+
+/**
+ * One drag-and-drop, the way a player drags a patient onto a cryo tube or an operating table.
+ *
+ * TG only ever takes a drop from a client, through MouseDrop(), and AI crew have no client. This runs the
+ * same handler with the same checks — both ends in reach, can_perform_action — with the pawn standing in
+ * as usr. Returns FALSE only when something vanished; whether the drop did anything is for the caller to
+ * look at. Only safe from an async behaviour, because it waits out the click delay first.
+ */
+/proc/sp_ai_drag_onto(datum/ai_controller/controller, atom/movable/dragged, atom/over)
+	var/mob/living/pawn = controller.pawn
+	if(QDELETED(pawn) || QDELETED(dragged) || QDELETED(over))
+		return FALSE
+	if(world.time <= pawn.next_click)
+		sleep(pawn.next_click - world.time + 1)
+	if(QDELETED(pawn) || QDELETED(dragged) || QDELETED(over))
+		return FALSE
+	usr = pawn
+	dragged.base_mouse_drop_handler(over, dragged.loc, over.loc, "")
+	return TRUE
 
 /**
  * Buys one of something out of a vending machine, paid for from the buyer's own wages.
@@ -134,6 +209,9 @@
 	if(price > 0)
 		var/obj/item/card/id/id_card = buyer.get_idcard(hand_first = FALSE)
 		var/datum/bank_account/account = id_card?.registered_account
+		// Staff buy from their own department's machines at a discount, the same as they would at the screen.
+		if(!isnull(account?.account_job) && account.account_job.paycheck_department == vendor.payment_department)
+			price = max(round(price * DEPARTMENT_DISCOUNT), 1)
 		if(isnull(account) || !account.adjust_money(-price, "Vending: [chosen.name]"))
 			return null
 	var/obj/item/bought = vendor.dispense(chosen, get_turf(buyer))
@@ -221,6 +299,8 @@
 	var/list/fixed_areas
 	/// How many random turfs to test before giving up on an area.
 	var/attempts = 12
+	/// Try the areas in random order. FALSE tries them in the order listed, first choice first.
+	var/shuffle_areas = TRUE
 
 /datum/bt_node/ai_behavior/sp_pick_wander_turf/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/pawn = controller.pawn
@@ -244,8 +324,9 @@
 		area_types = list(home.type)
 		include_subtypes = TRUE
 
-	// Try a few areas in random order; some will not exist on this z-level.
-	area_types = shuffle(area_types)
+	// Try a few areas, in random order unless the list is a ranking; some will not exist on this z-level.
+	if(shuffle_areas)
+		area_types = shuffle(area_types)
 	for(var/area_type in area_types)
 		var/list/turfs = get_area_turfs(area_type, pawn_turf.z, include_subtypes)
 		if(!length(turfs))
@@ -260,14 +341,19 @@
 			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 
-/// Medbay variant with a fixed area list, used by the safety subtree.
+/**
+ * Where a patient goes to be seen. The lobby, if the map has one: the rest of medbay is behind doors only
+ * medical staff can open, and JPS will not path anyone through a door they have no access for, so a patient
+ * who picked a spot on the treatment floor never got there — they gave up and went home.
+ */
 /datum/bt_node/ai_behavior/sp_pick_wander_turf/medbay
 	target_key = BB_SP_MEDBAY_TARGET
 	areas_key = null
+	shuffle_areas = FALSE
 	fixed_areas = list(
+		/area/station/medical/medbay/lobby,
 		/area/station/medical/treatment_center,
 		/area/station/medical/medbay/central,
-		/area/station/medical/medbay/lobby,
 		/area/station/medical/medbay/aft,
 		/area/station/medical/exam_room,
 	)
@@ -380,7 +466,7 @@
 	var/mob/living/current = controller.blackboard[threat_key]
 	var/mob/living/found
 	for(var/mob/living/carbon/human/candidate in oview(scan_range, pawn))
-		if(candidate.stat != STABLE || !sp_is_armed(candidate) || sp_is_authority(candidate))
+		if(!sp_armed_threat(candidate))
 			continue
 		if(!can_see(pawn, candidate, scan_range))
 			continue
@@ -530,46 +616,6 @@
 		sp_crew_speak(pawn, summary, RADIO_CHANNEL_ENGINEERING)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
-// --- Medical ----------------------------------------------------------------------------------
-
-/**
- * Medical: puts a suitable medical stack into our hands for the patient in patient_key.
- * Searches our whole inventory (medkits included). Stores the item in target_key.
- */
-/datum/bt_node/ai_behavior/sp_equip_medical_item
-	/// Blackboard key holding the patient.
-	var/patient_key = BB_SP_PATIENT
-	/// Blackboard key to write the equipped item into.
-	var/target_key = BB_SP_MEDICAL_ITEM
-	/// Brute-treating stacks, best first.
-	var/static/list/brute_types = list(/obj/item/stack/medical/suture, /obj/item/stack/medical/bruise_pack, /obj/item/stack/medical/wrap/gauze)
-	/// Burn-treating stacks, best first.
-	var/static/list/burn_types = list(/obj/item/stack/medical/mesh, /obj/item/stack/medical/ointment, /obj/item/stack/medical/aloe)
-
-/datum/bt_node/ai_behavior/sp_equip_medical_item/perform(seconds_per_tick, datum/ai_controller/controller)
-	var/mob/living/carbon/pawn = controller.pawn
-	var/mob/living/patient = controller.blackboard[patient_key]
-	if(!iscarbon(pawn) || QDELETED(patient))
-		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-
-	var/list/wanted = list()
-	if(patient.get_brute_loss() >= patient.get_fire_loss())
-		wanted = brute_types + burn_types
-	else
-		wanted = burn_types + brute_types
-	if(patient.get_brute_loss() <= 0)
-		wanted -= brute_types
-	if(patient.get_fire_loss() <= 0)
-		wanted -= burn_types
-	if(!length(wanted))
-		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-
-	var/obj/item/chosen = sp_equip_from_inventory(pawn, wanted)
-	if(isnull(chosen))
-		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-	controller.set_blackboard_key(target_key, chosen)
-	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
-
 // --- Decorators -------------------------------------------------------------------------------
 
 /// Passes when the mob in `key` is down: not conscious, incapacitated, or restrained.
@@ -595,24 +641,6 @@
 	if(QDELETED(target) || !isliving(target))
 		return TRUE
 	return target.stat == DEAD || HAS_TRAIT(target, TRAIT_RESTRAINED)
-
-// --- Targeting --------------------------------------------------------------------------------
-
-/// Living, not us, not dead, and carrying enough brute or burn damage for a medical stack to matter.
-/datum/targeting_strategy/sp_treatable_patient
-	/// Minimum brute or burn damage before we bother.
-	var/minimum_damage = 10
-
-/datum/targeting_strategy/sp_treatable_patient/is_valid_target(mob/living/living_mob, atom/target, vision_range, datum/ai_controller/controller = null)
-	. = ..()
-	if(!.)
-		return FALSE
-	if(target == living_mob || !isliving(target))
-		return FALSE
-	var/mob/living/patient = target
-	if(patient.stat == DEAD)
-		return FALSE
-	return (patient.get_brute_loss() >= minimum_damage) || (patient.get_fire_loss() >= minimum_damage)
 
 // --- Leaves: hull breach repair ----------------------------------------------------------------
 

@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/sp_mischief_due","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_plan_mischief"},{"type":"/datum/bt_node/ai_behavior/move_to_target/sp_reported","target_key":"sp_mischief_spot","required_dist":0,"finish_on_arrival":true},{"type":"/datum/bt_node/ai_behavior/sp_do_mischief"}]}]}
