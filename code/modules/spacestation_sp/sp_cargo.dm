@@ -137,6 +137,8 @@ GLOBAL_LIST_INIT(sp_cargo_standing_order, list(
 		return null
 	var/obj/machinery/computer/cargo/best
 	var/best_distance = INFINITY
+	var/obj/machinery/computer/cargo/fallback
+	var/fallback_distance = INFINITY
 	for(var/obj/machinery/computer/cargo/console as anything in SSmachines.get_machines_by_type_and_subtypes(/obj/machinery/computer/cargo))
 		if(console.machine_stat & (BROKEN|NOPOWER))
 			continue
@@ -144,10 +146,18 @@ GLOBAL_LIST_INIT(sp_cargo_standing_order, list(
 		if(isnull(console_turf) || console_turf.z != origin.z)
 			continue
 		var/distance = get_dist(origin, console_turf)
-		if(distance < best_distance)
-			best = console
-			best_distance = distance
-	return best
+		// Cargo's own consoles first, however far away. The nearest console to the kitchen is the supply request
+		// console on the bridge, which no cargo ID opens: a quartermaster who wandered that way set off for it
+		// every forty-five seconds for the rest of the round and never placed an order.
+		var/area/console_area = get_area(console)
+		if(istype(console_area, /area/station/cargo))
+			if(distance < best_distance)
+				best = console
+				best_distance = distance
+		else if(distance < fallback_distance)
+			fallback = console
+			fallback_distance = distance
+	return best || fallback
 
 /// Every turf the supply shuttle occupies, so we can find what has just been delivered.
 /proc/sp_supply_shuttle_turfs()

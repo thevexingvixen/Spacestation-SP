@@ -432,8 +432,13 @@
 	set_blackboard_key(BB_SP_WANDER_AREAS, sp_greytide_haunts())
 	override_blackboard_key(BB_SP_INTERESTS, sp_greytide_interests())
 	// Some of them have a bit of an edge, and will break a light where the harmless lot only draw on the floor.
+	// Logged either way: without it, a round with no vandalism in it reads the same whether nobody was in the
+	// mood or nobody had the streak to begin with, and that is exactly the silence the tally exists to break.
 	if(prob(SP_TROUBLEMAKER_CHANCE))
 		set_blackboard_key(BB_SP_TROUBLEMAKER, TRUE)
+		log_sp("[human_pawn.real_name] has a bit of an edge to them: a troublemaker")
+	else
+		log_sp("[human_pawn.real_name] is the harmless sort of assistant")
 	// The first prank waits until they have had a look round and been to tool storage.
 	set_blackboard_key(BB_SP_MISCHIEF_NEXT, world.time + rand(2 MINUTES, 4 MINUTES))
 	override_blackboard_key(BB_BASIC_MOB_SPEAK_LINES, list(

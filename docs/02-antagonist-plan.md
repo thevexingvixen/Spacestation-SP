@@ -1,7 +1,8 @@
 # Spacestation SP — Plan: malicious greytide and the antagonist foundation
 
-Date: 2026-09-13. Status: first slice being built this session (crime/witness layer, one malicious
-greytide behaviour, the scheme datum and one antagonist behaviour). The rest is the roadmap.
+Date: 2026-09-13. Status: first slice built. The crime/witness layer and the malicious greytide are
+**confirmed in play**; the antagonist scheme assigns and reports correctly but has **not yet completed a
+theft in a live round**. The rest is the roadmap.
 
 This builds on the greytide (`code/modules/spacestation_sp/sp_greytide.dm`), the idle-curiosity
 groundwork (`sp_curiosity.dm`), and the incident-reporting chain that already lets AI security respond
@@ -131,6 +132,36 @@ Unit tests (deterministic, the accepted proof alongside the live tally):
 - `sp_break_light` — a lit tube in a public area is a valid malicious target and goes dark when broken.
 - Live: `SP_GREYTIDE_MALICE` on and an antagonist spawned by an admin verb, watched for `tide.vandalism`,
   `crime.*_seen`, `antag.scheme_done`, and security acknowledging a suspect report.
+
+## 6a. What the first two live rounds showed
+
+Both rounds ran clean (no SP runtimes). The greytide half worked; the antagonist half was where the
+interesting failures were, and all of them were the same mistake wearing different hats.
+
+**Confirmed working.** Troublemaker assistants smashed light tubes, a bystander noticed, and it reached
+security as a place rather than a name: `tide.vandalism=2`, `crime.vandalism_seen=1`, and in the log
+*"Security, I just saw Evangeline Mccune smash a light in Central Primary Hallway."*
+
+**Targets were picked because they existed, not because anyone could have them.** The first antagonist
+was a mime told to steal the medal of captaincy, which spawns inside a locked lockbox in the captain's
+quarters with the only other copy pinned to the captain. The second was a paramedic sent after the head
+of security's laser gun, which `populate_contents_immediate()` creates inside a locker with
+`req_access = list(ACCESS_HOS)`. Selection now requires an instance that is actually liftable: out on a
+turf, or in a closet this particular thief can open (`sp_can_be_lifted(candidate, thief)`).
+
+**It failed silently.** The goal search returned nothing and said nothing, every three seconds, which in
+a log is indistinguishable from an antagonist who has not started. There is now a rate-limited line
+("cannot get at what they are after"), and the troublemaker roll is logged either way, so a round with no
+vandalism in it can no longer be confused with a round that had nobody inclined to any.
+
+**The harness put them where they could not act.** Spawned ninety seconds in, the debug antagonist lands
+on the arrival shuttle, which is its own z-level; everything worth stealing is on the station below, so
+the scheme correctly found nothing. The debug helper now moves them onto the station.
+
+Two unrelated bugs surfaced the same way, both from walks that now report their failures: the
+quartermaster walked at the bridge's supply console (which no cargo ID opens) every forty-five seconds
+and never placed an order, and patients dragged into medbay could not get out until `sp_see_out()` was
+added — the latter visible as `crew.buzzed_through=12`.
 
 ## 7. Order of work
 

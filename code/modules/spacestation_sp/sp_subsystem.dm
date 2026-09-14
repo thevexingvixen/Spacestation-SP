@@ -157,7 +157,11 @@ SUBSYSTEM_DEF(spacestation_sp)
  * without an admin doing it by hand. Picks a random non-security job, so they have somewhere to belong
  * and are not the one meant to be catching them.
  */
+/// Picking a target asks the pathfinder, which sleeps, and a timer callback is no place to do that.
 /datum/controller/subsystem/spacestation_sp/proc/debug_make_antagonist()
+	INVOKE_ASYNC(src, PROC_REF(do_debug_make_antagonist))
+
+/datum/controller/subsystem/spacestation_sp/proc/do_debug_make_antagonist()
 	var/list/datum/job/pool = sp_get_crew_job_pool()
 	for(var/datum/job/job as anything in shuffle(pool))
 		if(ispath(sp_controller_for_job(job), /datum/ai_controller/sp_crew/security))
@@ -165,6 +169,17 @@ SUBSYSTEM_DEF(spacestation_sp)
 		var/mob/living/carbon/human/crew = sp_spawn_crew_member(job, controller_type = /datum/ai_controller/sp_crew/antagonist)
 		if(isnull(crew))
 			continue
+		// Spawned this far into the round, the job's own roundstart landmark is long gone and they land on the
+		// arrival shuttle, which is a z-level of its own: everything worth stealing is on the station below, so the
+		// scheme finds nothing and says so every couple of minutes forever. Put them where the crew actually are.
+		if(!is_station_level(crew.z))
+			for(var/mob/living/carbon/human/other as anything in shuffle(ai_crew))
+				var/turf/somewhere = get_turf(other)
+				if(other == crew || isnull(somewhere) || !is_station_level(somewhere.z))
+					continue
+				crew.forceMove(somewhere)
+				log_sp("debug: moved [crew.real_name] onto the station, beside [other.real_name] in [get_area_name(somewhere)]")
+				break
 		var/datum/sp_scheme/scheme = sp_make_thief(crew.ai_controller)
 		if(isnull(scheme))
 			log_sp("debug: spawned antagonist [crew.real_name] but found nothing worth stealing")

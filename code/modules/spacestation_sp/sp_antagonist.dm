@@ -52,6 +52,8 @@
 	var/datum/objective_item/target_info
 	/// Cached typepath of the item we want, so the scheme reads even if the catalogue entry goes away.
 	var/target_type
+	/// The particular copy we proved we could reach when the scheme was handed out.
+	var/datum/weakref/target_ref
 
 /datum/sp_scheme/steal/proc/set_target(datum/objective_item/info)
 	target_info = info
@@ -72,6 +74,12 @@
 	// Already have it: nothing to walk to.
 	if(length(pawn.get_all_contents_type(target_type)))
 		return null
+	// The copy we know we can get to, while it is still there to get. Going for whichever is nearest instead
+	// means changing our mind every time we round a corner: a bitrunner sent after a hand teleporter spent the
+	// shift walking between the one in the teleporter room and the one in the captain's quarters, reaching neither.
+	var/obj/item/known = target_ref?.resolve()
+	if(!QDELETED(known) && sp_can_be_lifted(known, pawn))
+		return known
 	return sp_nearest_steal_item(pawn, target_type)
 
 /**
@@ -86,11 +94,8 @@
 	var/obj/item/best
 	var/best_distance = INFINITY
 	for(var/obj/item/candidate as anything in GLOB.steal_item_handler?.objectives_by_path[target_type])
-		if(QDELETED(candidate))
-			continue
 		var/turf/there = get_turf(candidate)
-		// On the map, on our level, and not already carried by somebody.
-		if(isnull(there) || there.z != origin.z || ismob(candidate.loc))
+		if(isnull(there) || there.z != origin.z || !sp_can_be_lifted(candidate, thief))
 			continue
 		var/distance = get_dist(origin, there)
 		if(distance < best_distance)
@@ -99,10 +104,53 @@
 	return best
 
 /**
+ * Whether a thief could actually walk up to this and take it: lying out in the open, or shut in a closet we
+ * can open. Not something nested in a box, and not something being worn or carried.
+ *
+ * The first antagonist of the first round was a mime told to steal the medal of captaincy, which spawns inside
+ * a locked lockbox in the captain's quarters, with the only other copy pinned to the captain's uniform. It was
+ * picked because it existed, not because it could be had, and the mime spent the shift with nothing to do.
+ */
+/proc/sp_can_be_lifted(obj/item/candidate, mob/living/thief)
+	if(QDELETED(candidate))
+		return FALSE
+	var/atom/where = candidate.loc
+	if(isturf(where))
+		return TRUE
+	var/obj/structure/closet/locker = where
+	if(!istype(locker))
+		return FALSE
+	// A closet we can open. A locked one we have no key to is the lockbox problem one layer down: the thief walks
+	// all the way there, clicks at it, and comes away with nothing.
+	if(locker.locked && !isnull(thief) && !locker.allowed(thief))
+		return FALSE
+	return TRUE
+
+/**
  * Picks a steal target for an antagonist: an on-the-map, normal-type catalogue item this crew member is
  * not the owner of, that actually has a locatable instance right now. Returns the /datum/objective_item, or
  * null if nothing suitable exists (an empty test map, say).
  */
+/**
+ * The copy of `info` this thief could actually walk up to and lift, with their own ID and no help, or null if
+ * there is none. Sleeps: it asks the pathfinder.
+ *
+ * The layer under `sp_can_be_lifted()`. A cook was sent after an ablative trenchcoat, which sits out on a
+ * shelf — perfectly liftable, in the armory, behind a door no cook opens, and she stood in the brig telling
+ * the log about it. Checking the container is not enough; the room has to be ours as well.
+ */
+/proc/sp_reachable_steal_item(mob/living/carbon/human/thief, datum/objective_item/info)
+	var/datum/ai_movement/jps/sp_crew/movement = /datum/ai_movement/jps/sp_crew
+	var/max_length = initial(movement.maximum_length)
+	// Only the one question: can we get to it? Whether it is on the station at all was settled by the cheap
+	// filter in sp_pick_steal_target() before we got here.
+	for(var/obj/item/instance as anything in GLOB.steal_item_handler?.objectives_by_path[info.targetitem])
+		if(!sp_can_be_lifted(instance, thief))
+			continue
+		if(length(get_path_to(thief, instance, max_length, 1, thief.get_access())))
+			return instance
+	return null
+
 /proc/sp_pick_steal_target(mob/living/carbon/human/thief)
 	var/list/datum/objective_item/candidates = list()
 	var/thief_job = thief?.mind?.assigned_role?.title
@@ -111,10 +159,22 @@
 			continue
 		if(thief_job && (thief_job in info.excludefromjob))
 			continue
-		if(!length(GLOB.steal_item_handler?.objectives_by_path[info.targetitem]))
+		// Has to be a copy somebody could actually lift, on the station, not sealed in a box or worn by a head.
+		var/liftable = FALSE
+		for(var/obj/item/instance as anything in GLOB.steal_item_handler?.objectives_by_path[info.targetitem])
+			var/turf/there = get_turf(instance)
+			if(isnull(there) || !is_station_level(there.z) || !sp_can_be_lifted(instance, thief))
+				continue
+			liftable = TRUE
+			break
+		if(!liftable)
 			continue
 		candidates += info
-	return length(candidates) ? pick(candidates) : null
+	// Then the expensive question, asked in a random order and only until one answers: can we get there at all?
+	for(var/datum/objective_item/info as anything in shuffle(candidates))
+		if(sp_reachable_steal_item(thief, info))
+			return info
+	return null
 
 /// Gives `controller` a scheme to steal a chosen (or picked) catalogue item. Returns the scheme, or null.
 /proc/sp_make_thief(datum/ai_controller/sp_crew/controller, datum/objective_item/info)
@@ -127,6 +187,8 @@
 		return null
 	var/datum/sp_scheme/steal/scheme = new()
 	scheme.set_target(info)
+	// Remember which copy we checked, so the walk goes to that one rather than whichever looks nearest later.
+	scheme.target_ref = WEAKREF(sp_reachable_steal_item(pawn, info))
 	controller.set_blackboard_key(BB_SP_SCHEME, scheme)
 	log_sp("[pawn.real_name] ([pawn.mind?.assigned_role?.title || "crew"]) is now up to something: [scheme.name]")
 	return scheme

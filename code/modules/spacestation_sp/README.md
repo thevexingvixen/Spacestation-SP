@@ -15,7 +15,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_engineering.dm` — power monitoring and the scripted engine startup (see below).
 - `sp_breach.dm` — hull breach detection and RCD repair (see below).
 - `sp_botany.dm` — hydroponics helpers: which tray needs what, seed pool, produce and delivery targets.
-- `sp_admin_verbs.dm` — Fun tab: "SP: Populate Station", "SP: Spawn Crew (Job)".
+- `sp_admin_verbs.dm` — Fun tab: "SP: Populate Station", "SP: Spawn Crew (Job)", "SP: Spawn Antagonist
+  (Thief)"; Debug tab: "SP: Behaviour Tally".
 - `ai/sp_crew_controller.dm` — `/datum/ai_controller/sp_crew` and the `/medical`, `/security`,
   `/engineer` subtypes. Hearing hook, incident routing, attacker memory, `TRAIT_NOHUNGER`.
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
@@ -26,6 +27,14 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
 - `sp_antagonist.dm` — schemes: an AI crew member's hidden goal and the score-keeping for it.
 - `ai/sp_antagonist_behaviors.dm` — the antagonist controller and the leaves that pursue a scheme.
+- `sp_greytide.dm` — the assistants' haunts and tastes, the prank menu, the tool-storage trips, and the
+  malicious streak that smashes a light.
+- `ai/sp_greytide_behaviors.dm` — the greytide's gear-up, mischief, rummage and door-trying leaves.
+- `sp_chemistry.dm` — planning a medicine back to what the dispenser pours, brewing it a stage at a time,
+  and driving the ChemMaster.
+- `ai/sp_chemist_behaviors.dm` — the chemist's brewing, patch-printing and delivery leaves.
+- `sp_role_takeover.dm` — keeping a job an AI crew member holds open to a joining player, and taking the
+  holder off shift when one arrives.
 - `sp_bar.dm` — the drinks menu, the two dispensers, and what counts as a made drink.
 - `sp_kitchen.dm` — the prep table and counter, the prep-step table, the mixes, and the recipe scan.
 - `sp_medical.dm` — where medbay is, triage, picking a treatment for a limb, and the cryo tubes.
@@ -92,6 +101,16 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crew_rummage` — open a locker or crate in sight and pocket anything that takes their fancy.
 - `sp_crew_try_door` — walk up to a door they have no access to and try it anyway.
 - `sp_crew_roam` — wander off to somewhere else on the station for a while.
+- `sp_greytide_gear_up` — an assistant's trip to Primary Tool Storage for gloves and a tool, three at most.
+- `sp_greytide_mischief` — pick a prank from whatever is on offer where they are standing, walk to it and
+  pull it, unless an officer is in sight.
+- `sp_greytide_rummage` / `sp_greytide_try_door` — the nosier versions of the two curiosity subtrees that
+  assistants run in place of the ordinary ones.
+- `sp_medical_restock` — a medic who has run low empties a locker or a delivered crate, asks cargo for a
+  crate, or asks botany for aloe.
+- `sp_chemist_work` — plan a medicine back to the dispenser, brew it a stage at a time at the bench, and
+  print the patches.
+- `sp_chemist_deliver` — carry the patches to the chemistry fridge and the cryoxadone to the cryo room.
 - `sp_bartender_pour` — take a glass to whichever tap holds the next thing the drink needs, and measure
   it in. Most cocktails want something from each of the two dispensers, so this runs twice per glass.
 - `sp_bartender_serve` — carry the finished drink to the bar counter and call it out.
@@ -893,6 +912,10 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
 - `sp_crime_witnesses` — who would tell (not assistants, not schemers); a callout drops standing and, with
   a headset, files a suspect incident with no attacker.
 - `sp_break_light` — the malicious greytide's one built behaviour leaves a lit tube dark.
+- `sp_steal_target_liftable` — a scheme's target has to be liftable: on the floor or in a closet counts, sealed
+  in a box or carried by somebody does not.
+- `sp_steal_target_reachable` — and it has to be somewhere this thief can actually walk to: wall the room off
+  and the same liftable item stops being a target.
 - `sp_behaviour_trees` — every SP controller points at a tree that was actually compiled.
 
 ```
@@ -971,13 +994,24 @@ the game server logs nothing at all.
 - Machine lookups here deliberately avoid `oview()`. It is sight-limited, so a console one room away
   behind a wall is invisible and the quartermaster would never find their own desk.
 - Botanists do not compost, fight pests, or use grafts and the DNA manipulator.
+- An antagonist has not yet been seen completing a theft in a live round. The scheme attaches, picks a
+  target and reports honestly when it cannot reach one, and the parts are unit-tested, but the whole
+  chain — walk to it, take it, keep it — is still unproven in play. Two rounds' worth of reasons are
+  written up in `docs/02-antagonist-plan.md`.
+- Schemes can only steal, and only from TG's own steal catalogue filtered down to things actually
+  liftable (out on a turf, or in a closet this thief can open). Most of that catalogue is deliberately
+  locked away, so the choice is narrow. Sabotage, framing and escape-with-the-loot are not written.
+- Security has no proportionate response to a petty crime yet. A witnessed theft or a smashed light
+  reaches them as a place to walk to and look at; the baton is still reserved for people who hit people,
+  and nothing yet confronts a suspect, demands the item back, or writes it into their record.
+- The greytide's malicious streak is one behaviour (a smashed light tube). Emptying a locker and stashing
+  the loot, prying a door, and slips in the hallway are planned, not built.
 - Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
   full species change needs it sustained above 60, which competes with the plant stabilising between
   doses, so new species are occasional rather than routine.
 - No hunger/sleep handling (trait-suppressed).
-- Medics do not restock yet. A doctor spawns with twenty sutures and thirty pieces of mesh, which lasts a
-  good while, but once those are gone they only have what is lying about. Without a chemist on the
-  station, nobody refills cryoxadone either.
+- Without a chemist on the station nobody refills cryoxadone, so the cryo tubes run on whatever beakers the
+  round started with.
 - Surgery covers bones and tending serious damage. No organ repair, prosthetics or reattached limbs, no
   defibrillation or blood transfusions, and no anesthetic: TG does not penalise operating on somebody
   awake, so patients simply feel it.
@@ -992,5 +1026,5 @@ the game server logs nothing at all.
   thread with a player, and standing is not yet spent on anything (following, favours, access). The plan
   for branching NPC-NPC and NPC-player dialogue, and the chat bugs to fix first, is in the workspace's
   `docs/01-dialogue-plan.md`.
-- Greytide is only the beginnings, and harmless by design: no hacking or breaking into anything, no slips,
-  lube or spray paint in anyone's face, and no fights. That is antagonist territory.
+- Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
+  Hacking, slips and lube are antagonist territory rather than theirs.

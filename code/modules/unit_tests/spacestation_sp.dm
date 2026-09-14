@@ -1158,3 +1158,57 @@
 	TEST_ASSERT_EQUAL(light.status, LIGHT_BROKEN, "and leave the tube broken")
 	qdel(controller)
 
+/**
+ * A steal target has to be something a thief could actually walk up to and lift.
+ *
+ * The first antagonist of the first live round was a mime sent after the medal of captaincy, which spawns
+ * inside a locked lockbox in the captain's quarters, with the only other copy pinned to the captain's uniform.
+ * It was chosen because it existed on the map, not because anybody could have it, and the mime spent the shift
+ * with nothing to do and nothing in the log to say why.
+ */
+/datum/unit_test/sp_steal_target_liftable
+
+/datum/unit_test/sp_steal_target_liftable/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/obj/item/toy/crayon/red/loose = allocate(/obj/item/toy/crayon/red, spot)
+	TEST_ASSERT(sp_can_be_lifted(loose), "something lying on the floor can be picked up")
+
+	var/obj/structure/closet/locker = allocate(/obj/structure/closet, get_step(spot, EAST))
+	var/obj/item/toy/crayon/red/in_locker = allocate(/obj/item/toy/crayon/red)
+	in_locker.forceMove(locker)
+	TEST_ASSERT(sp_can_be_lifted(in_locker), "a closet opens, so what is shut in it still counts")
+
+	var/obj/item/storage/box/carton = allocate(/obj/item/storage/box, spot)
+	var/obj/item/toy/crayon/red/in_box = allocate(/obj/item/toy/crayon/red)
+	in_box.forceMove(carton)
+	TEST_ASSERT(!sp_can_be_lifted(in_box), "something sealed in a box is not worth sending anybody after")
+
+	var/mob/living/carbon/human/owner = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/toy/crayon/red/carried = allocate(/obj/item/toy/crayon/red)
+	carried.forceMove(owner)
+	TEST_ASSERT(!sp_can_be_lifted(carried), "and neither is something somebody is already carrying")
+
+/**
+ * A thief only takes on a target they can actually walk to with their own ID.
+ *
+ * A cook was sent after an ablative trenchcoat on an armory shelf: liftable, on the station, and behind a door
+ * no cook opens. She reported it honestly from the brig and never moved. Being able to lift a thing and being
+ * able to reach it are two different questions.
+ */
+/datum/unit_test/sp_steal_target_reachable
+
+/datum/unit_test/sp_steal_target_reachable/Run()
+	var/turf/corner = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/thief = allocate(/mob/living/carbon/human/consistent, corner)
+	var/datum/objective_item/reachable = new /datum/objective_item()
+	reachable.targetitem = /obj/item/toy/crayon/red
+	var/obj/item/toy/crayon/red/prize = allocate(/obj/item/toy/crayon/red, locate(corner.x + 3, corner.y, corner.z))
+	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/red] = list(prize)
+	TEST_ASSERT(sp_reachable_steal_item(thief, reachable), "a crayon across an open room can be walked to")
+
+	// Wall it off completely: liftable as ever, and now no way in.
+	for(var/offset in list(0, 1, 2, 3, 4))
+		allocate(/obj/structure/window/reinforced/fulltile, locate(corner.x + 2, corner.y + offset, corner.z))
+	TEST_ASSERT(sp_can_be_lifted(prize, thief), "it is still lying out in the open")
+	TEST_ASSERT(!sp_reachable_steal_item(thief, reachable), "but a target we cannot get to is not a target")
+	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/red] = list()

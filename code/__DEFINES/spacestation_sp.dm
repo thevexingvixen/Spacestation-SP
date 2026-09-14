@@ -123,6 +123,9 @@
 #define BB_SP_SCHEME_COOLDOWN "sp_scheme_cooldown"
 /// How long the theft itself takes once we are standing over the thing.
 #define SP_THEFT_TIME (3 SECONDS)
+/// Until when a schemer who cannot get at their goal keeps quiet about it in the log.
+#define BB_SP_SCHEME_STUCK_LOG "sp_scheme_stuck_log"
+#define SP_SCHEME_STUCK_LOG_EVERY (2 MINUTES)
 
 // --- Malicious greytide ----------------------------------------------------------------------------
 /// Rolled at spawn: only some assistants have a malicious streak. The rest keep it to harmless pranks.

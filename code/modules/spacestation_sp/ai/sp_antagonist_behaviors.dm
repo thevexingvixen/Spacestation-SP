@@ -59,6 +59,7 @@
 	var/atom/goal = scheme.current_goal_atom(controller)
 	if(isnull(goal))
 		controller.clear_blackboard_key(BB_SP_SCHEME_TARGET)
+		sp_note_scheme_stuck(controller, scheme)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	// Walk to the thing, or to the locker it is shut in.
 	var/atom/movable/reach = goal
@@ -125,6 +126,20 @@
 /datum/bt_node/ai_behavior/sp_take_scheme_item/finish_action(datum/ai_controller/controller, succeeded)
 	reach = null
 	return ..()
+
+/**
+ * Says so in the log when a scheme has nothing to go to, at most once every couple of minutes.
+ *
+ * The first antagonist of the first round was a mime on the arrival shuttle told to steal something on the
+ * station below: the goal search came back empty every three seconds and said nothing, which in a log reads
+ * exactly like an antagonist who simply has not started yet.
+ */
+/proc/sp_note_scheme_stuck(datum/ai_controller/sp_crew/controller, datum/sp_scheme/scheme)
+	if(world.time < (controller.blackboard[BB_SP_SCHEME_STUCK_LOG] || 0))
+		return
+	controller.set_blackboard_key(BB_SP_SCHEME_STUCK_LOG, world.time + SP_SCHEME_STUCK_LOG_EVERY)
+	var/mob/living/pawn = controller.pawn
+	log_sp("[pawn?.real_name || "someone"] cannot get at what they are after ([scheme?.name]) from [get_area_name(pawn)]")
 
 /// The nearest instance of `item_type` within reach: on us, on our tile or an adjacent one (an open locker's).
 /proc/sp_reachable_item(mob/living/carbon/human/pawn, item_type)
