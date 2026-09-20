@@ -19,9 +19,9 @@
 
 /// Lazylist of recently heard speech. Each entry is an assoc list, see SP_HEARD_* below.
 #define BB_SP_HEARD "sp_heard"
-/// A mob who addressed us by name; the social subtree reacts to this and clears it.
+/// Someone who said our name and nothing else; the social subtree looks up ("Yes, Tom?") and clears it.
 #define BB_SP_ATTENTION_TARGET "sp_attention_target"
-/// Cooldown key so we do not greet the same chatterbox every second.
+/// When we may next take up something said to us, so a burst of lines gets one answer rather than one each.
 #define BB_SP_GREET_COOLDOWN "sp_greet_cooldown"
 
 /// Health value below which crew consider themselves hurt and head for medbay.
@@ -112,6 +112,12 @@
 #define SP_CRIME_THEFT "theft"
 #define SP_CRIME_VANDALISM "vandalism"
 #define SP_CRIME_TRESPASS "trespass"
+/// Security: somebody a crime was reported against, and what they are said to have done. Unlike an attacker,
+/// a suspect gets a word and a note on their record rather than a baton (sp_security_confront.bt.json).
+#define BB_SP_SUSPECT "sp_suspect"
+#define BB_SP_SUSPECT_CRIME "sp_suspect_crime"
+/// How many crimes already on a record make the next one an arrest rather than another warning.
+#define SP_CRIMES_BEFORE_ARREST 2
 /// Until when a witness who just called a crime out keeps quiet about the next one.
 #define BB_SP_CRIME_CALLOUT_COOLDOWN "sp_crime_callout_cooldown"
 #define SP_CRIME_CALLOUT_COOLDOWN (30 SECONDS)
@@ -250,12 +256,44 @@
 #define BB_SP_CHAT_PARTNER "sp_chat_partner"
 /// The /datum/sp_topic we are talking about.
 #define BB_SP_CHAT_TOPIC "sp_chat_topic"
-/// How far through the exchange we are: 0 opener, 1 reply, 2 closer.
+/// Where a chat we started has got to: one of the SP_CHAT_* stages below.
 #define BB_SP_CHAT_STAGE "sp_chat_stage"
 /// Set when somebody has said something to us that we owe an answer to.
 #define BB_SP_CHAT_REPLY_DUE "sp_chat_reply_due"
 /// What they said, so the answer can suit it.
 #define BB_SP_CHAT_HEARD "sp_chat_heard"
+/// The topic of an opener we owe a reply to. Kept apart from BB_SP_CHAT_TOPIC, the topic of a chat we started:
+/// sharing one key left the last topic behind to answer whoever spoke to us next, players included.
+#define BB_SP_CHAT_REPLY_TOPIC "sp_chat_reply_topic"
+/// When the line we owe an answer to (or a look up for) was said.
+#define BB_SP_CHAT_ASKED_AT "sp_chat_asked_at"
+
+// Stages of a chat, held by whoever started it. Speech goes out through INVOKE_ASYNC, so a listener may hear a
+// line before or after its speaker's next statement: each stage is set before the line it belongs to is said.
+/// Partner and topic picked, walking over.
+#define SP_CHAT_PICKED 1
+/// Opener said and not yet heard. Only a line from a speaker at this stage is taken for an opener.
+#define SP_CHAT_OPENED 2
+/// The partner heard the opener, so nothing else said now passes for one. Closers used to, and could loop.
+#define SP_CHAT_OPENER_HEARD 3
+/// The partner answered, so a closing remark follows something.
+#define SP_CHAT_ANSWERED 4
+
+/// The shortest gap between two answers from one crew member.
+#define SP_REPLY_GAP (3 SECONDS)
+/// An answer not given by now is not given at all: "Hello." two minutes late reads as a malfunction.
+#define SP_REPLY_STALE (15 SECONDS)
+
+// What a line said to a crew member is after, as far as keywords can tell (sp_speech_intent()).
+#define SP_INTENT_INSULT "insult"
+#define SP_INTENT_THANKS "thanks"
+#define SP_INTENT_FOLLOW "follow"
+#define SP_INTENT_WHO "who"
+#define SP_INTENT_WHERE_WORK "where_work"
+#define SP_INTENT_WHERE "where"
+#define SP_INTENT_HELP "help"
+#define SP_INTENT_WELLBEING "wellbeing"
+#define SP_INTENT_GREETING "greeting"
 /// Cooldown before we start another conversation of our own.
 #define BB_SP_CHAT_COOLDOWN "sp_chat_cooldown"
 /// Cooldown on remarks made to the whole station over common.
@@ -598,3 +636,89 @@
 #define SP_GREYTIDE_TAKE_LIMIT 3
 /// Trips to tool storage before an assistant stops bothering: gloves, a tool, and one spare.
 #define SP_GEAR_MAX_TRIPS 3
+
+// --- Command: what the head of security tells everyone else -------------------------------------
+
+/// An order the speaker just gave, read off their blackboard by whoever hears them (see on_pre_hear).
+/// Orders travel exactly the way crime reports do: nothing structured is ever put in the spoken text.
+#define BB_SP_LAST_ORDER "sp_last_order"
+#define SP_ORDER_KIND "kind"
+#define SP_ORDER_TIME "time"
+#define SP_ORDER_WHERE "where"
+#define SP_ORDER_ISSUER "issuer"
+/// How long an order stays fresh for a listener to pick up, the same window incidents use.
+#define SP_ORDER_FRESH (5 SECONDS)
+
+/// The orders themselves. The tally counts each one as sec.order_<kind>.
+#define SP_ORDER_MEETING "meeting"
+#define SP_ORDER_ARM "arm"
+#define SP_ORDER_LETHAL "lethal"
+#define SP_ORDER_STAND_DOWN "stand_down"
+
+/// Receiver side: where to be, until when, and what they were told to carry.
+#define BB_SP_MEETING_SPOT "sp_meeting_spot"
+#define BB_SP_MEETING_UNTIL "sp_meeting_until"
+#define BB_SP_ARM_ORDER "sp_arm_order"
+#define BB_SP_USE_LETHALS "sp_use_lethals"
+
+/// Issuer side.
+#define BB_SP_MEETING_COOLDOWN "sp_meeting_cooldown"
+#define BB_SP_BRIEFED "sp_briefed"
+/// Attacks the head of security has heard about, which is what moves them up the alert ladder.
+#define BB_SP_VIOLENCE_SEEN "sp_violence_seen"
+
+/// How long everyone stands about at a briefing, and how close counts as attending it.
+#define SP_MEETING_TIME (45 SECONDS)
+#define SP_MEETING_DIST 3
+/// How long the head of security leaves it between briefings.
+#define SP_MEETING_COOLDOWN (8 MINUTES)
+/// Attacks heard before the alert goes up. This fork has no yellow: the ladder is green, blue, red, delta.
+#define SP_ALERT_BLUE_AFTER 1
+#define SP_ALERT_RED_AFTER 3
+
+/// The locker an officer is walking to in order to draw their kit.
+#define BB_SP_ARM_LOCKER "sp_arm_locker"
+/// How long rifling a belt out of a locker takes.
+#define SP_ARM_TIME (3 SECONDS)
+
+/// The armoury locker the head of security is walking over to unlock. Only they and the warden can.
+#define BB_SP_ARMOURY_TARGET "sp_armoury_target"
+/// What an officer drawing a kit is actually after, so one pair of leaves serves the belt and the armoury.
+#define BB_SP_ARM_WANTED "sp_arm_wanted"
+
+/// A cell sentence: this long for each crime already on the record, capped short of the brig door timer's
+/// own MAX_TIMER (15 minutes), which clamps silently -- a sentence it truncates would be a quiet lie.
+#define SP_SENTENCE_PER_CRIME (2 MINUTES)
+#define SP_SENTENCE_MAX (10 MINUTES)
+
+/// The cell an officer is walking a prisoner to, and the turf inside it they are steering them onto.
+#define BB_SP_CELL "sp_cell"
+#define BB_SP_CELL_SPOT "sp_cell_spot"
+/// How long a prisoner being walked to a cell stays put for the officer holding them. AI crew only:
+/// sp_hold_still() has no purchase on a player, who is free to walk off mid-escort.
+#define SP_ESCORT_TIME (60 SECONDS)
+
+/// Rate limit on the progress line for a kit trip, so a long walk says so without filling the log.
+#define BB_SP_ARM_REPORT "sp_arm_report"
+
+/// The suspect an officer is arresting because the confrontation ladder said so, rather than because they
+/// attacked anybody. That arrest is never carried out with lethal force whatever standing orders say. It holds
+/// the mob itself, so a genuine attacker who takes over as the target is not covered by it.
+#define BB_SP_ARREST_NONLETHAL "sp_arrest_nonlethal"
+/// The kit finder's patience with one locker: re-entries that brought the officer no closer, the distance
+/// last time, and lockers given up on for a while. One bad locker used to hold an officer for a whole round.
+#define BB_SP_ARM_TRIES "sp_arm_tries"
+#define BB_SP_ARM_LAST_DIST "sp_arm_last_dist"
+#define BB_SP_ARM_IGNORE "sp_arm_ignore"
+#define SP_ARM_MAX_TRIES 12
+#define SP_ARM_IGNORE_TIME (5 MINUTES)
+
+/// The timestamp of the last order this crew member acted on, so each order is taken once. Anything else the
+/// issuer says while the order is still fresh is then heard normally instead of being swallowed as the order.
+#define BB_SP_LAST_ORDER_HEARD "sp_last_order_heard"
+
+/// The person an officer is walking to a cell. A key of its own, because the escort used to read INCIDENT_TARGET,
+/// which any report arriving mid-walk overwrites -- swapping the prisoner for whoever that report named.
+#define BB_SP_PRISONER "sp_prisoner"
+/// The tile just outside the cell door, where the officer ends up once they have swapped the prisoner inside.
+#define BB_SP_CELL_OUTSIDE "sp_cell_outside"

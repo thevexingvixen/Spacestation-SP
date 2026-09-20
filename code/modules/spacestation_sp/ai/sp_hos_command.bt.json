@@ -1,0 +1,40 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_hos_command",
+	"type": "selector",
+	"children": [
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_hos_consider_alert"
+		},
+		{
+			"type": "sequence",
+			"children": [
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_hos_find_armoury"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+					"vars": {
+						"target_key": "BB_SP_ARMOURY_TARGET",
+						"required_dist": 1,
+						"finish_on_arrival": true
+					}
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/sp_hos_open_armoury"
+				}
+			]
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_hos_call_meeting"
+		},
+		{
+			"type": "leaf",
+			"behavior": "/datum/bt_node/ai_behavior/sp_hos_brief"
+		}
+	]
+}

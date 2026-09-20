@@ -76,3 +76,13 @@
 	integer = TRUE
 	min_val = 0
 	max_val = 20
+
+/// Debug: a couple of minutes in, convince the head of security the shift has turned badly, so the alert
+/// ladder, the armoury and the arming orders can all be watched without waiting on a real fight.
+/// Config key: SP_DEBUG_SECURITY_ALARM
+/datum/config_entry/flag/sp_debug_security_alarm
+
+/// Debug: three minutes in, give somebody a record worth arresting them over and send an officer to have a
+/// word, so the arrest ladder, the cuffs and the cell can be watched without waiting on the greytide to
+/// misbehave three times in front of a witness. Config key: SP_DEBUG_ARREST
+/datum/config_entry/flag/sp_debug_arrest

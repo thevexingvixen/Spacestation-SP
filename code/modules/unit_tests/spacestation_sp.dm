@@ -565,14 +565,14 @@
 
 	doctor_ai.set_blackboard_key(BB_SP_PATIENT, patient)
 	doctor_ai.consider_conversation(speaker, "Kaleb, have you got a minute?")
-	TEST_ASSERT(!doctor_ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE), "a doctor with a patient should not stop to answer chatter")
+	TEST_ASSERT(!sp_test_owes_answer(doctor_ai), "a doctor with a patient should not stop to answer chatter")
 	doctor_ai.clear_blackboard_key(BB_SP_PATIENT)
 	doctor_ai.consider_conversation(speaker, "Kaleb, have you got a minute?")
-	TEST_ASSERT(doctor_ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE), "a doctor with nobody to see should answer when spoken to by name")
+	TEST_ASSERT(sp_test_owes_answer(doctor_ai), "a doctor with nobody to see should answer when spoken to by name")
 
 	chemist_ai.set_blackboard_key(BB_SP_CHEM_PRODUCT, /datum/reagent/medicine/c2/libital)
 	chemist_ai.consider_conversation(speaker, "Allegra, have you got a minute?")
-	TEST_ASSERT(!chemist_ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE), "a chemist with an order in hand should not stop to answer chatter")
+	TEST_ASSERT(!sp_test_owes_answer(chemist_ai), "a chemist with an order in hand should not stop to answer chatter")
 	qdel(doctor_ai)
 	qdel(chemist_ai)
 
@@ -1212,3 +1212,453 @@
 	TEST_ASSERT(sp_can_be_lifted(prize, thief), "it is still lying out in the open")
 	TEST_ASSERT(!sp_reachable_steal_item(thief, reachable), "but a target we cannot get to is not a target")
 	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/red] = list()
+
+/**
+ * A crime reported with a suspect and no attacker sends security to have a word, not to swing a baton.
+ *
+ * Security's existing response is for people who hit people. Routing a smashed light tube through it would
+ * have an officer beating an assistant senseless, which is the disproportion this branch exists to avoid.
+ */
+/datum/unit_test/sp_security_confronts_suspect
+
+/datum/unit_test/sp_security_confronts_suspect/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/reporter = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/culprit = allocate(/mob/living/carbon/human/consistent, get_step(spot, WEST))
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+
+	// A witnessed theft: a suspect and a place, but nobody being hit.
+	officer_ai.on_heard_incident(reporter, list(
+		SP_INCIDENT_ATTACKER = null,
+		SP_INCIDENT_SUSPECT = WEAKREF(culprit),
+		SP_INCIDENT_VICTIM = WEAKREF(reporter),
+		SP_INCIDENT_TURF = get_turf(culprit),
+		SP_INCIDENT_TIME = world.time,
+		SP_INCIDENT_CRIME = SP_CRIME_THEFT,
+	))
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_SUSPECT], culprit, "a named suspect is somebody to go and speak to")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_SUSPECT_CRIME], SP_CRIME_THEFT, "and what they are said to have done is remembered")
+	TEST_ASSERT_NULL(officer_ai.blackboard[BB_SP_INCIDENT_TARGET], "but a suspect is not a target for the baton")
+
+	// Somebody actually being attacked still is.
+	officer_ai.on_heard_incident(reporter, list(
+		SP_INCIDENT_ATTACKER = WEAKREF(culprit),
+		SP_INCIDENT_VICTIM = WEAKREF(reporter),
+		SP_INCIDENT_TURF = get_turf(culprit),
+		SP_INCIDENT_TIME = world.time,
+	))
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_INCIDENT_TARGET], culprit, "an attacker is still stopped the old way")
+	qdel(officer_ai)
+
+/// Crimes go on the record, and a pattern on the record is what turns the next word into an arrest.
+/datum/unit_test/sp_crime_record_escalates
+
+/datum/unit_test/sp_crime_record_escalates/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/culprit = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	culprit.real_name = "Testy McSuspect"
+
+	// Nobody the manifest knows about has no record to write on, and that is not an error.
+	TEST_ASSERT_EQUAL(sp_file_crime_record(culprit, SP_CRIME_THEFT, "no record", officer), 0, "somebody with no record is left alone")
+
+	var/datum/record/crew/record = new(name = "Testy McSuspect")
+	GLOB.manifest.general += record
+	TEST_ASSERT_EQUAL(sp_file_crime_record(culprit, SP_CRIME_THEFT, "took a stamp", officer), 1, "the first crime goes on the record")
+	TEST_ASSERT_EQUAL(record.wanted_status, WANTED_NONE, "one offence is a word, not an arrest")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(culprit, SP_CRIME_VANDALISM, "smashed a light", officer), 2, "so does the second")
+	TEST_ASSERT_EQUAL(record.wanted_status, WANTED_NONE, "still not an arrest")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(culprit, SP_CRIME_TRESPASS, "let themselves in", officer), 3, "and the third")
+	TEST_ASSERT(3 > SP_CRIMES_BEFORE_ARREST, "three crimes should be past the threshold")
+	TEST_ASSERT(sp_mark_for_arrest(culprit), "a pattern on the record is an arrest")
+	TEST_ASSERT_EQUAL(record.wanted_status, WANTED_ARREST, "and it says so on the record")
+	TEST_ASSERT(!sp_mark_for_arrest(culprit), "and marking them twice changes nothing")
+	GLOB.manifest.general -= record
+
+/// An order from the head of security reaches whoever hears it, and changes only what it names.
+/datum/unit_test/sp_order_relay
+
+/datum/unit_test/sp_order_relay/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/boss = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+
+	// Told where to be: the place and the hour it ends both land.
+	officer_ai.on_heard_order(boss, list(SP_ORDER_KIND = SP_ORDER_MEETING, SP_ORDER_TIME = world.time, SP_ORDER_WHERE = spot, SP_ORDER_ISSUER = WEAKREF(boss)))
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_MEETING_SPOT], spot, "an officer called to a briefing knows where it is")
+	TEST_ASSERT(officer_ai.blackboard[BB_SP_MEETING_UNTIL] > world.time, "and that it does not last forever")
+
+	// Arming and lethal force are separate orders on purpose: one is not permission for the other.
+	officer_ai.clear_blackboard_key(BB_SP_ARM_ORDER) // set as they came on shift to fetch their kit; the order must set it itself
+	officer_ai.on_heard_order(boss, list(SP_ORDER_KIND = SP_ORDER_ARM, SP_ORDER_TIME = world.time, SP_ORDER_ISSUER = WEAKREF(boss)))
+	TEST_ASSERT(officer_ai.blackboard[BB_SP_ARM_ORDER], "an officer told to arm remembers it")
+	TEST_ASSERT_NULL(officer_ai.blackboard[BB_SP_USE_LETHALS], "but being armed is not being told to kill")
+	officer_ai.on_heard_order(boss, list(SP_ORDER_KIND = SP_ORDER_LETHAL, SP_ORDER_TIME = world.time, SP_ORDER_ISSUER = WEAKREF(boss)))
+	TEST_ASSERT(officer_ai.blackboard[BB_SP_USE_LETHALS], "lethal force takes an order of its own")
+
+	// Standing down puts the lethal weapon away and nothing else. An order to arm now means fetching what you lack,
+	// and it ends by itself: clearing it here cancelled every officer's belt trip at the HoS's first briefing.
+	officer_ai.on_heard_order(boss, list(SP_ORDER_KIND = SP_ORDER_STAND_DOWN, SP_ORDER_TIME = world.time, SP_ORDER_ISSUER = WEAKREF(boss)))
+	TEST_ASSERT_NULL(officer_ai.blackboard[BB_SP_USE_LETHALS], "standing down ends lethal force")
+	TEST_ASSERT(officer_ai.blackboard[BB_SP_ARM_ORDER], "but a trip to fetch missing kit carries on")
+
+	// Nobody is their own chain of command: hearing yourself say it is not being told.
+	var/datum/ai_controller/sp_crew/security/self_ai = new(boss)
+	self_ai.set_ai_status(AI_STATUS_OFF)
+	self_ai.on_heard_order(boss, list(SP_ORDER_KIND = SP_ORDER_LETHAL, SP_ORDER_TIME = world.time, SP_ORDER_ISSUER = WEAKREF(boss)))
+	TEST_ASSERT_NULL(self_ai.blackboard[BB_SP_USE_LETHALS], "an officer does not take orders from themselves")
+	qdel(self_ai)
+	qdel(officer_ai)
+
+/// The whole point of fetching a belt: the baton is inside it, and a deep search is what finds it.
+/datum/unit_test/sp_arming_finds_nested_baton
+
+/datum/unit_test/sp_arming_finds_nested_baton/Run()
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	TEST_ASSERT(!length(officer.get_all_contents_type(/obj/item/melee/baton/security)), "an officer starts the shift with no baton at all")
+
+	// One belt, carried. Nothing is worn and nothing is unpacked: this is exactly what sp_take_arm_kit leaves
+	// behind, and if it is not enough then arming an officer quietly achieves nothing.
+	var/obj/item/storage/belt/security/full/belt = new(officer)
+	TEST_ASSERT_NOTNULL(belt, "the belt exists")
+	TEST_ASSERT(length(officer.get_all_contents_type(/obj/item/melee/baton/security)), "the baton inside the belt is found by a search that walks into containers")
+	var/obj/item/found = sp_equip_from_inventory(officer, list(/obj/item/melee/baton/security, /obj/item/melee/baton))
+	TEST_ASSERT_NOTNULL(found, "and the officer can get that baton into their hand without unpacking anything")
+
+	// The sidearm they already had should be reachable the same way.
+	var/obj/item/gun/energy/disabler/sidearm = new(officer)
+	var/obj/item/drawn = sp_equip_from_inventory(officer, list(/obj/item/gun/energy/e_gun, /obj/item/gun/energy/disabler))
+	TEST_ASSERT_EQUAL(drawn, sidearm, "and the disabler every officer carries is what the sidearm list finds")
+
+/// A sentence is measured off the record, and never longer than the door timer would actually hold.
+/datum/unit_test/sp_sentence_escalates
+
+/datum/unit_test/sp_sentence_escalates/Run()
+	var/mob/living/carbon/human/culprit = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	culprit.real_name = "Testy McConvict"
+	TEST_ASSERT_EQUAL(sp_sentence_time(culprit), 0, "somebody the manifest never heard of serves nothing")
+
+	var/datum/record/crew/record = new(name = "Testy McConvict")
+	GLOB.manifest.general += record
+	record.crimes += new /datum/crime("Theft", "the first", "Security")
+	TEST_ASSERT_EQUAL(sp_sentence_time(culprit), SP_SENTENCE_PER_CRIME, "one crime, one stretch")
+	record.crimes += new /datum/crime("Vandalism", "the second", "Security")
+	TEST_ASSERT_EQUAL(sp_sentence_time(culprit), 2 * SP_SENTENCE_PER_CRIME, "two crimes, twice as long")
+
+	// A rap sheet does not earn a sentence the brig timer would silently clamp.
+	for(var/i in 1 to 20)
+		record.crimes += new /datum/crime("Theft", "and again", "Security")
+	TEST_ASSERT_EQUAL(sp_sentence_time(culprit), SP_SENTENCE_MAX, "a long record is capped, not unbounded")
+	TEST_ASSERT(SP_SENTENCE_MAX < (15 MINUTES), "and the cap is short of MAX_TIMER, which clamps without saying so")
+	GLOB.manifest.general -= record
+
+/// A cell's inside is the side of its door's edge that the cell's locker stands on, whatever plain distance says.
+/datum/unit_test/sp_cell_doorway_faces_the_locker
+
+/datum/unit_test/sp_cell_doorway_faces_the_locker/Run()
+	var/turf/door_turf = run_loc_floor_bottom_left
+	var/turf/north_side = get_step(door_turf, NORTH)
+	var/turf/east_side = get_step(door_turf, EAST)
+	// A bare timer skips its own linkage scan (it only runs when id is set), so nothing is attached to it.
+	var/obj/machinery/status_display/door_timer/timer = allocate(/obj/machinery/status_display/door_timer, east_side)
+	TEST_ASSERT_NULL(sp_cell_doorway(null), "no timer at all is not a cell")
+	TEST_ASSERT_NULL(sp_cell_doorway(timer), "a timer with nothing linked has no door to speak of")
+
+	var/obj/machinery/door/window/brigdoor/door = allocate(/obj/machinery/door/window/brigdoor, door_turf)
+	door.setDir(NORTH)
+	timer.doors += WEAKREF(door)
+	var/obj/structure/closet/secure_closet/brig/locker = allocate(/obj/structure/closet/secure_closet/brig, get_step(north_side, NORTH))
+	timer.closets += WEAKREF(locker)
+	var/list/doorway = sp_cell_doorway(timer)
+	TEST_ASSERT_EQUAL(doorway?[1], north_side, "a locker past the door's edge puts the cell on that side")
+	TEST_ASSERT_EQUAL(doorway?[2], door_turf, "which leaves the door's own tile outside")
+
+	// Level with the door, the locker is on the door's own side of its edge. Plain distance calls that a tie.
+	locker.forceMove(east_side)
+	doorway = sp_cell_doorway(timer)
+	TEST_ASSERT_EQUAL(doorway?[1], door_turf, "a locker on the door's own side puts the cell there")
+	TEST_ASSERT_EQUAL(doorway?[2], north_side, "and the tile past the edge outside")
+
+	// Somewhere nobody can stand is no doorway: the first version sent prisoners onto the locker itself.
+	var/obj/structure/closet/crate = allocate(/obj/structure/closet, north_side)
+	TEST_ASSERT_NULL(sp_cell_doorway(timer), "a doorway with something solid in it is not one")
+	qdel(crate)
+
+/// A closed closet is empty until somebody opens it, which is why the locker search cannot trust its contents.
+/datum/unit_test/sp_closed_closet_is_empty
+
+/datum/unit_test/sp_closed_closet_is_empty/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/obj/structure/closet/secure_closet/security/sec/locker = allocate(/obj/structure/closet/secure_closet/security/sec, spot)
+	TEST_ASSERT(!locker.contents_initialized, "a closet nobody has opened has not populated itself")
+	TEST_ASSERT(!length(locker.get_all_contents_type(/obj/item/storage/belt/security)), "so looking inside finds nothing at all, belt or otherwise")
+
+	// Opening is what fills it. sp_find_arm_locker leans on this: it may only trust an opened closet's
+	// contents, because an unopened one looks bare whether or not the kit is really in there.
+	locker.dump_contents()
+	TEST_ASSERT(locker.contents_initialized, "opening it is what populates it")
+	TEST_ASSERT(length(spot.get_all_contents_type(/obj/item/storage/belt/security)), "and the belt was in there all along")
+
+// --- Conversation (dialogue plan M0) --------------------------------------------------------------
+
+/// Whether a crew member owes someone an answer, or a look up.
+/proc/sp_test_owes_answer(datum/ai_controller/sp_crew/ai)
+	return ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE) || ai.blackboard_key_exists(BB_SP_ATTENTION_TARGET)
+
+/// Lets a crew member be spoken to afresh. A test runs inside one tick, where "this same line" (free_to_talk())
+/// would otherwise cover every line said in it.
+/proc/sp_test_hush(datum/ai_controller/sp_crew/ai)
+	ai.forget_conversation()
+	ai.clear_blackboard_key(BB_SP_GREET_COOLDOWN)
+
+/// A compiled behaviour tree, as nested lists.
+/proc/sp_test_tree(json_path)
+	var/static/list/trees = list()
+	if(!(json_path in trees))
+		trees[json_path] = json_decode(file2text(BT_COMPILED_PATH(json_path)))
+	return trees[json_path]
+
+/// Whether a node of type `wanted` can be reached in a compiled tree, following subtrees into their own trees,
+/// along a path through no node of type `not_under`.
+/proc/sp_test_tree_has(list/node, wanted, not_under)
+	if(!islist(node))
+		return FALSE
+	var/node_type = text2path(node["type"])
+	if(ispath(node_type, wanted))
+		return TRUE
+	if(not_under && ispath(node_type, not_under))
+		return FALSE
+	if(ispath(node_type, /datum/bt_node/subtree))
+		var/datum/bt_node/subtree/subtree = node_type
+		return sp_test_tree_has(sp_test_tree(initial(subtree.behavior_tree_json)), wanted, not_under)
+	var/list/children = node["children"]
+	if(!islist(children))
+		return FALSE
+	for(var/list/child in children)
+		if(sp_test_tree_has(child, wanted, not_under))
+			return TRUE
+	return FALSE
+
+/**
+ * Every crew member can be answered, looks up at their name and starts chats, and a newcomer's hello never waits
+ * on the chat cooldown. Base crew had no chat at all, security answered nobody, and greetings shared a cooldown
+ * with failed partner searches.
+ */
+/datum/unit_test/sp_trees_talk
+
+/datum/unit_test/sp_trees_talk/Run()
+	for(var/controller_type in typesof(/datum/ai_controller/sp_crew))
+		var/datum/ai_controller/sp_crew/controller = controller_type
+		var/list/tree = sp_test_tree(initial(controller.behavior_tree_json))
+		TEST_ASSERT(sp_test_tree_has(tree, /datum/bt_node/subtree/sp_crew_respond), "[controller_type] never answers anybody")
+		TEST_ASSERT(sp_test_tree_has(tree, /datum/bt_node/subtree/sp_crew_social), "[controller_type] never looks up at their name")
+		TEST_ASSERT(sp_test_tree_has(tree, /datum/bt_node/subtree/sp_crew_chatter), "[controller_type] never starts a chat")
+	var/list/chatter = sp_test_tree("code/modules/spacestation_sp/ai/sp_crew_chatter.bt.json")
+	TEST_ASSERT(sp_test_tree_has(chatter, /datum/bt_node/ai_behavior/sp_greet_newcomer, /datum/bt_node/decorator/cooldown), "greeting a newcomer waits on a cooldown")
+
+/// Speech is read in whole words: "hey" is not in "they", "Tom" is not in "tomorrow", and a bare "hi" is a greeting.
+/datum/unit_test/sp_speech_whole_words
+
+/datum/unit_test/sp_speech_whole_words/Run()
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("hi")), SP_INTENT_GREETING, "a bare hi is a greeting")
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("Hey!")), SP_INTENT_GREETING, "and so is hey")
+	TEST_ASSERT_NULL(sp_speech_intent(sp_words("They went that way.")), "they is not hey")
+	TEST_ASSERT_NULL(sp_speech_intent(sp_words("This is it.")), "this is not hi")
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("Don&#39;t, you idiot")), SP_INTENT_INSULT, "an escaped apostrophe breaks words like any other mark")
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("Hi, can you follow me?")), SP_INTENT_FOLLOW, "the most specific request wins")
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("Where do you work?")), SP_INTENT_WHERE_WORK, "asked where they work")
+	TEST_ASSERT_EQUAL(sp_speech_intent(sp_words("Where is the bar?")), SP_INTENT_WHERE, "asked the way")
+
+	var/mob/living/carbon/human/tom = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	tom.real_name = "Tom Hartley"
+	TEST_ASSERT(sp_named(sp_words("Tom, over here"), tom), "a first name addresses its owner")
+	TEST_ASSERT(sp_named(sp_words("Is that Tom&#39;s coat?"), tom), "so does its possessive")
+	TEST_ASSERT(!sp_named(sp_words("See you tomorrow"), tom), "tomorrow is not Tom")
+	TEST_ASSERT(!sp_named(sp_words("Atom"), tom), "nor is atom")
+
+/// A player's call for help is urgent or violent, and a calm request is neither.
+/datum/unit_test/sp_distress_needs_urgency
+
+/datum/unit_test/sp_distress_needs_urgency/Run()
+	var/list/calls = list(
+		"help",
+		"HELP",
+		"Help me.",
+		"Someone help",
+		"Security!",
+		"Call security",
+		"Security, there&#39;s a man with a knife",
+		"He&#39;s attacking me",
+		"I&#39;ve been stabbed",
+		"Can you help me? He&#39;s trying to kill me",
+	)
+	for(var/line in calls)
+		TEST_ASSERT(sp_message_is_distress(line), "'[line]' should be a call for help")
+	var/list/not_calls = list(
+		"Can you help",
+		"Could you help me find the bar?",
+		"Thanks for the help",
+		"That&#39;s helpful",
+		"I&#39;ll help you",
+		"Is security around?",
+		"Hello",
+		"The patient is stable",
+		"I feel helpless",
+	)
+	for(var/line in not_calls)
+		TEST_ASSERT(!sp_message_is_distress(line), "'[line]' should not be a call for help")
+
+/// Standing moves once for each line answered, a name on its own gets a look up, and a late answer is dropped.
+/datum/unit_test/sp_answer_once
+
+/datum/unit_test/sp_answer_once/Run()
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, EAST))
+	crew.real_name = "Kaleb Siegrist"
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_say_reply/reply = new
+
+	crew_ai.consider_conversation(player, "Thanks.")
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "thanks wants an answer")
+	TEST_ASSERT_EQUAL(sp_reputation(crew_ai, player), 0, "deciding to answer moves nothing")
+	TEST_ASSERT(reply.perform(1, crew_ai) & AI_BEHAVIOR_SUCCEEDED, "the answer is given")
+	TEST_ASSERT_EQUAL(sp_reputation(crew_ai, player), 2, "and the thanks counts once")
+	TEST_ASSERT(!sp_test_owes_answer(crew_ai), "with nothing left owing")
+
+	sp_test_hush(crew_ai)
+	crew_ai.consider_conversation(player, "Kaleb?")
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_ATTENTION_TARGET], player, "a name on its own gets a look up")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE), "rather than an answer to nothing")
+
+	sp_test_hush(crew_ai)
+	crew_ai.consider_conversation(player, "Hello")
+	crew_ai.set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time - SP_REPLY_STALE - 1)
+	TEST_ASSERT(reply.perform(1, crew_ai) & AI_BEHAVIOR_FAILED, "an answer this late is not given")
+	TEST_ASSERT(!sp_test_owes_answer(crew_ai), "and is forgotten")
+	TEST_ASSERT_EQUAL(sp_reputation(crew_ai, player), 2, "without moving standing")
+	qdel(reply)
+	qdel(crew_ai)
+
+/// Two crew hold a chat end to end, through real speech: an opener, a reply, a closer, and nothing left set.
+/datum/unit_test/sp_crew_exchange
+
+/datum/unit_test/sp_crew_exchange/Run()
+	var/mob/living/carbon/human/opener = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/mob/living/carbon/human/listener = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, EAST))
+	opener.real_name = "Ada Quill"
+	listener.real_name = "Bram Tully"
+	var/datum/ai_controller/sp_crew/opener_ai = new(opener)
+	opener_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/listener_ai = new(listener)
+	listener_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_start_chat/start = new
+	var/datum/bt_node/ai_behavior/sp_say_opener/open = new
+	var/datum/bt_node/ai_behavior/sp_say_reply/reply = new
+	var/datum/bt_node/ai_behavior/sp_say_closer/close = new
+	close.closer_chance = 100
+
+	TEST_ASSERT(start.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "a free crew member alongside is someone to talk to")
+	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_PARTNER], listener, "and becomes the partner")
+	// The topic is picked at random; this one has closers, so the last step has something to say.
+	opener_ai.set_blackboard_key(BB_SP_CHAT_TOPIC, locate(/datum/sp_topic/shift) in sp_all_topics())
+
+	TEST_ASSERT(open.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "the opener is said")
+	TEST_ASSERT_EQUAL(listener_ai.blackboard[BB_SP_CHAT_REPLY_DUE], opener, "and heard as one, owing a reply")
+	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_STAGE], SP_CHAT_OPENER_HEARD, "heard once, so nothing else can pass for it")
+	TEST_ASSERT(!listener_ai.blackboard_key_exists(BB_SP_CHAT_PARTNER), "answering is not starting a chat of one's own")
+
+	TEST_ASSERT(reply.perform(1, listener_ai) & AI_BEHAVIOR_SUCCEEDED, "the reply is said")
+	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_STAGE], SP_CHAT_ANSWERED, "and the opener knows it was answered")
+	TEST_ASSERT(!sp_test_owes_answer(opener_ai), "a reply is not an opener to answer")
+
+	TEST_ASSERT(close.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "the opener closes")
+	TEST_ASSERT(!sp_test_owes_answer(listener_ai), "and a closer does not start it all again")
+	TEST_ASSERT_EQUAL(sp_reputation(opener_ai, listener), 1, "a chat makes strangers a little less strange")
+	var/list/chat_keys = list(BB_SP_CHAT_PARTNER, BB_SP_CHAT_TOPIC, BB_SP_CHAT_STAGE, BB_SP_CHAT_REPLY_DUE, BB_SP_CHAT_REPLY_TOPIC, BB_SP_CHAT_HEARD, BB_SP_CHAT_ASKED_AT)
+	for(var/key in chat_keys)
+		TEST_ASSERT(!opener_ai.blackboard_key_exists(key), "the opener was left holding [key]")
+		TEST_ASSERT(!listener_ai.blackboard_key_exists(key), "the listener was left holding [key]")
+
+	// Whoever speaks to them next gets an answer to what they said, not the chat's topic.
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, NORTH))
+	sp_test_hush(listener_ai)
+	listener_ai.consider_conversation(player, "Bram, who are you?")
+	TEST_ASSERT_EQUAL(listener_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "a player is answered after a chat")
+	TEST_ASSERT_NULL(listener_ai.blackboard[BB_SP_CHAT_REPLY_TOPIC], "with no topic left over to answer them from")
+	qdel(start)
+	qdel(open)
+	qdel(reply)
+	qdel(close)
+	qdel(opener_ai)
+	qdel(listener_ai)
+
+/// A line naming nobody gets one answer, from the nearest crew member free to give it; a line naming someone else
+/// is left to them.
+/datum/unit_test/sp_one_answer_per_line
+
+/datum/unit_test/sp_one_answer_per_line/Run()
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/mob/living/carbon/human/near = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, EAST))
+	var/mob/living/carbon/human/far = allocate(/mob/living/carbon/human/consistent, run_loc_floor_top_right)
+	near.real_name = "Nell Ashby"
+	far.real_name = "Fitz Moreau"
+	TEST_ASSERT(get_dist(far, player) > get_dist(near, player), "the test room is too small to tell near from far")
+	var/datum/ai_controller/sp_crew/near_ai = new(near)
+	near_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/far_ai = new(far)
+	far_ai.set_ai_status(AI_STATUS_OFF)
+
+	// Whichever of them hears it first, only the nearer one answers.
+	near_ai.consider_conversation(player, "Hello")
+	far_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the nearest crew member answers a hello")
+	TEST_ASSERT(!sp_test_owes_answer(far_ai), "and nobody else does")
+	sp_test_hush(near_ai)
+	sp_test_hush(far_ai)
+	far_ai.consider_conversation(player, "Hello")
+	near_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the nearest answers, whoever heard it first")
+	TEST_ASSERT(!sp_test_owes_answer(far_ai), "and the other leaves it to them")
+
+	// Named, the line is theirs however far away they are.
+	sp_test_hush(near_ai)
+	sp_test_hush(far_ai)
+	near_ai.consider_conversation(player, "Hello Fitz")
+	far_ai.consider_conversation(player, "Hello Fitz")
+	TEST_ASSERT(!sp_test_owes_answer(near_ai), "a hello for somebody else is not answered")
+	TEST_ASSERT_EQUAL(far_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the one it was for answers")
+
+	// The nearest already owes somebody else an answer, so it falls to the next.
+	sp_test_hush(near_ai)
+	sp_test_hush(far_ai)
+	near_ai.set_blackboard_key(BB_SP_CHAT_REPLY_DUE, far)
+	near_ai.consider_conversation(player, "Hello")
+	far_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], far, "a crew member owing an answer does not take on another")
+	TEST_ASSERT_EQUAL(far_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "so the next nearest answers")
+	qdel(near_ai)
+	qdel(far_ai)
+
+/// Officers answer people when they are free, and not in the middle of an arrest.
+/datum/unit_test/sp_security_answers
+
+/datum/unit_test/sp_security_answers/Run()
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, EAST))
+	officer.real_name = "Mara Voss"
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	officer_ai.clear_blackboard_key(BB_SP_ARM_ORDER) // fetching missing kit is work too; this officer has theirs
+
+	officer_ai.set_blackboard_key(BB_SP_INCIDENT_TARGET, player)
+	officer_ai.consider_conversation(player, "Mara, where do you work?")
+	TEST_ASSERT(!sp_test_owes_answer(officer_ai), "an officer in the middle of an arrest does not stop to chat")
+	officer_ai.clear_blackboard_key(BB_SP_INCIDENT_TARGET)
+	officer_ai.consider_conversation(player, "Mara, where do you work?")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "a free officer answers")
+	qdel(officer_ai)

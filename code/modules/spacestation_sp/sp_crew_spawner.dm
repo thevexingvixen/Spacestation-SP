@@ -104,6 +104,10 @@
 		return /datum/ai_controller/sp_crew/medical/chemist
 	if(/datum/job_department/medical in job.departments_list)
 		return /datum/ai_controller/sp_crew/medical
+	// The head of security gives the orders the rest of the department answers to, so they get a controller
+	// of their own. Tested before the department, the way the chemist is tested before medical.
+	if(istype(job, /datum/job/head_of_security))
+		return /datum/ai_controller/sp_crew/security/hos
 	if(/datum/job_department/security in job.departments_list)
 		return /datum/ai_controller/sp_crew/security
 	if(/datum/job_department/engineering in job.departments_list)

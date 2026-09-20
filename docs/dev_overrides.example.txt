@@ -48,3 +48,9 @@ SP_DEBUG_BREACH_COUNT 0
 
 ## Debug: ninety seconds in, turn one crew member into a thief with a scheme (tests the antagonist path)
 #SP_DEBUG_ANTAGONIST
+
+## Debug: two minutes in, convince the head of security the shift has turned (alert, armoury, arming orders)
+#SP_DEBUG_SECURITY_ALARM
+
+## Debug: three minutes in, give somebody a record and send an officer to arrest them (cuffs, cell)
+#SP_DEBUG_ARREST

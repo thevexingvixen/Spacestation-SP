@@ -1,5 +1,5 @@
 {
-	"dm_type": "/datum/ai_controller/sp_crew/security",
+	"dm_type": "/datum/ai_controller/sp_crew/security/hos",
 	"type": "parallel",
 	"failure_policy": "BT_PARALLEL_FAILURE_CHILD_ONE",
 	"success_policy": "BT_PARALLEL_SUCCESS_CHILD_ONE",
@@ -25,6 +25,10 @@
 				{
 					"type": "subtree",
 					"subtype": "/datum/bt_node/subtree/sp_security_confront"
+				},
+				{
+					"type": "subtree",
+					"subtype": "/datum/bt_node/subtree/sp_hos_command"
 				},
 				{
 					"type": "subtree",

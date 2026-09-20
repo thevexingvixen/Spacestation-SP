@@ -110,6 +110,7 @@
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	if(!async_still_valid() || QDELETED(pawn) || QDELETED(prize) || !prize.Adjacent(pawn))
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	var/where = get_area_name(prize)
 	var/what = prize.name

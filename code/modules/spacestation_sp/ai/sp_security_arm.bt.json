@@ -1,0 +1,31 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_security_arm",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_ARM_ORDER",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_find_arm_locker"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+				"vars": {
+					"target_key": "BB_SP_ARM_LOCKER",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_take_arm_kit"
+			}
+		]
+	}
+}

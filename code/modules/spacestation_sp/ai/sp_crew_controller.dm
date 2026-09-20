@@ -48,6 +48,11 @@
 	// one, and the CRASH left every crew member with no tastes at all, so nothing was ever worth taking.
 	override_blackboard_key(BB_SP_INTERESTS, sp_roll_interests())
 	setup_job_blackboard(human_pawn)
+	// Anything this job ought to be carrying and was not handed at spawn: go and get it. This raises the
+	// same key an arming order does, so one subtree serves both a roundstart kit and a red alert, and the
+	// pick leaf ends it once there is nothing left worth fetching.
+	if(length(kit_wanted()))
+		set_blackboard_key(BB_SP_ARM_ORDER, TRUE)
 	return ..()
 
 /// Hook for subtypes to seed job-specific blackboard keys (wander areas, lines, ...).
@@ -57,6 +62,22 @@
 /// Called by the spawner once the crew member is equipped, for job gear TG does not hand out.
 /datum/ai_controller/sp_crew/proc/equip_extra_gear(mob/living/carbon/human/human_pawn)
 	return
+
+/**
+ * What this job ought to be carrying but was not handed at spawn, paired with the kind of locker it lives in.
+ *
+ * The locker type matters as much as the item. A closed closet is empty until somebody opens it, so an
+ * unopened one cannot be searched -- and a finder that accepts any unopened closet sends an officer to a
+ * pajama wardrobe in the Dormitories, which is exactly what happened before this was paired up.
+ *
+ * Fetching beats handing over: a locker on the station is a thing the crew can be seen walking to, and a
+ * department whose kit has been looted or burned should feel that. It is only worth doing where the item
+ * genuinely exists somewhere reachable -- a botanist sent after a watering can no locker holds would simply
+ * never garden. Engineering stays empty on purpose: what equip_extra_gear gives them is not kit but
+ * station-wide ID access, without which JPS will not path them through an airlock to a breach at all.
+ */
+/datum/ai_controller/sp_crew/proc/kit_wanted()
+	return null
 
 // --- Curiosity hooks ---------------------------------------------------------------------------
 // The three decisions that separate a nosy crew member from a greytider. Overriding these is how an
@@ -182,8 +203,7 @@
 	set_blackboard_key(BB_SP_ATTACKED_AT, world.time)
 	sp_adjust_reputation(src, attacker, -6, "attacked us")
 	// Whatever we were talking about is over.
-	clear_blackboard_key(BB_SP_CHAT_PARTNER)
-	clear_blackboard_key(BB_SP_CHAT_REPLY_DUE)
+	forget_conversation()
 
 /**
  * Hearing. /mob/living/Hear() bails out early for client-less mobs, so we listen on the PRE_HEAR
@@ -221,12 +241,25 @@
 		var/mob/living/carbon/human/human_speaker = real_speaker
 		var/datum/ai_controller/sp_crew/other = human_speaker.ai_controller
 		if(istype(other))
+			// An order from the head of security rides the same rails. Each order is acted on once per listener,
+			// keyed by when it was issued: the first thing heard from the issuer afterwards is the order line itself.
+			// Anything else they say while it is still fresh falls through to the incident, distress and conversation
+			// checks below. Before this, every word from the HoS for five seconds after an order was swallowed as that
+			// order -- attacks they reported included. Matching the spoken text instead would fail for an injured
+			// speaker, whose line say() cuts short with an ellipsis.
+			var/list/order = other.blackboard[BB_SP_LAST_ORDER]
+			if(length(order) && world.time - order[SP_ORDER_TIME] < SP_ORDER_FRESH && blackboard[BB_SP_LAST_ORDER_HEARD] != order[SP_ORDER_TIME])
+				set_blackboard_key(BB_SP_LAST_ORDER_HEARD, order[SP_ORDER_TIME])
+				on_heard_order(human_speaker, order)
+				return
 			var/list/incident = other.blackboard[BB_SP_LAST_INCIDENT]
 			if(length(incident) && world.time - incident[SP_INCIDENT_TIME] < 5 SECONDS)
 				on_heard_incident(human_speaker, incident)
 				return
-	// A player (or anyone without our structured report) calling for help.
-	if(isliving(real_speaker) && sp_message_is_distress(raw_message))
+	// A player calling for help. AI crew report trouble through the structured incident above, which returns
+	// before this, so their ordinary talk must never be read for distress words: "I'd kill for a decent meal"
+	// sent every officer in earshot to the scene, and "All security staff, on me" did the same to a briefing.
+	if(isliving(real_speaker) && !istype(real_speaker.ai_controller, /datum/ai_controller/sp_crew) && sp_message_is_distress(raw_message))
 		on_heard_distress(real_speaker, raw_message, is_radio)
 
 	if(is_radio || !isliving(real_speaker) || real_speaker == pawn)
@@ -236,40 +269,71 @@
 /**
  * Decides whether something said nearby was meant for us, and queues an answer if so.
  *
- * Another AI crew member opening a topic hands us the topic itself, so the reply fits what they said.
- * For anyone else -- a player, usually -- we answer if they used our name or said something that
- * clearly wants a response.
+ * AI crew talk to each other only through topics (sp_start_chat). What another crew member says is ours to
+ * answer only when it is the opener of a chat with us, and an opener is taken up once. Their replies, closing
+ * remarks and words to other people are not: a closer once restarted the whole exchange, and "Help yourself."
+ * got "What do you need?"
+ *
+ * Anyone else -- a player, usually -- is answered when they use our name, or when they say something plainly
+ * aimed at a person and we are the nearest crew member free to take it (sp_first_to_answer()). Our name and
+ * nothing more gets a look up (sp_crew_social), where it used to get silence.
  */
 /datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
+	var/datum/ai_controller/sp_crew/their_ai = speaker.ai_controller
+	if(istype(their_ai))
+		if(their_ai.blackboard[BB_SP_CHAT_PARTNER] != pawn || their_ai.blackboard[BB_SP_CHAT_STAGE] != SP_CHAT_OPENED)
+			return
+		// Heard once, whether or not we are free to answer it: nothing else they say is an opener.
+		their_ai.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_OPENER_HEARD)
+		var/datum/sp_topic/topic = their_ai.blackboard[BB_SP_CHAT_TOPIC]
+		if(!isnull(topic) && free_to_talk(speaker))
+			queue_reply(speaker, raw_message, topic)
+		return
+
+	if(!free_to_talk(speaker))
+		return
+	var/list/words = sp_words(raw_message)
+	var/intent = sp_speech_intent(words)
+	if(sp_named(words, pawn))
+		if(isnull(intent))
+			set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
+			set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time)
+			set_blackboard_key(BB_SP_ATTENTION_TARGET, speaker)
+			return
+	else if(isnull(intent) || !sp_first_to_answer(pawn, speaker, words))
+		return
+	queue_reply(speaker, raw_message)
+
+/**
+ * Whether we could take up something said to us right now. A line we have already taken up still leaves us free
+ * for that same line from that same speaker, because listeners decide one after another (sp_first_to_answer()).
+ */
+/datum/ai_controller/sp_crew/proc/free_to_talk(mob/living/speaker)
 	var/mob/living/carbon/human/human_pawn = pawn
-	if(!istype(human_pawn) || human_pawn.stat != STABLE || busy_with_work())
-		return
-	var/reply_ready_at = blackboard[BB_SP_GREET_COOLDOWN]
-	if(!isnull(reply_ready_at) && reply_ready_at > world.time)
-		return
+	if(!istype(human_pawn) || human_pawn.stat != STABLE || human_pawn.client || busy_with_work())
+		return FALSE
+	var/owed = blackboard[BB_SP_CHAT_REPLY_DUE] || blackboard[BB_SP_ATTENTION_TARGET]
+	if(!isnull(owed))
+		return owed == speaker && blackboard[BB_SP_CHAT_ASKED_AT] == world.time
+	var/ready_at = blackboard[BB_SP_GREET_COOLDOWN]
+	return isnull(ready_at) || ready_at <= world.time
 
-	// Another crew member talking to us: take the topic straight off their controller.
-	if(ishuman(speaker))
-		var/mob/living/carbon/human/human_speaker = speaker
-		var/datum/ai_controller/sp_crew/their_ai = human_speaker.ai_controller
-		if(istype(their_ai) && their_ai.blackboard[BB_SP_CHAT_PARTNER] == pawn)
-			var/datum/sp_topic/topic = their_ai.blackboard[BB_SP_CHAT_TOPIC]
-			if(!isnull(topic))
-				set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 8 SECONDS)
-				set_blackboard_key(BB_SP_CHAT_TOPIC, topic)
-				set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
-				set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
-				return
-
-	// Anyone else. Answer if they used our name, or said something plainly aimed at a person.
-	var/list/name_parts = splittext(human_pawn.real_name, " ")
-	var/first_name = length(name_parts) ? name_parts[1] : human_pawn.real_name
-	var/named_us = length(first_name) >= 3 && findtext(raw_message, first_name)
-	if(!named_us && isnull(sp_answer_for(src, speaker, raw_message)))
-		return
-	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + 8 SECONDS)
+/// Owes `speaker` an answer to `raw_message`: the reply to `topic` if it opened a chat, a keyword answer if not.
+/datum/ai_controller/sp_crew/proc/queue_reply(mob/living/speaker, raw_message, datum/sp_topic/topic)
+	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
+	set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time)
 	set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
+	if(isnull(topic))
+		clear_blackboard_key(BB_SP_CHAT_REPLY_TOPIC)
+	else
+		set_blackboard_key(BB_SP_CHAT_REPLY_TOPIC, topic)
 	set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
+
+/// Drops every conversation in hand: one we started, and anything we owed somebody an answer to.
+/datum/ai_controller/sp_crew/proc/forget_conversation()
+	var/static/list/chat_keys = list(BB_SP_CHAT_PARTNER, BB_SP_CHAT_TOPIC, BB_SP_CHAT_STAGE, BB_SP_CHAT_REPLY_DUE, BB_SP_CHAT_REPLY_TOPIC, BB_SP_CHAT_HEARD, BB_SP_CHAT_ASKED_AT, BB_SP_ATTENTION_TARGET)
+	for(var/key in chat_keys)
+		clear_blackboard_key(key)
 
 /**
  * Whether we are in the middle of a job that a chat should not pull us off. A reply outranks the job
@@ -282,6 +346,10 @@
 
 /// A player has taken our job and we are going off shift (sp_send_off_shift): let go of anything held for work.
 /datum/ai_controller/sp_crew/proc/on_sent_off_shift()
+	return
+
+/// Somebody gave an order over the radio. Most of the crew are not in anybody's department and ignore it.
+/datum/ai_controller/sp_crew/proc/on_heard_order(mob/living/carbon/human/issuer, list/order)
 	return
 
 /// Another crew member reported an attack within earshot (or on a channel we hear). Base crew ignore it.
@@ -501,6 +569,14 @@
 /datum/ai_controller/sp_crew/security
 	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_crew_security.bt.json"
 
+/**
+ * The belt from their own locker (ACCESS_BRIG, eleven of them on MetaStation), because the baton is inside
+ * it and the officer outfit has none -- sp_equip_item/baton has been failing since the fork began, which is
+ * why an officer who empties a disabler ends up punching people.
+ */
+/datum/ai_controller/sp_crew/security/kit_wanted()
+	return list(/obj/item/storage/belt/security = /obj/structure/closet/secure_closet/security/sec)
+
 /datum/ai_controller/sp_crew/security/setup_job_blackboard(mob/living/carbon/human/human_pawn)
 	var/static/list/patrol_areas
 	if(isnull(patrol_areas))
@@ -525,6 +601,48 @@
 	set_blackboard_key(BB_SP_INCIDENT_TARGET, attacker)
 	set_blackboard_key(BB_SP_INCIDENT_LOCATION, get_turf(attacker))
 
+/**
+ * An officer is on duty while any of this is in hand. Answers sit below security work in the tree, so a chat
+ * cannot interrupt an arrest -- but one taken up now would only be given once the arrest was over.
+ */
+/datum/ai_controller/sp_crew/security/busy_with_work()
+	var/static/list/duty_keys = list(BB_SP_INCIDENT_TARGET, BB_SP_INCIDENT_LOCATION, BB_SP_SUSPECT, BB_SP_PRISONER, BB_SP_ARM_ORDER)
+	for(var/key in duty_keys)
+		if(blackboard_key_exists(key))
+			return TRUE
+	return blackboard[BB_SP_MEETING_UNTIL] > world.time
+
+/**
+ * Officers, the warden and the detective answer to the head of security.
+ *
+ * Only the orders are taken here; acting on them is the tree's business. An order to arm or to go lethal
+ * outlives the briefing on purpose -- it is stood down, not forgotten, so a red shift stays a red shift.
+ */
+/datum/ai_controller/sp_crew/security/on_heard_order(mob/living/carbon/human/issuer, list/order)
+	if(issuer == pawn)
+		return
+	var/kind = order[SP_ORDER_KIND]
+	switch(kind)
+		if(SP_ORDER_MEETING)
+			var/turf/where = order[SP_ORDER_WHERE]
+			if(isnull(where))
+				return
+			set_blackboard_key(BB_SP_MEETING_SPOT, where)
+			set_blackboard_key(BB_SP_MEETING_UNTIL, world.time + SP_MEETING_TIME)
+		if(SP_ORDER_ARM)
+			set_blackboard_key(BB_SP_ARM_ORDER, TRUE)
+		if(SP_ORDER_LETHAL)
+			set_blackboard_key(BB_SP_USE_LETHALS, TRUE)
+		if(SP_ORDER_STAND_DOWN)
+			// Only the heavy weapon is put away. BB_SP_ARM_ORDER has come to mean "fetch what you lack" and ends
+			// itself once nothing is wanted; clearing it here cancelled every officer's belt trip at the first
+			// briefing, which the HoS gives on their very first tick.
+			clear_blackboard_key(BB_SP_USE_LETHALS)
+		else
+			return
+	sp_record("sec.order_heard")
+	log_sp("[pawn?.name] took [kind] from [issuer.real_name]")
+
 /datum/ai_controller/sp_crew/security/on_heard_incident(mob/living/carbon/human/reporter, list/incident)
 	if(reporter == pawn)
 		return
@@ -535,6 +653,14 @@
 		set_blackboard_key(BB_SP_INCIDENT_TARGET, attacker)
 	if(!isnull(where))
 		set_blackboard_key(BB_SP_INCIDENT_LOCATION, where)
+	// Nobody is being hit: somebody took something, or broke something, and a witness named them. That is worth
+	// a word and a note on their record, not a baton — the arrest ladder is in sp_confront_suspect().
+	if(isnull(attacker))
+		var/datum/weakref/suspect_ref = incident[SP_INCIDENT_SUSPECT]
+		var/mob/living/suspect = suspect_ref?.resolve()
+		if(!isnull(suspect) && suspect != pawn)
+			set_blackboard_key(BB_SP_SUSPECT, suspect)
+			set_blackboard_key(BB_SP_SUSPECT_CRIME, incident[SP_INCIDENT_CRIME])
 	acknowledge_report()
 
 /datum/ai_controller/sp_crew/security/on_heard_distress(mob/living/speaker, raw_message, is_radio)

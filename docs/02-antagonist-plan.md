@@ -108,7 +108,7 @@ default** because the round-end report prints a blank key for a clientless mob a
 broadcast to a station that has no players to hear them. The scheme drives behaviour either way; the
 bridge only changes how the rest of TG's code sees the mob. `SP_ANTAG_TG_DATUM` will gate it.
 
-## 5. Security's response to a crime (later this session or next)
+## 5. Security's response to a crime (built)
 
 The incident chain already carries a suspect and a crime now. Security's tree branches:
 
@@ -121,6 +121,14 @@ The incident chain already carries a suspect and a crime now. Security's tree br
 
 This keeps the baton for people who hit people, which is the current, working behaviour, and gives the
 softer crimes a proportionate answer.
+
+**Built.** `sp_security_confront` sits directly below the violent response: the officer walks to the named
+suspect, says something chosen by the crime, thinks less of them, and files it (`sp_file_crime_record()`).
+The wanted status is deliberately not touched on a first offence — this fork has no "suspected" status
+between None and Arrest, and Arrest sets every secbot on the station onto them — so the ladder is a word,
+then a word and a note, then an arrest once the record passes `SP_CRIMES_BEFORE_ARREST`. Resisting needs no
+special case: hitting the officer makes an attacker of you through the existing `on_attacked`. Still to do
+here: having the officer actually demand the stolen item back rather than only say so.
 
 ## 6. Testing
 
@@ -173,3 +181,38 @@ added — the latter visible as `crew.buzzed_through=12`.
 4. More schemes: sabotage (an antag engineer scramming the engine), framing, escape-with-the-loot.
 5. The TG-traitor bridge behind `SP_ANTAG_TG_DATUM`, once there are players to see codewords and a
    round-end report worth printing.
+
+## 8. Why the thief finds nothing, measured rather than argued
+
+Four rounds of theories, three of them confidently wrong, and then the log simply said it:
+
+    no steal target for Angela Robinson: 52 catalogued, 15 on the map, 12 with a copy somewhere,
+    1 liftable, none of those reachable
+    out of reach: ablative trenchcoat in Armory, 13 tiles off, budget 220: 21 steps with every
+    door open, so it is access
+
+The funnel counts every stage, and when it closes it retries the survivor at a budget nobody could exceed and
+then again with every station door open. Thirteen tiles away. Twenty-one steps once the doors open. A budget
+of two hundred and twenty. **It is access**, and it was never anything else.
+
+What was believed on the way there, and why each was wrong:
+
+- *The catalogue is all difficulty 3-4, so nothing is liftable.* The census was accurate and the conclusion
+  was not: items were liftable. They were behind doors.
+- *Widen into the spy pool.* Those are heads' kit and security weapons, which live in the same locked rooms.
+- *The 220-tile path budget is too small for a station.* It was never within sight of binding.
+
+The lesson is the one this module keeps relearning: a stage that fails silently gets diagnosed by argument,
+and argument is wrong most of the time. The funnel cost a few lines and settled in one round what four rounds
+of reasoning could not.
+
+The fork, for whoever picks this up:
+
+1. **Target what a crew member can actually walk to.** `sp_reachable_steal_item()` already tests the path with
+   the thief's own access -- the trouble is how little survives it. This means sourcing targets outside TG's
+   steal catalogue: ordinary valuables lying about in public rooms.
+2. **Teach thieves through doors.** Hacking, breaking, following somebody who has the access. Much larger, and
+   it makes an antagonist genuinely different from ordinary crew rather than just differently motivated.
+
+Option 1 makes theft happen. Option 2 makes theft interesting. They are not exclusive, and 1 is the smaller
+half of a day's work while 2 is its own session.

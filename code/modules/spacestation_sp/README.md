@@ -59,7 +59,11 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crew_safety` — below `BB_SP_HURT_THRESHOLD`: shout for a medic, walk to medbay, wait to be seen.
 - `sp_crew_checkup` — idle and carrying 15+ brute and burn (or a wound) with a medic on duty: walk to
   medbay, say so, wait to be seen.
-- `sp_crew_social` — someone said our first name: face them and answer.
+- `sp_crew_social` — someone said our first name and nothing else: face them and ask what they want.
+- `sp_crew_respond` — somebody said something that wants an answer: give it, unless it is 15 s too late.
+  Officers run it below their security work.
+- `sp_crew_chatter` — the idle side of talk: greet a newcomer, start a chat and close it, and the odd remark
+  over common. Every crew tree runs it.
 - `sp_department_wander` — pick a turf in `BB_SP_WANDER_AREAS` (or home area) → JPS move → linger.
 - `sp_medical_patient` — pick a patient → walk over → scan them → either take them to cryo or treat
   them limb by limb. See "Medbay" below.
@@ -122,19 +126,37 @@ answer, and sometimes a closing remark. Because both sides are ours, the listene
 straight off the speaker's controller, so replies actually match what was said. Topics are weighted
 and some are job-specific, so an engineer opens with the power and a doctor with medbay.
 
+**An exchange is a handshake, not a guess.** AI crew answer each other only through topics. The opener
+moves through `SP_CHAT_*` stages, each set *before* its line is said, because speech goes out through
+`INVOKE_ASYNC` and a listener may hear a line before or after the speaker's next statement. A listener takes
+a line for an opener only while its speaker is at `SP_CHAT_OPENED`, and marks it heard, so nothing else said
+afterwards passes for one. The reply's topic lives in its own key (`BB_SP_CHAT_REPLY_TOPIC`) and is spent as
+the reply is said. The replier is then done. The opener has the last word, and only once the partner has
+answered, having forgotten the chat before saying it. Before this, a closer could restart the exchange, a
+leftover topic answered the next person to speak (players included), and base crew, who never ran the chat
+subtree at all, were stuck holding a partner for good after their first reply.
+
 Players are handled from the other direction. What someone says to a crew member in singleplayer is
 fairly predictable, so greetings, "what do you do", "where is x", asking for help, thanks and abuse
-are matched by keyword and answered in character. Crew also greet a player once each when they first
-come near, and make the occasional remark to the whole station over common.
+are matched by keyword and answered in character. Everything is read in whole words (`sp_words()`), so
+"they" is not "hey" and "tomorrow" is not "Tom". A crew member answers a line with their first name in
+it, and looks up and asks what you want when the name is all there is. A line naming nobody gets one
+answer, from the nearest crew member free to give it (`sp_first_to_answer()`), and a line naming somebody
+else is left to them. An answer not given within 15 seconds is dropped. Crew also greet a player once
+each when they first come near, which no longer waits on the chat cooldown, and make the occasional
+remark to the whole station over common.
 
-Every exchange moves how that crew member feels about the person, held in `BB_SP_REPUTATION`.
+Every exchange moves how that crew member feels about the person, held in `BB_SP_REPUTATION`, once per
+line answered: deciding whether to answer (`sp_speech_intent()`) changes nothing.
 Politeness and conversation raise it, an attack drops it sharply. Answers already vary with standing:
 a stranger gets "What do you need?", someone they like gets greeted by name, and someone who has been
 abusive gets told to ask elsewhere. Asking a crew member to follow you is recognised and refused
 politely below the friendly threshold, which is where the follow behaviour will hook in.
 
 None of this outranks an emergency: conversation is the last entry in `sp_crew_core`, so a fight, an
-injury or a drawn weapon cuts it off, and being attacked clears the conversation outright.
+injury or a drawn weapon cuts it off, and being attacked clears the conversation outright. Officers answer
+people too, from below their security work, and take nothing up while they have an incident, a suspect,
+a prisoner, a briefing or a kit trip in hand.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -143,8 +165,10 @@ injury or a drawn weapon cuts it off, and being attacked clears the conversation
 3. Every AI crew member hearing that line reads the reporter's record in `on_pre_hear`; the security
    controller turns it into `BB_SP_INCIDENT_TARGET` / `BB_SP_INCIDENT_LOCATION` and acknowledges over
    the security channel.
-4. Players get the same effect for free: a shout containing "help", "attack", "security" etc. sets an
-   incident location for nearby AI security (`sp_message_is_distress`).
+4. Players get the same effect for free: a call for help sets an incident location for nearby AI security
+   (`sp_message_is_distress`). Words of violence count on their own. "Help" and "security" count only when
+   the line sounds urgent (an exclamation mark, capitals, the word leading the line, or nothing but
+   pleading), never in a calm request: "can you help" used to send every officer in earshot running.
 
 ## Engine startup (`sp_engineering.dm`)
 `sp_run_engine_setup()` performs the standard /tg/ cold-loop procedure, restricted to machines inside
@@ -691,7 +715,221 @@ dodgy: who can see me, and what happens if they do? One place answers them.
   their standing, and, with a headset, a report to security naming a **suspect and a place** rather than
   an attacker. Crimes are `SP_CRIME_THEFT`, `_VANDALISM`, `_TRESPASS`; the incident record carries
   `SP_INCIDENT_SUSPECT` and `SP_INCIDENT_CRIME` so a suspect with no attacker can route to *investigate*
-  rather than *baton* (that half of security's response is still to come — see the plan).
+  rather than *baton*.
+
+**What security does about it.** A report naming an attacker is unchanged: baton, cuffs, "area secure". A
+report naming a *suspect* and no attacker goes to `sp_security_confront`, which ranks directly below the
+violent response and above everything else an officer does. They walk over and have a word — the line
+chosen by the crime ("That is not yours. Hand it over.") — think less of them for it, and write it up
+(`sp_file_crime_record()`, tally `sec.confronted` and `sec.recorded`).
+
+The record is the memory, and the ladder is a word, then a word and a note, then an arrest. This fork has
+no "suspected" status between None and Arrest, and flagging Arrest puts every secbot on the station onto
+somebody over a light tube, so the wanted status is left alone until the record itself shows a pattern.
+Past `SP_CRIMES_BEFORE_ARREST` prior crimes the officer calls it in, `sp_mark_for_arrest()` sets
+`WANTED_ARREST`, and the suspect becomes an ordinary target for the response above (tally
+`sec.arrest_ordered`). Anyone who swings at the officer escalates themselves: the security controller's
+`on_attacked` already makes an attacker of them.
+
+Seen in a round at last: `filed Vandalism against Calvin Stern (1 on record)` through to `(4 on record)`,
+then `had a word with Calvin Stern about vandalism in Aft Primary Hallway`, then `called an arrest on Calvin
+Stern (4 crimes on record)` -- `sec.confronted=1 sec.recorded=4 sec.arrest_ordered=1`. The ladder itself works
+end to end. What happens *after* the arrest does not yet, and the two shooting guards above are the reason:
+the officer emptied his disabler into a fleeing chef without downing him, so nobody was ever cuffed and the
+cell was never reached.
+
+## Command (`ai/sp_hos_behaviors.dm`)
+The head of security is the only member of the department who gives orders rather than only taking them, and
+has a controller of their own for it. Everyone else in security -- officers, the warden, the detective --
+shares `/datum/ai_controller/sp_crew/security`, because `sp_controller_for_job()` maps by department; the head
+of security is tested before that, the way the chemist is tested before medical.
+
+**Orders ride the same rails as crime reports.** `sp_issue_order()` writes the order onto the issuer's own
+blackboard (`BB_SP_LAST_ORDER`) and *then* says it aloud on the security channel, and `on_pre_hear` reads it
+off the speaker at the moment it hears them. Nothing is broadcast to a roster, so an officer out of radio
+contact genuinely misses it and a head of security with no headset gives no orders at all. One order per
+utterance, because a second would overwrite the first before anybody had read it.
+
+**The alert ladder has no yellow.** This fork is green, blue, red, delta, so heightened-but-not-lethal is blue.
+Reports naming an attacker are counted (`BB_SP_VIOLENCE_SEEN`); blue comes after `SP_ALERT_BLUE_AFTER` and red
+after `SP_ALERT_RED_AFTER`. Going red is also where lethal force is authorised -- deliberately not at the
+briefing, so two orders are never spoken in one breath.
+
+**Briefings.** `sp_hos_call_meeting` names a spot and stands on it; whoever heard walks over and waits there
+(`sp_security_meeting`, ranked below an active attacker and above idling). `sp_hos_brief` says one thing per
+meeting: arm, under red, or stand down otherwise.
+
+Seen in a round: `Hayden Ann ordered meeting`, two officers logging `took meeting from Hayden Ann`, then
+`ordered stand_down` -- `sec.meeting_called=1 sec.meeting_attended=3 sec.briefed=1 sec.order_heard=4`. Three
+attendees because the head of security stands on their own spot; four orders heard because two officers each
+took two. Arming stayed empty, which is what a green shift should look like.
+
+**Arming is bounded by who holds the keys.** The access rules make this ladder, not a designer picking one:
+
+- *Spawn* -- a disabler in the suit slot, handcuffs, a flash. No baton, which is why `sp_equip_item/baton` had
+  been failing since the fork began and officers brawled bare-handed.
+- *Their own locker* -- `ACCESS_BRIG`, which officers carry. It holds `/obj/item/storage/belt/security/full`,
+  and the baton is in that belt. `sp_find_arm_locker` picks the nearest one it has confirmed holds a belt, and
+  clears the order outright if the officer already has a baton anywhere in their contents, which is what makes
+  the behaviour stop rather than loop.
+- *The armoury* -- `ACCESS_ARMORY`, on exactly two trims in the game: the head of security and the warden. No
+  officer can open it, so nothing sends them there.
+
+**Shooting.** Officers have carried a disabler in their suit slot since the fork began and never fired it,
+because `sp_attack_target` tests `Adjacent()` before it swings. That test is the leaf's own, not a limit of
+the interaction layer: `ai_interact()` only checks both parties exist, then calls `ClickOn()`, and a gun
+clicked at something across the room fires at it. So `sp_shoot_target` is a sibling of the melee leaf rather
+than new machinery, and the respond tree now runs secured, then incapacitated, then *shoot*, then close and
+swing. Shooting until somebody goes down and then cuffing them is how the arrest loop was always meant to
+work. With no gun, no line of sight, or a target out of range, the branch fails and the old baton path runs
+exactly as before.
+
+Two guards on that leaf were both bought with a round. **It will not fire through anybody**: TG's own ranged
+attack checks this and I skipped it as apparatus I did not need, whereupon a briefing gathered the department
+onto one spot and an officer shot the head of security in the back on his way to a monkey. She batoned him,
+`on_attacked` made an attacker of her, and he downed and cuffed his own commanding officer -- who then spent
+the round in `escape_captivity`, which outranks `sp_hos_command`, so she never reached a single command
+decision and the alert never rose. One missing guard took out the entire escalation path.
+
+**And an empty gun is not a gun.** A disabler holds twenty shots (`e_cost = LASER_SHOTS(20, ...)`). An officer
+who spent them kept pulling the trigger on nothing -- the leaf went on succeeding, so the selector never fell
+through -- and then beat a fleeing chef across four rooms with the dead weapon, because `sp_equip_item/baton`
+had no baton to find. `can_shoot()` now fails the leaf instead, which hands the problem to the melee branch;
+that branch is only any good once the officer has fetched their belt, which today needs an arming order.
+
+`sp_take_arm_kit` equips nothing: the belt goes in the pack, and `sp_equip_item` finds the baton inside it
+because `get_all_contents_type()` walks into containers.
+
+### Fetching kit rather than being handed it
+
+`kit_wanted()` on the controller says what a job ought to be carrying and was not handed at spawn, best
+first. `TryPossessPawn` raises the same blackboard key an arming order does when that list is non-empty, so
+one subtree serves both a roundstart kit and a red alert, and the pick leaf ends it once there is nothing
+left worth fetching. Security is the first through: officers go to their own locker for the belt, which is
+where the baton lives.
+
+It is three mechanisms, not one, and which a department gets is decided by where its kit actually is:
+
+- **A locker** -- security (`ACCESS_BRIG`, eleven on MetaStation), botany (`ACCESS_HYDROPONICS`, three),
+  chemistry (the medicine closet, `ACCESS_MEDICAL`, three).
+- **A vendor** -- the kitchen. The knife and rolling pin are stocked by the dinnerware vendor and exist in no
+  locker at all. Different code, though SP already drives that vendor for the bartender.
+- **Keep handing it over** -- the botanist's watering can exists in no locker, no vendor and no outfit; it is
+  a Family Heirloom quirk and a mail reward, neither of which a clientless crew member will ever see.
+  Engineering keeps everything, because what it is handed is not kit but station-wide ID access, without
+  which JPS will not path an engineer through an airlock to a breach.
+
+**Check before removing a handout.** Four times while working this out a search returned nothing and I read
+it as "the item does not exist": the rolling pin (vendor stock is declared `typepath = count`, which a search
+for `new /obj/item/...` cannot match), the map (map files place *containers*; contents appear at runtime from
+`PopulateContents`), beakers (they come in boxes), and the watering can (found in a list that turned out to be
+quirk heirlooms). Three of those were wrong. Removing a handout on the strength of one is how a department
+stops working for good -- a botanist sent after a watering can that no locker holds simply never waters
+anything again.
+
+**A closed closet is empty.** `PopulateContents()` runs from `dump_contents()` the first time a closet is
+opened, not at `Initialize` -- only `populate_contents_immediate()` puts anything inside before that. So
+`get_all_contents_type()` on an unopened locker returns nothing, and the check meant to stop officers walking
+to a locker with no belt in it rejected all six correct belt lockers on MetaStation instead, and sent nobody
+anywhere. `sp_find_arm_locker` now only trusts the contents of a closet somebody has already opened
+(`contents_initialized`); an unopened one is worth the walk, and the take leaf fails harmlessly if it turns
+out to be bare.
+
+**And opening one empties it onto the floor.** `dump_contents()` populates the closet and then moves every
+item to `drop_location()`, so a moment after an officer opens their locker the belt is on the turf beside
+them rather than inside the thing they just opened. A leaf that opens a container and then searches *it* will
+find nothing, every time; `sp_reachable_item()` looks at what the pawn carries and then at `range(1, pawn)`,
+which is why the antagonist's theft leaf uses it and why the kit leaf now does too.
+
+**Which is why `kit_wanted()` names a locker type, not just an item.** Because an unopened closet cannot be
+searched, a finder that accepts any unopened closet has no notion of where a thing lives, and the first round
+with fetching working showed what that costs: an officer spent five minutes walking to a *pajama wardrobe in
+the Dormitories* to look for a security belt, opened it, found nothing, and would have gone on to the next
+wrong closet. The rule now is that an unopened closet is taken on its type and an opened one on its contents
+-- which also, neatly, is what lets an officer draw an energy gun from an armoury the head of security has
+just unlocked, since that closet's contents are known by then.
+
+**And the trip has to be sticky.** With the right lockers finally being chosen, only one officer in three came
+back with anything. None of them failed at a locker -- `opened ... but found no ...` never appeared once --
+they simply never arrived. The pick leaf re-runs whenever the sequence restarts, which a briefing or an
+incident causes constantly, and it chose the *nearest* locker each time: so an officer pulled away mid-journey
+retargeted from wherever he now stood. One walked between three security posts in five minutes and reached
+none of them. The officer who succeeded was simply the one nobody interrupted. Keeping the existing target
+while it is still a plausible source fixes it without reordering the tree, which is right -- a briefing should
+outrank fetching a belt; losing the journey every time you are called away should not.
+
+**And the pairing has to name the exact subtype.** MetaStation carries `secure_closet/security` and its
+`/cargo`, `/engine`, `/med` and `/science` variants at the departmental posts, plus six `/sec` in the locker
+room -- and only `/sec` adds `/obj/item/storage/belt/security/full`. The rest inherit the parent's vest,
+helmet, HUD and seclite and no belt at all. Pairing the item with the *family* meant `istype()` matched every
+one of them, so an officer walked to Security Post - Medbay, opened the locker, and found nothing he wanted:
+`opened security officer's locker but found no /obj/item/storage/belt/security to take`. A type pairing is
+only as good as its narrowest correct type.
+
+**And then the answer was that they were simply walking.** With the trip sticky and the right subtype named,
+a progress line every thirty seconds finally showed what three rounds of silence had hidden: `still 16 tiles
+from security officer's locker`, and fourteen seconds later, `drew security belt`. One officer set off at
+06:49:02 and arrived at 06:54:50 -- nearly six minutes for a single locker trip across MetaStation, with
+briefings and incidents interrupting throughout. Nothing was broken by then; the rounds had been ending
+first. Three officers, three belts, once the round was long enough to contain the walk. Worth remembering
+before reading a low count as a fault: check the denominator, and check the clock.
+
+**The armoury rung was aimed at furniture this map has not got.** `sp_hos_find_armoury` looked for
+`armory1`, `armory2`, `armory3` and `tac` closets; MetaStation has none of them. It has an armoury *room*
+(31 tiles of `/area/station/security/armory`) but the weapons are elsewhere: parsing the map's key blocks
+puts all four `/obj/item/gun/energy/laser` either on the same tile as `secure_closet/warden` -- and so inside
+it, since a closed closet swallows what sits on its turf -- or on a rack in `/area/station/security/range`.
+So the search correctly found nothing for seven rounds, and every explanation offered for that silence
+(timing, thrashing, the rung never being reached) was wrong about an assumption nobody had checked.
+
+The warden's locker is now in the target list: `ACCESS_ARMORY`, holding a laser, a full security belt,
+zipties and flashbangs. Once the head of security opens it its contents are known, which the kit finder's
+"opened closet" branch already handles, so the rung needed a corrected target rather than new machinery.
+
+**And there is no energy gun on this map at all**, which matters twice over. The red-alert extension asked
+for an `e_gun` and could never have got one; it now asks for a laser. And `sp_set_fire_mode` is inert here:
+a disabler and a laser each carry one casing type, so there is no mode to switch between. It earns its place
+only on a map or a round where an actual energy gun turns up, and is kept for that rather than deleted.
+
+The armoury finder had the same thrashing fault and it went unnoticed for six rounds, because the rung that
+depends on it had never once fired. What exposed it was the *officer* side working: with red alert up and an
+arming order given, an officer reported `no locker they can open holds /obj/item/gun/energy/e_gun` -- exactly
+right, since the armoury was still locked and the head of security had never walked over to open it. A stage
+that reports itself accurately turned out to be the thing that found the bug in a different stage entirely.
+
+## The cell (`sp_crime.dm`, the jail branch of `sp_security_respond`)
+Cuffing somebody used to be the end of it: the officer said "area secure" and walked off. A cuffed prisoner
+with something on their record now gets walked to a cell.
+
+**The sentence is read off the record.** `sp_sentence_time()` gives two minutes for each crime already written
+down, capped at ten. Somebody with no record serves nothing, which is not a special case: the ladder in
+`sp_confront_suspect()` is what puts crimes on a record at all, so anyone who has reached an arrest already
+has something to measure. The cap earns its keep -- the brig timer's own `set_timer()` clamps at `MAX_TIMER`
+(15 minutes) without a word, and a sentence the machine quietly shortened would read as a bug in the ladder
+rather than in the cap. `sp_sentence_escalates` pins that relationship so neither number can drift into it.
+
+**Finding a cell is the awkward half.** A `door_timer` is wall-mounted and collects its doors, flashers and
+closets by a shared `id` anywhere within `urange(20)`, which says nothing at all about which side of a door is
+inside; areas are no help either, since several cells share `/area/station/security/brig`. The door and the
+locker between them do. A brig windoor blocks the edge its `dir` faces, so its own tile and the tile past that
+edge are the two sides, and the cell is the side the linked brig locker stands on (`sp_cell_doorway()`). The
+first version sent prisoners onto the locker's own tile, which a closed locker makes solid, and jailed nobody.
+`sp_free_cell()` skips a cell without a clear doorway. All three MetaStation cells have one: checked against
+the map file, each door sits on the corridor tile facing south, with the cell tile beyond it.
+
+**The walk.** `sp_find_cell` takes hold of the prisoner -- `start_pulling`, and `sp_hold_still()`, which has
+purchase only on AI crew, so a player walks off and the escort copes instead of assuming compliance. It refuses
+a corpse or anybody out of reach, and keeps the prisoner in `BB_SP_PRISONER`, not in the incident key a fresh
+report would overwrite. The officer walks onto the inside tile, which leaves the prisoner they are pulling on
+the outside one, and steps back out. TG lets a puller swap places with whoever they are pulling
+(`can_mobswap_with()`), but not shove a restrained person past the one pulling them, and that shove is what
+the first version tried. The swap leaves the officer outside and the prisoner in, `timer_start()` shuts the
+door between them, and the record reads Incarcerated. Every way the escort can fail lets go of the prisoner
+(`sp_abandon_escort()`), and the incident is closed only if it is still about this prisoner.
+
+Not yet handled, and not yet seen in a live round: a prisoner lying down is not dense, so there is nobody to
+swap with; a door that shuts itself during the swap fails the escort; and a report arriving mid-walk still
+pulls the officer away, because the branch is gated on the incident key rather than the prisoner.
 
 ## Antagonists (`sp_antagonist.dm`, `ai/sp_antagonist_behaviors.dm`)
 An antagonist is an ordinary AI crew member carrying a **scheme** (`/datum/sp_scheme` on the blackboard
@@ -870,7 +1108,19 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   the doctor is sent to stand.
 - `sp_flaps_pathing` — the pathfinder does not plan a standing human through plastic flaps.
 - `sp_busy_ignores_chatter` — a doctor with a patient and a chemist with an order do not queue a reply to
-  chatter; a doctor with nobody to see still answers when spoken to by name.
+  chatter; a doctor with nobody to see still takes it up when spoken to by name.
+- `sp_trees_talk` — every crew controller's tree can answer, look up at a name and start a chat, and greeting
+  a newcomer is not behind the chat cooldown.
+- `sp_speech_whole_words` — "they" is not "hey", "tomorrow" is not "Tom", a bare "hi" is a greeting, and the
+  most specific request in a line wins.
+- `sp_distress_needs_urgency` — a list of calls for help that must count and calm requests that must not.
+- `sp_answer_once` — being thanked moves standing once, as the answer is given; a name alone gets a look up;
+  an answer 15 s late is dropped without moving anything.
+- `sp_crew_exchange` — two crew hold a whole chat through real speech: the opener is heard once, the reply
+  tells the opener it was answered, the closer starts nothing, and neither side is left holding a key.
+- `sp_one_answer_per_line` — a hello gets one answer, from the nearer crew member whichever hears it first; a
+  hello naming the other one is theirs; a crew member already owing an answer passes it on.
+- `sp_security_answers` — an officer mid-arrest does not stop to chat, and a free one answers.
 - `sp_role_takeover` — a CMO slot filled by two AI crew: the dead one's place is freed with the body left
   where it is, then the living one goes off shift, off the manifest and the locked records, bank account
   closed, and out of the round.
@@ -916,6 +1166,29 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   in a box or carried by somebody does not.
 - `sp_steal_target_reachable` — and it has to be somewhere this thief can actually walk to: wall the room off
   and the same liftable item stops being a target.
+- `sp_security_confronts_suspect` — a report naming a suspect and no attacker sends an officer to have a
+  word; one naming an attacker still sets the baton target.
+- `sp_crime_record_escalates` — crimes accumulate on the record, somebody with no record is left alone, and
+  only a pattern turns the next word into an arrest.
+- `sp_order_relay` — an order from the head of security reaches whoever hears it and changes only what it
+  names: arming is not permission to kill, standing down puts the lethal weapon away but lets a kit trip
+  finish, and nobody takes orders from themselves.
+- `sp_arming_finds_nested_baton` — an officer starts with no baton, and one carried belt is enough to put one
+  in their hand without unpacking anything. This is the claim the whole arming rung rests on: if the search
+  ever stopped walking into containers, fetching a belt would still log and still tally, and the officer would
+  still be empty-handed.
+- `sp_sentence_escalates` — a cell sentence is measured off the record, two minutes a crime, and a long rap
+  sheet is capped rather than unbounded. The last assertion is the one that matters: the cap must stay under
+  the brig timer's `MAX_TIMER`, because `set_timer()` clamps without saying so, and a sentence the machine
+  quietly shortened would read as a bug in the ladder rather than in the cap.
+- `sp_cell_doorway_faces_the_locker` — a timer with nothing linked has no doorway; the cell is the side of
+  the door's edge the locker stands on, including a locker level with the door, where plain distance ties;
+  and a doorway with something solid in it is no doorway.
+- `sp_closed_closet_is_empty` — a freshly built locker reports nothing inside it, and opening it produces the
+  belt that was there all along. This pins an assumption about upstream rather than about our own code: the
+  locker search may only trust the contents of a closet somebody has opened. If TG ever populates closets at
+  Initialize instead, this test fails loudly, where otherwise the symptom would be another silent round in
+  which nobody fetches anything and nothing says why.
 - `sp_behaviour_trees` — every SP controller points at a tree that was actually compiled.
 
 ```
@@ -956,6 +1229,11 @@ all of medbay can be watched in one round:
 The chemist adds `chem.brewed` (batches), `chem.patches` (printed), `chem.stocked` (put in the fridge),
 `chem.cryoxadone` (beakers left in cryo) and `chem.buffer` (units drawn into the heater).
 
+
+**A headless run ends in a segfault, and it means nothing.** `dd.exe` reports every test, prints
+`Shutdown complete` with each subsystem closing in order, and then the process dies on final teardown. The
+results above it are complete and trustworthy -- there are no runtimes and no hard-deletion warnings before
+it. Worth knowing before you go looking for a crash in your own code, as I did.
 ## Headless test loop
 ```
 tools\build\build.bat build
@@ -1001,9 +1279,27 @@ the game server logs nothing at all.
 - Schemes can only steal, and only from TG's own steal catalogue filtered down to things actually
   liftable (out on a turf, or in a closet this thief can open). Most of that catalogue is deliberately
   locked away, so the choice is narrow. Sabotage, framing and escape-with-the-loot are not written.
-- Security has no proportionate response to a petty crime yet. A witnessed theft or a smashed light
-  reaches them as a place to walk to and look at; the baton is still reserved for people who hit people,
-  and nothing yet confronts a suspect, demands the item back, or writes it into their record.
+- The cell has never actually been used in a round. Reaching it organically wants three witnessed crimes by
+  the same person, and the greytide spaces mischief minutes apart behind a coin-flip of a troublemaker roll,
+  so a short round cannot get there. What has been proven is the parts: the sentence ladder, the landmark
+  guard, and that none of it throws. The walk itself resists a unit test -- pulling, `Move_Pulled()` and
+  `timer_start()` all want a real cell with linked doors and a locker, which the test map has not got.
+- None of the escalation above red has been seen in a round yet. The alert ladder, the armoury, the arming
+  order and the fire-mode switch are built and tested, but a quiet shift never reaches red, so what has
+  actually been watched end to end is a briefing and a stand down. `SP_DEBUG_SECURITY_ALARM` exists to force
+  the rest; until a round runs with it, treat the red-alert path as compiled rather than proven.
+- The lawyer takes no orders at all, being in `/datum/job_department/service` rather than security, and so
+  running the ordinary crew controller with no security behaviour on it.
+- Antagonist theft still does not fire on a fresh station, but the reason is now measured rather than
+  guessed. The funnel logs where it closed -- `52 catalogued, 15 on the map, 12 with a copy somewhere, 1
+  liftable, none of those reachable` -- and then retries that one at a budget nobody could exceed and again
+  with every door open: `ablative trenchcoat in Armory, 13 tiles off, budget 220: 21 steps with every door
+  open, so it is access`. Not the catalogue, not the lift rule, not the path budget, all of which were
+  theorised and all of which were wrong. TG's steal list is a challenge built for a player traitor with an
+  emag; a crew member who can open only what their own ID opens will correctly find nothing on it.
+- Security's answer to a petty crime stops at a word and a note. An officer confronts a witnessed thief,
+  files it, and a pattern on the record becomes an arrest — but they will not demand the stolen item back,
+  search anybody, or do anything with the brig, so a thief who keeps walking keeps the loot.
 - The greytide's malicious streak is one behaviour (a smashed light tube). Emptying a locker and stashing
   the loot, prying a door, and slips in the hallway are planned, not built.
 - Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
@@ -1024,7 +1320,14 @@ the game server logs nothing at all.
   can take from the fridge.
 - Conversation has no dialogue trees yet: crew answer one line at a time rather than tracking a
   thread with a player, and standing is not yet spent on anything (following, favours, access). The plan
-  for branching NPC-NPC and NPC-player dialogue, and the chat bugs to fix first, is in the workspace's
-  `docs/01-dialogue-plan.md`.
+  for branching NPC-NPC and NPC-player dialogue is in `docs/01-dialogue-plan.md`; the chat bugs it listed to
+  fix first (its milestone M0) are fixed.
 - Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
   Hacking, slips and lube are antagonist territory rather than theirs.
+
+## Next
+- The janitor, and the clown.
+- Written dialogue lines, on the engine sketched in `docs/01-dialogue-plan.md` (M1 and M2), which is where
+  the seven hard-coded topics stop being hard-coded.
+- The security gaps above: the three cases the cell escort cannot handle yet, and the warden's side of the
+  brig, which is a session of its own.

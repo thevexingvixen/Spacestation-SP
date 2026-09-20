@@ -154,19 +154,33 @@
 /proc/sp_pick_steal_target(mob/living/carbon/human/thief)
 	var/list/datum/objective_item/candidates = list()
 	var/thief_job = thief?.mind?.assigned_role?.title
+	// Counted, so a thief with nothing to steal can say which stage of the funnel closed. "Found nothing"
+	// reads the same whether the catalogue was empty, every copy was sealed in a case, or it was all
+	// simply too far away, and those want three different fixes.
+	var/considered = 0
+	var/on_map = 0
+	var/with_instance = 0
+	var/list/liftable_instances = list()
 	for(var/datum/objective_item/info as anything in GLOB.possible_items)
+		considered++
 		if(info.objective_type != OBJECTIVE_ITEM_TYPE_NORMAL || !info.exists_on_map)
 			continue
+		on_map++
 		if(thief_job && (thief_job in info.excludefromjob))
 			continue
 		// Has to be a copy somebody could actually lift, on the station, not sealed in a box or worn by a head.
 		var/liftable = FALSE
+		var/any_instance = FALSE
 		for(var/obj/item/instance as anything in GLOB.steal_item_handler?.objectives_by_path[info.targetitem])
+			any_instance = TRUE
 			var/turf/there = get_turf(instance)
 			if(isnull(there) || !is_station_level(there.z) || !sp_can_be_lifted(instance, thief))
 				continue
 			liftable = TRUE
+			liftable_instances += instance
 			break
+		if(any_instance)
+			with_instance++
 		if(!liftable)
 			continue
 		candidates += info
@@ -174,6 +188,22 @@
 	for(var/datum/objective_item/info as anything in shuffle(candidates))
 		if(sp_reachable_steal_item(thief, info))
 			return info
+	log_sp("no steal target for [thief?.real_name || "a thief"]: [considered] catalogued, [on_map] on the map, [with_instance] with a copy somewhere, [length(candidates)] liftable, none of those reachable")
+	// "Cannot get there" is two different faults wanting opposite fixes: too far for the path budget, or shut
+	// behind doors we have no card for. Retry each one with a budget nobody could exceed and let it say which.
+	var/datum/ai_movement/jps/sp_crew/movement = /datum/ai_movement/jps/sp_crew
+	var/max_length = initial(movement.maximum_length)
+	for(var/obj/item/instance as anything in liftable_instances)
+		var/area/spot = get_area(instance)
+		var/generous = length(get_path_to(thief, instance, 1000, 1, thief.get_access()))
+		var/verdict
+		if(generous)
+			verdict = "[generous] steps at budget 1000, so the budget was the problem"
+		else
+			// Every station door open: if a path appears now, it was the locks, not the walls.
+			var/unlocked = length(get_path_to(thief, instance, 1000, 1, SSid_access.get_region_access_list(list(REGION_ALL_STATION))))
+			verdict = unlocked ? "[unlocked] steps with every door open, so it is access" : "no path even with every door open, so it is topology"
+		log_sp("  out of reach: [instance.name] in [spot ? spot.name : "nowhere"], [get_dist(thief, instance)] tiles off, budget [max_length]: [verdict]")
 	return null
 
 /// Gives `controller` a scheme to steal a chosen (or picked) catalogue item. Returns the scheme, or null.

@@ -6667,6 +6667,7 @@
 #include "code\modules\spacestation_sp\ai\sp_crew_controller.dm"
 #include "code\modules\spacestation_sp\ai\sp_curiosity_behaviors.dm"
 #include "code\modules\spacestation_sp\ai\sp_greytide_behaviors.dm"
+#include "code\modules\spacestation_sp\ai\sp_hos_behaviors.dm"
 #include "code\modules\spacestation_sp\ai\sp_medical_behaviors.dm"
 #include "code\modules\spacestation_sp\ai\sp_social_behaviors.dm"
 #include "code\modules\spatial_grid\cell_tracker.dm"

@@ -301,7 +301,9 @@
 		load = sp_prep_batch(prep_table, step, ingredient, room)
 	controller.set_blackboard_key(BB_SP_PREP_STEP, step)
 	controller.set_blackboard_key(BB_SP_PREP_ITEM, ingredient)
-	controller.set_blackboard_key(BB_SP_PREP_BATCH, load)
+	// A list has to go in with override_blackboard_key: set_blackboard_key refuses to write over one, so a
+	// second batch set before the first was cleared was silently dropped and the chef kept the stale one.
+	controller.override_blackboard_key(BB_SP_PREP_BATCH, load)
 	controller.set_blackboard_key(BB_SP_PREP_TARGET, target)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 

@@ -133,6 +133,10 @@ SUBSYSTEM_DEF(spacestation_sp)
 		addtimer(CALLBACK(src, PROC_REF(debug_empty_medics)), 2 MINUTES)
 	if(CONFIG_GET(flag/sp_debug_antagonist))
 		addtimer(CALLBACK(src, PROC_REF(debug_make_antagonist)), 90 SECONDS)
+	if(CONFIG_GET(flag/sp_debug_security_alarm))
+		addtimer(CALLBACK(src, PROC_REF(debug_security_alarm)), 2 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_arrest))
+		addtimer(CALLBACK(src, PROC_REF(debug_arrest)), 3 MINUTES)
 
 /**
  * Debug helper: empties the medics' pockets of treatment supplies, so restocking can be watched without
@@ -317,3 +321,49 @@ SUBSYSTEM_DEF(spacestation_sp)
 		if(istype(crew.ai_controller, /datum/ai_controller/sp_crew/engineer) && crew.stat == STABLE)
 			sp_crew_speak(crew, "Crystal integrity is dropping, I'm shutting the emitters down!", RADIO_CHANNEL_ENGINEERING)
 			break
+
+/**
+ * Debug: convince the head of security that the shift has gone badly wrong.
+ *
+ * The count of violence they have heard about is set straight to the threshold, rather than staging a fight
+ * or handing them a fabricated incident. A synthetic attacker would also become a target for their baton,
+ * and an innocent crew member would get beaten for the sake of a test.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_security_alarm()
+	for(var/mob/living/carbon/human/crew as anything in ai_crew)
+		var/datum/ai_controller/sp_crew/security/hos/hos = crew.ai_controller
+		if(!istype(hos))
+			continue
+		hos.set_blackboard_key(BB_SP_VIOLENCE_SEEN, SP_ALERT_RED_AFTER)
+		log_sp("debug: told [crew.real_name] the station has seen [SP_ALERT_RED_AFTER] attacks")
+		return
+	log_sp("debug: wanted the alert raised, but no head of security is on the station")
+
+/**
+ * Debug: give somebody a record worth arresting them over, and point an officer at them.
+ *
+ * One crime past SP_CRIMES_BEFORE_ARREST, so the confrontation ends in an arrest rather than a word. That
+ * one push is what drives the whole chain -- confront, record, arrest, the response (which is where an
+ * officer finally draws and fires), the cuffs, and the cell -- none of which a quiet shift ever reaches.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_arrest()
+	var/mob/living/carbon/human/culprit
+	var/datum/ai_controller/sp_crew/security/officer_ai
+	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
+		var/datum/ai_controller/sp_crew/security/sec = crew.ai_controller
+		if(istype(sec))
+			// The head of security gives orders; an ordinary officer does the walking.
+			if(isnull(officer_ai) && !istype(sec, /datum/ai_controller/sp_crew/security/hos))
+				officer_ai = sec
+			continue
+		if(isnull(culprit))
+			culprit = crew
+	var/mob/living/carbon/human/officer = officer_ai?.pawn
+	if(isnull(culprit) || isnull(officer))
+		log_sp("debug: wanted an arrest, but there is no officer and culprit to arrange one between")
+		return
+	for(var/i in 1 to SP_CRIMES_BEFORE_ARREST + 1)
+		sp_file_crime_record(culprit, SP_CRIME_VANDALISM, "Seen at it repeatedly.", officer)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT, culprit)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT_CRIME, SP_CRIME_VANDALISM)
+	log_sp("debug: gave [culprit.real_name] a record and sent [officer.real_name] to have a word")

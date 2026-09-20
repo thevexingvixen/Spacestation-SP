@@ -80,7 +80,7 @@ GLOBAL_LIST_INIT(sp_crime_callouts, list(
 	sp_crew_speak(witness, length(lines) ? pick(lines) : "Hey! I saw that!")
 	if(!istype(witness.ears, /obj/item/radio/headset))
 		return
-	controller.set_blackboard_key(BB_SP_LAST_INCIDENT, list(
+	controller.override_blackboard_key(BB_SP_LAST_INCIDENT, list(
 		SP_INCIDENT_ATTACKER = null,
 		SP_INCIDENT_SUSPECT = WEAKREF(culprit),
 		SP_INCIDENT_VICTIM = WEAKREF(witness),
@@ -89,3 +89,127 @@ GLOBAL_LIST_INIT(sp_crime_callouts, list(
 		SP_INCIDENT_CRIME = crime,
 	))
 	sp_crew_speak(witness, "Security, I just saw [culprit.name] [description] in [place].", RADIO_CHANNEL_COMMON)
+
+// --- The record ------------------------------------------------------------------------------------
+
+/// What a crime is called on a security record.
+GLOBAL_LIST_INIT(sp_crime_record_names, list(
+	SP_CRIME_THEFT = "Theft",
+	SP_CRIME_VANDALISM = "Vandalism",
+	SP_CRIME_TRESPASS = "Trespass",
+))
+
+/**
+ * Writes a witnessed crime onto the suspect's security record, the way an officer would at the console, and
+ * hands back how many crimes they now have against their name (0 if they have no record at all — a visitor,
+ * or anyone the manifest never learned about).
+ *
+ * The wanted status is deliberately left alone on a first offence: flagging Arrest puts every secbot on
+ * the station onto somebody for a smashed light tube. Repeat offenders are escalated in sp_confront_suspect(), once
+ * the record itself shows a pattern. An earlier version of this note said TG has no Suspected status; it does,
+ * WANTED_SUSPECT, and whether first offences should use it is a design question rather than a gap.
+ */
+/proc/sp_file_crime_record(mob/living/suspect, crime, details, mob/living/officer)
+	if(QDELETED(suspect))
+		return 0
+	var/suspect_name = suspect.real_name
+	var/datum/record/crew/record = find_record(suspect_name)
+	if(isnull(record))
+		return 0
+	var/crime_name = GLOB.sp_crime_record_names[crime] || "Misconduct"
+	record.crimes += new /datum/crime(crime_name, details, officer?.real_name || "Security")
+	update_matching_security_huds(suspect_name)
+	sp_record("sec.recorded")
+	log_sp("[officer?.real_name || "security"] filed [crime_name] against [suspect_name] ([length(record.crimes)] on record)")
+	return length(record.crimes)
+
+/// Puts somebody on the arrest list, so an officer meeting them later already knows, and the secbots too.
+/proc/sp_mark_for_arrest(mob/living/suspect)
+	var/datum/record/crew/record = find_record(suspect?.real_name)
+	if(isnull(record) || record.wanted_status == WANTED_ARREST)
+		return FALSE
+	record.wanted_status = WANTED_ARREST
+	update_matching_security_huds(suspect.real_name)
+	sp_record("sec.arrest_ordered")
+	return TRUE
+
+// --- The cell --------------------------------------------------------------------------------------
+
+/**
+ * How long the cell door stays shut, measured by what is already on their record.
+ *
+ * Somebody with no record serves nothing, which is not an oversight: the ladder in sp_confront_suspect()
+ * only reaches an arrest once the record shows a pattern, so by the time anyone is walked to a cell there is
+ * something written down to measure. The cap sits under the door timer's own MAX_TIMER because set_timer()
+ * clamps without saying so, and a sentence the machine quietly shortened would be worse than a short one.
+ */
+/proc/sp_sentence_time(mob/living/suspect)
+	var/datum/record/crew/record = find_record(suspect?.real_name)
+	var/crimes = length(record?.crimes)
+	if(!crimes)
+		return 0
+	return min(crimes * SP_SENTENCE_PER_CRIME, SP_SENTENCE_MAX)
+
+/// The nearest cell nobody is already serving time in. A timer that is running has an occupant behind it.
+/proc/sp_free_cell(mob/living/officer)
+	var/obj/machinery/status_display/door_timer/best
+	var/best_dist = INFINITY
+	for(var/obj/machinery/status_display/door_timer/cell as anything in SSmachines.get_machines_by_type_and_subtypes(/obj/machinery/status_display/door_timer))
+		if(cell.timing || (cell.machine_stat & (NOPOWER|BROKEN)))
+			continue
+		var/turf/there = get_turf(cell)
+		if(isnull(there) || !is_station_level(there.z))
+			continue
+		// No landmark inside means no way to say where the prisoner should end up, so it is not a cell we use.
+		if(!length(sp_cell_doorway(cell)))
+			continue
+		var/dist = get_dist(officer, cell)
+		if(dist >= best_dist)
+			continue
+		best = cell
+		best_dist = dist
+	return best
+
+/**
+ * The two tiles either side of a cell's door: just inside, and just outside.
+ *
+ * A brig windoor blocks movement across the edge its dir faces, so its own turf and get_step(turf, dir) are the
+ * two sides, and the inside is the side of that edge the cell's brig locker stands on (plain distance ties for a
+ * locker level with the door). The locker's own tile is no good as a
+ * destination: a closed locker is dense, so nobody can be moved onto it, which is why the first version of this
+ * never jailed anyone. Returns list(inside, outside), or null for a cell with no usable door and locker.
+ */
+/proc/sp_cell_doorway(obj/machinery/status_display/door_timer/timer)
+	var/obj/structure/closet/secure_closet/brig/locker
+	for(var/datum/weakref/closet_ref as anything in timer?.closets)
+		var/obj/structure/closet/secure_closet/brig/candidate = closet_ref.resolve()
+		if(!QDELETED(candidate))
+			locker = candidate
+			break
+	var/turf/locker_turf = get_turf(locker)
+	if(isnull(locker_turf))
+		return null
+	for(var/datum/weakref/door_ref as anything in timer.doors)
+		var/obj/machinery/door/window/brigdoor/door = door_ref.resolve()
+		if(!istype(door))
+			continue
+		var/turf/here = get_turf(door)
+		var/turf/beyond = get_step(here, door.dir)
+		if(isnull(here) || isnull(beyond))
+			continue
+		// How far the locker lies along the way the door faces: past the edge, or on the door's own side of it.
+		var/toward = (locker_turf.x - here.x) * (beyond.x - here.x) + (locker_turf.y - here.y) * (beyond.y - here.y)
+		var/turf/inside = toward > 0 ? beyond : here
+		var/turf/outside = inside == here ? beyond : here
+		if(sp_cell_tile_free(inside) && sp_cell_tile_free(outside))
+			return list(inside, outside)
+	return null
+
+/// Somewhere a person can stand: not a wall, and nothing dense on it other than a door or another person.
+/proc/sp_cell_tile_free(turf/tile)
+	if(isnull(tile) || tile.density)
+		return FALSE
+	for(var/atom/movable/thing as anything in tile)
+		if(thing.density && !istype(thing, /obj/machinery/door) && !ismob(thing))
+			return FALSE
+	return TRUE

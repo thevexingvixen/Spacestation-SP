@@ -19,15 +19,42 @@
 							"key": "BB_SP_INCIDENT_TARGET"
 						},
 						"child": {
-							"type": "sequence",
+							"type": "selector",
 							"children": [
 								{
-									"type": "leaf",
-									"behavior": "/datum/bt_node/ai_behavior/sp_say/security_resolved"
+									"type": "sequence",
+									"children": [
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_find_cell"
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+											"vars": {
+												"target_key": "BB_SP_CELL_SPOT",
+												"required_dist": 0,
+												"finish_on_arrival": true
+											}
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_jail_target"
+										}
+									]
 								},
 								{
-									"type": "leaf",
-									"behavior": "/datum/bt_node/ai_behavior/sp_clear_incident"
+									"type": "sequence",
+									"children": [
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_say/security_resolved"
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_clear_incident"
+										}
+									]
 								}
 							]
 						}
@@ -70,6 +97,23 @@
 								}
 							]
 						}
+					},
+					{
+						"type": "sequence",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_equip_item/sidearm"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_set_fire_mode"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_shoot_target"
+							}
+						]
 					},
 					{
 						"type": "sequence",

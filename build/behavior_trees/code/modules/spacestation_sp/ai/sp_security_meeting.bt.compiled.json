@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/bb_key_set","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/move_to_target/sp_reported","target_key":"sp_meeting_spot","required_dist":3,"finish_on_arrival":true},{"type":"/datum/bt_node/ai_behavior/sp_attend_meeting"}]}],"key":"sp_meeting_spot","observer_abort":2}

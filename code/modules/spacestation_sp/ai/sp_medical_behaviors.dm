@@ -158,6 +158,9 @@
 		sp_record("med.scanned")
 	sp_free_hands(pawn)
 	if(!async_still_valid() || QDELETED(patient))
+		// finish_async() no-ops once the action is no longer valid, so it is safe on every exit. Without it a
+		// patient deleted mid-scan left this leaf RUNNING for good and the medic stuck with it.
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	var/obj/machinery/cryo_cell/cryo = sp_find_cryo_cell(pawn)
 	var/obj/structure/table/optable/table = sp_is_surgeon(pawn) ? sp_find_optable(pawn) : null

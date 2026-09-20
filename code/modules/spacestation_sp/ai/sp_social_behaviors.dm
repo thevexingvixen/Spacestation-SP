@@ -24,42 +24,51 @@
 	return controller.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE)
 
 /**
- * Says the answer. For another crew member that is the topic's reply line; for anyone else it is
- * whatever `sp_answer_for` makes of what they said.
+ * Says the answer: the topic's reply line to another crew member's opener, and whatever `sp_answer_for` makes
+ * of anything else.
+ *
+ * The answer is spent whatever happens, topic and all: a topic left behind used to answer the next person to
+ * speak to us, players included. A reply is also the end of our part. The opener has the last word
+ * (sp_say_closer), where replying used to hand the replier a closing remark of their own.
  */
 /datum/bt_node/ai_behavior/sp_say_reply
 
 /datum/bt_node/ai_behavior/sp_say_reply/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/mob/living/asker = controller.blackboard[BB_SP_CHAT_REPLY_DUE]
-	if(!istype(pawn) || QDELETED(asker))
-		controller.clear_blackboard_key(BB_SP_CHAT_REPLY_DUE)
+	var/datum/sp_topic/topic = controller.blackboard[BB_SP_CHAT_REPLY_TOPIC]
+	var/heard = controller.blackboard[BB_SP_CHAT_HEARD]
+	var/asked_at = controller.blackboard[BB_SP_CHAT_ASKED_AT]
+	controller.clear_blackboard_key(BB_SP_CHAT_REPLY_DUE)
+	controller.clear_blackboard_key(BB_SP_CHAT_REPLY_TOPIC)
+	controller.clear_blackboard_key(BB_SP_CHAT_HEARD)
+	controller.clear_blackboard_key(BB_SP_CHAT_ASKED_AT)
+	if(!istype(pawn) || QDELETED(asker) || (!isnull(asked_at) && world.time - asked_at > SP_REPLY_STALE))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 
-	pawn.face_atom(asker)
 	var/line
-	var/datum/sp_topic/topic = controller.blackboard[BB_SP_CHAT_TOPIC]
-	if(!isnull(topic) && length(topic.replies))
+	if(isnull(topic))
+		line = sp_answer_for(controller, asker, heard)
+	else if(length(topic.replies))
 		line = pick(topic.replies)
-	else
-		line = sp_answer_for(controller, asker, controller.blackboard[BB_SP_CHAT_HEARD])
-
-	controller.clear_blackboard_key(BB_SP_CHAT_REPLY_DUE)
-	controller.clear_blackboard_key(BB_SP_CHAT_HEARD)
+		// Tell the opener they were answered, so a closing remark follows something.
+		var/datum/ai_controller/sp_crew/their_ai = asker.ai_controller
+		if(istype(their_ai) && their_ai.blackboard[BB_SP_CHAT_PARTNER] == pawn && their_ai.blackboard[BB_SP_CHAT_STAGE] == SP_CHAT_OPENER_HEARD)
+			their_ai.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_ANSWERED)
 	if(isnull(line))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-
-	line = replacetext(line, "%TARGET%", sp_first_name(asker))
-	sp_crew_speak(pawn, line)
-	// Whoever opened gets to have the last word.
-	if(!isnull(topic))
-		controller.set_blackboard_key(BB_SP_CHAT_PARTNER, asker)
-		controller.set_blackboard_key(BB_SP_CHAT_STAGE, 1)
+	pawn.face_atom(asker)
+	sp_crew_speak(pawn, replacetext(line, "%TARGET%", sp_first_name(asker)))
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 // --- Starting a conversation --------------------------------------------------------------------
 
-/// Picks a nearby crew member and something to say to them.
+/**
+ * Picks a nearby crew member and something to say to them.
+ *
+ * A chat then moves through the SP_CHAT_* stages, each set before the line it belongs to is said: speech goes
+ * out through INVOKE_ASYNC, so a listener may hear a line before its speaker's next statement runs, or after.
+ */
 /datum/bt_node/ai_behavior/sp_start_chat
 	time_between_perform = 5 SECONDS
 
@@ -75,10 +84,10 @@
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	controller.set_blackboard_key(BB_SP_CHAT_PARTNER, partner)
 	controller.set_blackboard_key(BB_SP_CHAT_TOPIC, topic)
-	controller.set_blackboard_key(BB_SP_CHAT_STAGE, 0)
+	controller.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_PICKED)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
-/// Says the opening line. The other crew member's hearing hook does the rest.
+/// Says the opening line. The other crew member's hearing hook does the rest (consider_conversation()).
 /datum/bt_node/ai_behavior/sp_say_opener
 
 /datum/bt_node/ai_behavior/sp_say_opener/perform(seconds_per_tick, datum/ai_controller/controller)
@@ -88,32 +97,40 @@
 	if(!istype(pawn) || QDELETED(partner) || isnull(topic))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.face_atom(partner)
-	var/line = replacetext(pick(topic.openers), "%TARGET%", sp_first_name(partner))
-	sp_crew_speak(pawn, line)
-	controller.set_blackboard_key(BB_SP_CHAT_STAGE, 1)
+	controller.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_OPENED)
+	sp_crew_speak(pawn, replacetext(pick(topic.openers), "%TARGET%", sp_first_name(partner)))
 	log_sp("[pawn.real_name] started a conversation with [partner.real_name] about [topic.id]")
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
-/// The last word, if the topic has one, then the conversation is over for both of us.
+/**
+ * The last word, if the partner answered and the topic has one; then the conversation is over.
+ *
+ * The chat is forgotten before anything is said. A closer spoken with partner and topic still set once passed
+ * for a fresh opener, and two crew could go on closing at each other for as long as the dice allowed.
+ */
 /datum/bt_node/ai_behavior/sp_say_closer
+	/// Percent chance of a closing remark once the opener has been answered.
+	var/closer_chance = 60
 
 /datum/bt_node/ai_behavior/sp_say_closer/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/mob/living/partner = controller.blackboard[BB_SP_CHAT_PARTNER]
 	var/datum/sp_topic/topic = controller.blackboard[BB_SP_CHAT_TOPIC]
-	if(istype(pawn) && !QDELETED(partner) && !isnull(topic) && length(topic.closers) && prob(60))
+	var/answered = controller.blackboard[BB_SP_CHAT_STAGE] == SP_CHAT_ANSWERED
+	controller.clear_blackboard_key(BB_SP_CHAT_PARTNER)
+	controller.clear_blackboard_key(BB_SP_CHAT_TOPIC)
+	controller.clear_blackboard_key(BB_SP_CHAT_STAGE)
+	if(answered && istype(pawn) && !QDELETED(partner) && length(topic?.closers) && prob(closer_chance))
 		pawn.face_atom(partner)
 		sp_crew_speak(pawn, replacetext(pick(topic.closers), "%TARGET%", sp_first_name(partner)))
 		// Talking to someone is how strangers stop being strangers.
 		sp_adjust_reputation(controller, partner, 1, "had a conversation")
-	controller.clear_blackboard_key(BB_SP_CHAT_PARTNER)
-	controller.clear_blackboard_key(BB_SP_CHAT_TOPIC)
-	controller.clear_blackboard_key(BB_SP_CHAT_STAGE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 // --- Noticing people --------------------------------------------------------------------------
 
-/// Greets a player who has come near, once each, so the station acknowledges you.
+/// Greets a player who has come near, once each, so the station acknowledges you. It sits outside the chat
+/// cooldown in the tree: sharing that with failed partner searches held a newcomer's hello back by up to 90 s.
 /datum/bt_node/ai_behavior/sp_greet_newcomer
 	time_between_perform = 4 SECONDS
 

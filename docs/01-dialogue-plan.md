@@ -23,15 +23,19 @@ medical, security and botany. Each has openers, replies and sometimes closers.
 
 **NPC↔player.** Players get no dialogue, only single-line answers.
 
-- **Keyword answers:** `sp_answer_for()` substring-matches eight branches: insults, thanks, greetings, "what
-  do you do", "where", help, "follow me" and "how are you". The first match wins.
-- **Name detection:** a crew member answers when their first name appears anywhere in the line.
+- **Keyword answers:** `sp_speech_intent()` reads a line in whole words (`sp_words()`) into one of eight
+  intents: insults, thanks, "follow me", "who are you", "where", help, "how are you" and greetings. The most
+  specific match wins, and `sp_answer_for()` turns it into a line.
+- **Name detection:** a crew member answers when their first name is a word in the line, and asks what you
+  want when it is the only thing in it. A line naming nobody is answered by the nearest crew member free to
+  talk; one naming somebody else is left to them. An answer not given within 15 s is dropped.
 - **Greeting:** new arrivals are greeted once each.
 
 **Standing.**
 
 - **Storage:** a per-crew score from -10 to +10 for each mob, in `BB_SP_REPUTATION`.
-- **Changes:** insult -3, thanks +2, hello +1, a spoken closer +1, being attacked -6.
+- **Changes:** insult -3, thanks +2, hello +1, a spoken closer +1, being attacked -6. Each moves once per
+  line answered.
 - **Uses:** only three answer branches read it. It never decays and isn't shown to the player.
 
 **Not there yet:**
@@ -41,33 +45,54 @@ medical, security and botany. Each has openers, replies and sometimes closers.
 - no player choices
 - nothing an NPC says ever leads to anything they do
 
-### Bugs to fix before building on it
+### Bugs fixed before building on it (M0, done 2026-09-16)
+
+All eight are fixed and pinned by unit tests: `sp_trees_talk`, `sp_speech_whole_words`,
+`sp_distress_needs_urgency`, `sp_answer_once`, `sp_crew_exchange`, `sp_one_answer_per_line` and
+`sp_security_answers`. Each entry says what was wrong, then how it was fixed.
 
 1. **Base crew never chat at all.** This includes the Captain, HoP, RD, scientists and janitor:
    `sp_crew.bt.json` has no `sp_crew_chatter`.
    - After their first AI exchange as a *listener*, `TOPIC` and `PARTNER` stay set for good, because they
      never run the closer that clears them.
    - A set `PARTNER` then keeps them out of every future chat.
+   - *Fixed:* `sp_crew.bt.json` runs `sp_crew_chatter`, and a listener never holds `PARTNER` or `TOPIC` now.
 2. **A leftover `TOPIC` hijacks the next answer.** `sp_say_reply` doesn't clear it, so the next person to
    speak to them, a player included, gets a topic reply instead of an answer.
+   - *Fixed:* a reply's topic has its own key, `BB_SP_CHAT_REPLY_TOPIC`, spent as the reply is said.
 3. **A closer can restart the exchange.** It's spoken while `PARTNER` and `TOPIC` are still set, so the
    listener treats it as a new opener. It can loop while the 60% closer roll keeps succeeding.
+   - *Fixed:* the opener moves through `SP_CHAT_*` stages, each set before its line is said, since speech goes
+     out through `INVOKE_ASYNC`. A listener takes a line as an opener only at `SP_CHAT_OPENED` and marks it
+     heard. The opener forgets the chat before saying the closer.
 4. **The replier also gets a closer**, contrary to the code's own comment.
+   - *Fixed:* replying no longer sets `PARTNER`. The opener closes, and only once the partner has answered.
 5. **Standing changes twice** for lines that don't use the crew member's name: `sp_answer_for` runs once as
    a probe and again for the real answer.
+   - *Fixed:* the probe is `sp_speech_intent()`, which changes nothing; `sp_answer_for()` runs once.
 6. **Substring matching trips over itself:**
    - "hey" matches "they"; "Tom" matches "tomorrow".
    - A bare "hi" is missed.
    - "can you help" also sends security running (distress words).
+   - *Fixed:* all of it reads whole words. For distress, words of violence count on their own, but "help"
+     and "security" need urgency (an exclamation mark, capitals, the word leading the line, or bare pleading)
+     and never count in a calm request.
 7. **Unanswered and unreachable paths:**
    - Security never answers anyone: their tree has no `sp_crew_core`, so no respond subtree.
    - `sp_crew_social` is dead code: nothing sets `BB_SP_ATTENTION_TARGET`. So saying only a crew member's
      name gets silence.
+   - *Fixed:* security and the HoS run `sp_crew_respond` below their security work, taking nothing up while
+     on duty. A name alone sets `BB_SP_ATTENTION_TARGET`, and `sp_crew_social` asks what they want.
 8. **The first greeting can take up to 90 s**, because it shares the chat cooldown with failed partner
    searches.
+   - *Fixed:* greeting a newcomer sits outside the chat cooldown.
 
-(The 2026-09-11 `busy_with_work()` change already stops a chat reply from interrupting a medic or a
-chemist mid-job.)
+Also fixed along the way: AI crew no longer answer other crew's replies, closers or remarks (only an
+opener aimed at them), an unnamed player line gets one answer rather than one from everyone in earshot,
+and an opener whose partner never answered does not close into silence.
+
+(`busy_with_work()` stops a chat reply from interrupting a medic or a chemist mid-job, and, since M0, an
+officer on duty.)
 
 ---
 
@@ -275,10 +300,13 @@ A node can say `"generate": {"style": "grumpy engineer", "max_words": 18}` in pl
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | Fix the bugs in §1 | Unit tests cover `sp_answer_for` (word boundaries), a full AI exchange with no stuck keys, and base crew chatting; security answers |
+| M0 | Fix the bugs in §1 (**done 2026-09-16**) | Unit tests cover `sp_answer_for` (word boundaries), a full AI exchange with no stuck keys, and base crew chatting; security answers |
 | M1 | Engine | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
 | M2 | NPC↔NPC content | 10–15 dialogues from §3.3 with standing and memory effects; live tally `talk.threads`, `talk.finished`, `talk.abandoned` |
 | M3 | NPC↔player | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
+
+Next session (from 2026-09-20): the janitor and the clown first, then M1's engine and the first
+written lines, which is where the seven hard-coded topics stop being hard-coded.
 | M4 | Consequences | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
 | M5 | Sidecar | `generate` nodes behind a budget, off by default |
 

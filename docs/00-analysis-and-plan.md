@@ -183,17 +183,34 @@ being attacked cuts a conversation off outright.
    `sp_request_supplies()`, the QM orders it against the cargo budget and answers by name on the
    supply channel, and a technician walks the crate to the department that asked. With nothing
    requested the QM keeps a small standing restock moving. Miners are deliberately out of scope.
-3. **Chef.** Cooks with botany's produce plus what cargo brings, and puts finished food on the
-   counter. Draws its supplies through the cargo request queue.
-4. **Bartender** — serve drinks.
-5. **Janitor** — mop decals and clean up.
-6. **Security** — use the disabler instead of melee, and jail suspects in the brig.
-7. **Antagonist / grey-tide assistant behaviour** — the SP antagonist director.
+3. ~~**Chef.** Cooks with botany's produce plus what cargo brings, and puts finished food on the
+   counter. Draws its supplies through the cargo request queue.~~ Done.
+4. ~~**Bartender** — serve drinks.~~ Done.
+5. **Janitor** — mop decals and clean up. Next, with the clown.
+6. ~~**Security** — use the disabler instead of melee, and jail suspects in the brig.~~ Done to the cell
+   door: the confrontation ladder (a word, a note on the record, an arrest), the head of security's
+   command layer, kit fetched from the department's own lockers, and a sentence served in a cell. The
+   warden's side of the brig is deliberately left for its own session.
+7. **Antagonist / grey-tide assistant behaviour** — the SP antagonist director. Greytide assistants are
+   done; the antagonist foundation (schemes rather than TG objectives) is in place, and theft is still
+   held up by what a crew member's own ID can open.
 8. **Python sidecar** — reads `BB_SP_HEARD` and station state, few high-value model calls.
 9. **Dialogue trees + spending standing** — player conversations that track a thread, and crew
-   agreeing to follow someone they think well of.
+   agreeing to follow someone they think well of. The bug list that came first (`01-dialogue-plan.md`
+   M0) is done; the engine and the written lines are next.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
+
+### 2026-09-20 — Where things stand
+
+`code/modules/spacestation_sp/README.md` is the detailed account; this is the shape of it. Since 09-07:
+cargo and the quartermaster, the chef, the bar, medbay (triage, treatment, cryo and surgery) and the
+chemist, players taking over any AI-held job as they join, greytide assistants, the antagonist foundation,
+and security — the confrontation ladder, the head of security's command layer, kit fetched rather than
+handed out, and cells. Conversation's M0 bug list is fixed and covered by tests. Sixty-five SP unit tests
+pass.
+
+Next session: the janitor and the clown, and the first written dialogue lines.
 
 ## 8. Key file index
 - Version gate: `code/__byond_version_compat.dm`; pins: `dependencies.sh`, `.tgs.yml`

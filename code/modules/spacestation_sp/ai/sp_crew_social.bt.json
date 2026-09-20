@@ -10,8 +10,17 @@
 		"type": "sequence",
 		"children": [
 			{
-				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/sp_say/greet"
+				"type": "selector",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_say/greet"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/succeed"
+					}
+				]
 			},
 			{
 				"type": "leaf",

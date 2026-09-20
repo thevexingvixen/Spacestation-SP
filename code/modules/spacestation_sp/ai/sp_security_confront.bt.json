@@ -1,0 +1,34 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_security_confront",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_SUSPECT",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+				"vars": {
+					"target_key": "BB_SP_SUSPECT",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_confront_suspect"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/wait",
+				"vars": {
+					"duration": "3 SECONDS"
+				}
+			}
+		]
+	}
+}

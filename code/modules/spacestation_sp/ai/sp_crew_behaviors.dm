@@ -111,14 +111,57 @@
 		return TRUE
 	return (/datum/job_department/security in role.departments_list) || (/datum/job_department/command in role.departments_list)
 
-/// Words that make security treat a spoken line from a player as a call for help.
+/**
+ * Whether a line from a player is a call for help.
+ *
+ * Read in whole words (sp_words()). Violence counts by word start, because "attacking" and "stabbed" are how
+ * people shout it, with a few false friends ruled out by name. "Help" and "security" count only when the line
+ * sounds urgent -- an exclamation mark, capitals, the word leading the line, or nothing but pleading -- and
+ * never in a calm request: "can you help" used to send every officer in earshot running. Only players reach
+ * this; AI crew report through the structured incident.
+ */
 /proc/sp_message_is_distress(message)
-	var/static/list/distress_words = list("help", "attack", "murder", "kill", "shooting", "stab", "security", "assault")
-	var/lowered = LOWER_TEXT(message)
-	for(var/word in distress_words)
-		if(findtext(lowered, word))
+	var/list/words = sp_words(message)
+	if(!length(words))
+		return FALSE
+	var/static/list/violence = list("attack", "murder", "kill", "shoot", "stab", "assault")
+	var/static/list/false_friends = list("stable", "stability", "stabilise", "stabilize", "killjoy")
+	for(var/word in words)
+		if(word in false_friends)
+			continue
+		for(var/root in violence)
+			if(findtext(word, root) == 1)
+				return TRUE
+	if(!("help" in words) && !("security" in words))
+		return FALSE
+	if(findtext(message, "!") || sp_is_shouting(message))
+		return TRUE
+	if(findtext(message, "?"))
+		return FALSE
+	for(var/request in list("can you", "could you", "would you", "will you"))
+		if(sp_said(words, request))
+			return FALSE
+	if(words[1] == "help" || words[1] == "security")
+		return TRUE
+	var/static/list/pleading = list("help", "security", "me", "us", "please", "pls", "plz", "now", "someone", "somebody", "anyone")
+	var/only_pleading = TRUE
+	for(var/word in words)
+		if(!(word in pleading))
+			only_pleading = FALSE
+			break
+	if(only_pleading)
+		return TRUE
+	for(var/plea in list("help me", "help us", "someone help", "somebody help", "need help", "call security", "get security", "need security"))
+		if(sp_said(words, plea))
 			return TRUE
 	return FALSE
+
+/// Whether a line is written in capitals, the way people shout.
+/proc/sp_is_shouting(message)
+	var/plain = message
+	for(var/entity in list("&#39;", "&quot;", "&amp;", "&lt;", "&gt;"))
+		plain = replacetext(plain, entity, "")
+	return plain != LOWER_TEXT(plain) && plain == uppertext(plain)
 
 /// Puts whatever is in our hands away, so the next step starts from a clean grip.
 /proc/sp_free_hands(mob/living/carbon/human/crew)
@@ -415,6 +458,15 @@
 		"You called?",
 	)
 
+/// A look up at whoever said our name, unless they have gone or it is too late for one (SP_REPLY_STALE).
+/datum/bt_node/ai_behavior/sp_say/greet/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/atom/named_by = controller.blackboard[BB_SP_ATTENTION_TARGET]
+	var/asked_at = controller.blackboard[BB_SP_CHAT_ASKED_AT]
+	controller.clear_blackboard_key(BB_SP_CHAT_ASKED_AT)
+	if(QDELETED(named_by) || (!isnull(asked_at) && world.time - asked_at > SP_REPLY_STALE))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	return ..()
+
 /datum/bt_node/ai_behavior/sp_say/threat_warning
 	face_key = BB_SP_THREAT
 	lines = list(
@@ -503,7 +555,7 @@
 		"Security! [who] just attacked me in [where]!",
 		"[who] is assaulting me, I'm in [where]! Help!",
 	)
-	controller.set_blackboard_key(BB_SP_LAST_INCIDENT, list(
+	controller.override_blackboard_key(BB_SP_LAST_INCIDENT, list(
 		SP_INCIDENT_ATTACKER = QDELETED(attacker) ? null : WEAKREF(attacker),
 		SP_INCIDENT_VICTIM = WEAKREF(pawn),
 		SP_INCIDENT_TURF = get_turf(pawn),
@@ -542,6 +594,12 @@
 	var/obj/item/equipped = sp_equip_from_inventory(pawn, item_types)
 	if(isnull(equipped))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// A security baton comes out of the belt switched off, and an inactive baton is only a club: try_stun()
+	// returns FALSE and the hit falls through to plain brute damage, so an arrest was a beating that went on
+	// until the suspect reached crit. attack_self() toggles, so turn it on directly, and only when it is off.
+	var/obj/item/melee/baton/security/stick = equipped
+	if(istype(stick) && !stick.active && stick.cell?.charge >= stick.cell_hit_cost)
+		stick.turn_on(pawn)
 	if(target_key)
 		controller.set_blackboard_key(target_key, equipped)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
@@ -571,6 +629,59 @@
 		return AI_BEHAVIOR_INSTANT // still winding up
 	pawn.face_atom(target)
 	INVOKE_ASYNC(controller, TYPE_PROC_REF(/datum/ai_controller, ai_interact), target, TRUE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// Have a word with somebody a crime was reported against. Ranks below the response to actual violence.
+/datum/bt_node/subtree/sp_security_confront
+	behavior_tree_json = "code/modules/spacestation_sp/ai/sp_security_confront.bt.json"
+
+/// What an officer says walking up to somebody, by what they are said to have done.
+GLOBAL_LIST_INIT(sp_confrontation_lines, list(
+	SP_CRIME_THEFT = list("That is not yours. Hand it over.", "I hear you have been helping yourself.", "Pockets out."),
+	SP_CRIME_VANDALISM = list("You break it, the station pays for it. Pack it in.", "Enough of that.", "Was that you?"),
+	SP_CRIME_TRESPASS = list("You are not supposed to be in here.", "Out. Now.", "Wrong side of that door, is it not?"),
+))
+
+/**
+ * A word with somebody a crime was reported against, rather than a baton.
+ *
+ * Security's existing response is for people who hit people, and putting a petty thief through the same
+ * routine would have an officer beating an assistant senseless over a light tube. So a suspect gets spoken to,
+ * thought less of, and written up; the record is the memory. Only once it shows a pattern
+ * (SP_CRIMES_BEFORE_ARREST) does the officer call an arrest and hand them to the baton path, and anybody who
+ * swings back becomes an attacker on their own (the security controller's on_attacked), which is escalation
+ * enough without a special case here.
+ */
+/datum/bt_node/ai_behavior/sp_confront_suspect
+
+/datum/bt_node/ai_behavior/sp_confront_suspect/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/suspect = controller.blackboard[BB_SP_SUSPECT]
+	var/crime = controller.blackboard[BB_SP_SUSPECT_CRIME]
+	controller.clear_blackboard_key(BB_SP_SUSPECT)
+	controller.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
+	if(!istype(pawn) || QDELETED(suspect) || !suspect.Adjacent(pawn))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	pawn.face_atom(suspect)
+	var/area/scene = get_area(suspect)
+	var/priors = sp_file_crime_record(suspect, crime, "Reported in [scene ? scene.name : "the station"].", pawn)
+	sp_adjust_reputation(controller, suspect, SP_WITNESS_REPUTATION_HIT, "had to have a word with them")
+	sp_record("sec.confronted")
+	log_sp("[pawn.real_name] had a word with [suspect.real_name] about [crime || "it"] in [scene ? scene.name : "the station"]")
+	// A pattern on the record, rather than one bad afternoon: now it is an arrest.
+	// sp_mark_for_arrest() returns FALSE for anybody already wanted, and nothing ever clears WANTED_ARREST, so a
+	// repeat offender could never be arrested a second time. The pattern on the record decides, not the flag.
+	if(priors > SP_CRIMES_BEFORE_ARREST)
+		sp_mark_for_arrest(suspect)
+		sp_crew_speak(pawn, "[suspect.real_name], that is once too many. You are coming with me.", RADIO_CHANNEL_SECURITY)
+		controller.set_blackboard_key(BB_SP_INCIDENT_TARGET, suspect)
+		// Petty crime is never met with lethal force, whatever standing orders say; sp_set_fire_mode reads this.
+		controller.set_blackboard_key(BB_SP_ARREST_NONLETHAL, suspect)
+		controller.set_blackboard_key(BB_SP_INCIDENT_LOCATION, get_turf(suspect))
+		log_sp("[pawn.real_name] called an arrest on [suspect.real_name] ([priors] crimes on record)")
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+	var/list/lines = GLOB.sp_confrontation_lines[crime]
+	sp_crew_speak(pawn, length(lines) ? pick(lines) : "I will be keeping an eye on you.")
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 /// Clears the current incident (and our own attacker memory). Always succeeds.
@@ -787,3 +898,198 @@
 	else if(. & AI_BEHAVIOR_SUCCEEDED)
 		log_sp("[controller.pawn] move SUCCEEDED, arrived")
 #endif
+
+/// Security sidearm: an energy gun if one has been drawn, else the disabler every officer starts the shift with.
+/datum/bt_node/ai_behavior/sp_equip_item/sidearm
+	item_types = list(/obj/item/gun/energy/e_gun, /obj/item/gun/energy/disabler)
+	target_key = BB_SP_WEAPON
+
+/**
+ * Shoots the mob in target_key with whatever is in hand.
+ *
+ * ai_interact() has no adjacency check of its own -- it sets combat mode, calls ClickOn() and puts the mode
+ * back -- so a gun clicked at something across the room fires at it. The Adjacent() test in sp_attack_target
+ * is that leaf's own choice rather than a limit of the interaction layer, which is why this is a sibling and
+ * not a rewrite. Combat mode stays off on purpose: clicking with it on while stood next to somebody
+ * pistol-whips them instead of firing.
+ */
+/datum/bt_node/ai_behavior/sp_shoot_target
+	/// Blackboard key holding the target.
+	var/target_key = BB_SP_INCIDENT_TARGET
+	/// Furthest we will take a shot from.
+	var/max_range = 7
+
+/datum/bt_node/ai_behavior/sp_shoot_target/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/target = controller.blackboard[target_key]
+	var/mob/living/pawn = controller.pawn
+	if(QDELETED(target) || QDELETED(pawn))
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	var/obj/item/gun/held = pawn.get_active_held_item()
+	// An empty gun is not a gun. A disabler carries twenty shots (e_cost = LASER_SHOTS(20, ...)), and an
+	// officer who spent them went on holding the trigger: the shot silently did nothing, this leaf kept
+	// succeeding, and the selector never fell through to anything else. Failing here hands the problem on.
+	if(!istype(held) || !held.can_shoot())
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	if(get_dist(pawn, target) > max_range || !can_see(pawn, target, max_range))
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	// Never fire through somebody else. TG's basic ranged attack guards this and I left it out as apparatus
+	// I did not need; a briefing then put the whole department on one spot and an officer shot the head of
+	// security in the back on the way to a monkey. Anyone who is not the target counts, which is stricter
+	// than TG's targeting-strategy version and right for security, who should not be hitting bystanders.
+	for(var/turf/along as anything in get_line(pawn, target))
+		for(var/mob/living/bystander in along)
+			if(bystander != target && bystander != pawn)
+				return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	if(world.time < pawn.next_move)
+		return AI_BEHAVIOR_INSTANT // still winding up
+	pawn.face_atom(target)
+	INVOKE_ASYNC(controller, TYPE_PROC_REF(/datum/ai_controller, ai_interact), target, FALSE)
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// A casing that stuns is not a lethal one. ammo_type holds instances once update_ammo_types() has run, but
+/// the gun's own Destroy() says it is "sometimes paths, sometimes atom", so both are handled.
+/proc/sp_casing_is_lethal(casing)
+	var/static/list/stunning = list(/obj/item/ammo_casing/energy/disabler, /obj/item/ammo_casing/energy/electrode)
+	for(var/stun_path in stunning)
+		if(ispath(casing) ? ispath(casing, stun_path) : istype(casing, stun_path))
+			return FALSE
+	return TRUE
+
+/**
+ * Setting a held energy gun to match standing orders before firing it.
+ *
+ * select_fire() cycles rather than sets -- select++, wrapping at ammo_type.len -- so reaching a particular
+ * mode means cycling until it comes round, bounded by the number of modes. A disabler has one casing and no
+ * lethal setting at all, so this does nothing whatsoever to the weapon an officer starts the shift with:
+ * going lethal really does mean drawing an energy gun from the armoury first.
+ *
+ * Succeeds even when there is nothing to set, because the shot that follows is no worse for it.
+ */
+/datum/bt_node/ai_behavior/sp_set_fire_mode/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	if(!ishuman(pawn))
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	var/obj/item/gun/energy/gun = pawn.get_active_held_item()
+	if(!istype(gun) || length(gun.ammo_type) < 2)
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_SUCCEEDED
+	// Lethal only under standing orders, and never against somebody being arrested for petty crime: a third
+	// smashed light tube was being answered with lethal fire at red alert.
+	var/mob/living/petty = controller.blackboard[BB_SP_ARREST_NONLETHAL]
+	var/wanted = !isnull(controller.blackboard[BB_SP_USE_LETHALS]) && (isnull(petty) || petty != controller.blackboard[BB_SP_INCIDENT_TARGET])
+	if(sp_casing_is_lethal(gun.ammo_type[gun.select]) == wanted)
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_SUCCEEDED
+	for(var/i in 1 to length(gun.ammo_type))
+		gun.select_fire(pawn)
+		if(sp_casing_is_lethal(gun.ammo_type[gun.select]) == wanted)
+			break
+	// Only said once per actual change: this leaf runs every time the sequence does.
+	sp_record(wanted ? "sec.went_lethal" : "sec.went_stun")
+	log_sp("[pawn.real_name] set [gun.name] to [wanted ? "lethal" : "stun"]")
+	return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_SUCCEEDED
+
+/// Lets go of the prisoner and forgets the escort. Every way an escort can fail comes through here.
+/proc/sp_abandon_escort(datum/ai_controller/controller)
+	var/mob/living/pawn = controller?.pawn
+	var/mob/living/prisoner = controller?.blackboard[BB_SP_PRISONER]
+	if(!QDELETED(pawn) && !QDELETED(prisoner) && pawn.pulling == prisoner)
+		pawn.stop_pulling()
+	sp_clear_escort_keys(controller)
+
+/proc/sp_clear_escort_keys(datum/ai_controller/controller)
+	controller?.clear_blackboard_key(BB_SP_PRISONER)
+	controller?.clear_blackboard_key(BB_SP_CELL)
+	controller?.clear_blackboard_key(BB_SP_CELL_SPOT)
+	controller?.clear_blackboard_key(BB_SP_CELL_OUTSIDE)
+
+/**
+ * Picking a cell for somebody just cuffed, and taking hold of them for the walk.
+ *
+ * The prisoner is held in BB_SP_PRISONER from here on, not read from INCIDENT_TARGET, which any fresh report
+ * overwrites. A corpse is not a prisoner, and a pull begun from across a room breaks on the first step, so
+ * both are refused -- and an escort resumed after its prisoner slipped away is let go of properly.
+ */
+/datum/bt_node/ai_behavior/sp_find_cell/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER] || controller.blackboard[BB_SP_INCIDENT_TARGET]
+	if(!ishuman(pawn) || QDELETED(prisoner) || prisoner.stat == DEAD || !prisoner.Adjacent(pawn) || sp_sentence_time(prisoner) <= 0)
+		sp_abandon_escort(controller)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/obj/machinery/status_display/door_timer/cell = sp_free_cell(pawn)
+	var/list/doorway = sp_cell_doorway(cell)
+	if(!length(doorway) || (pawn.pulling != prisoner && !pawn.start_pulling(prisoner, supress_message = TRUE)))
+		sp_abandon_escort(controller)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_hold_still(prisoner, pawn, SP_ESCORT_TIME)
+	controller.set_blackboard_key(BB_SP_PRISONER, prisoner)
+	controller.set_blackboard_key(BB_SP_CELL, cell)
+	controller.set_blackboard_key(BB_SP_CELL_SPOT, doorway[1])
+	controller.set_blackboard_key(BB_SP_CELL_OUTSIDE, doorway[2])
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/**
+ * Putting a cuffed prisoner in the cell and starting the clock, with the officer ending up outside.
+ *
+ * The officer arrives standing just inside the door, which leaves the prisoner they are pulling just outside it.
+ * One step back out then swaps them: TG lets a puller swap places with whoever they are pulling
+ * (can_mobswap_with), but refuses to shove a restrained person past the one pulling them -- which is exactly
+ * the move the first version tried, and why it never put anybody in a cell. The swap leaves them adjacent
+ * across the door's edge, officer outside and prisoner in, and timer_start() then shuts it between them.
+ */
+/datum/bt_node/ai_behavior/sp_jail_target
+	/// Held across the async half.
+	VAR_PRIVATE/atom/movable/reach
+
+/datum/bt_node/ai_behavior/sp_jail_target/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/async_flags = handle_async()
+	if(async_flags)
+		return async_flags
+	var/mob/living/carbon/human/pawn = controller.pawn
+	reach = controller.blackboard[BB_SP_CELL_SPOT]
+	if(!istype(pawn) || QDELETED(reach) || get_turf(pawn) != reach)
+		sp_abandon_escort(controller)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	return start_async()
+
+/datum/bt_node/ai_behavior/sp_jail_target/perform_async(datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/turf/inside = reach
+	var/turf/outside = controller.blackboard[BB_SP_CELL_OUTSIDE]
+	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
+	var/obj/machinery/status_display/door_timer/cell = controller.blackboard[BB_SP_CELL]
+	if(!isturf(inside) || !isturf(outside) || QDELETED(prisoner) || QDELETED(cell) || pawn.pulling != prisoner || get_turf(prisoner) != outside)
+		sp_abandon_escort(controller)
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	// Brig windoors close by themselves, so open it again if it shut while we walked in.
+	for(var/datum/weakref/door_ref as anything in cell.doors)
+		var/obj/machinery/door/window/brigdoor/door = door_ref.resolve()
+		if(istype(door) && door.density && door.allowed(pawn))
+			INVOKE_ASYNC(door, TYPE_PROC_REF(/obj/machinery/door/window/brigdoor, open))
+	sleep(0.5 SECONDS)
+	if(!async_still_valid())
+		return
+	step(pawn, get_dir(inside, outside))
+	sleep(0.2 SECONDS)
+	if(!async_still_valid())
+		return
+	if(QDELETED(prisoner) || QDELETED(cell) || get_turf(pawn) != outside || get_turf(prisoner) != inside)
+		sp_abandon_escort(controller)
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	pawn.stop_pulling()
+	var/sentence = sp_sentence_time(prisoner)
+	cell.set_timer(sentence)
+	cell.timer_start()
+	var/datum/record/crew/record = find_record(prisoner.real_name)
+	if(record)
+		record.wanted_status = WANTED_PRISONER
+		update_matching_security_huds(prisoner.real_name)
+	// Only let the incident go if it is still about this prisoner: a report that arrived mid-escort stands.
+	if(controller.blackboard[BB_SP_INCIDENT_TARGET] == prisoner)
+		controller.clear_blackboard_key(BB_SP_INCIDENT_TARGET)
+		controller.clear_blackboard_key(BB_SP_INCIDENT_LOCATION)
+	sp_clear_escort_keys(controller)
+	sp_record("sec.jailed")
+	log_sp("[pawn.real_name] put [prisoner.real_name] in [cell.name] for [round(sentence / 600)] minutes")
+	sp_crew_speak(pawn, "[prisoner.real_name] is in a cell. [round(sentence / 600)] minutes.", RADIO_CHANNEL_SECURITY)
+	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
