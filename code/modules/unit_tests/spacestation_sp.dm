@@ -1662,3 +1662,136 @@
 	officer_ai.consider_conversation(player, "Mara, where do you work?")
 	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "a free officer answers")
 	qdel(officer_ai)
+
+// --- Security, the rungs that had no test of their own --------------------------------------------
+
+/**
+ * The one move that puts a prisoner in a cell: the officer swaps out past them, or drags them the last step
+ * when they are lying down and there is nothing to swap with. An escort under way also holds its branch
+ * against a fresh report, which used to swap the target out from under the officer mid-walk.
+ */
+/datum/unit_test/sp_cell_swap_puts_them_in
+
+/datum/unit_test/sp_cell_swap_puts_them_in/Run()
+	var/turf/outside = run_loc_floor_bottom_left
+	var/turf/inside = get_step(outside, NORTH)
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, inside)
+	var/mob/living/carbon/human/prisoner = allocate(/mob/living/carbon/human/consistent, outside)
+	prisoner.set_handcuffed(new /obj/item/restraints/handcuffs(prisoner))
+	prisoner.update_handcuffed()
+	TEST_ASSERT(HAS_TRAIT(prisoner, TRAIT_RESTRAINED), "the prisoner is cuffed")
+	TEST_ASSERT(officer.start_pulling(prisoner, supress_message = TRUE), "and the officer has hold of them")
+
+	TEST_ASSERT(sp_swap_into_cell(officer, prisoner, inside, outside), "standing, the pair swap places")
+	TEST_ASSERT_EQUAL(get_turf(prisoner), inside, "which leaves the prisoner inside")
+	TEST_ASSERT_EQUAL(get_turf(officer), outside, "and the officer outside, where timer_start() shuts the door between them")
+
+	// Lying down they are not dense, so there is nothing to swap with: they are dragged the last step instead.
+	officer.forceMove(inside)
+	prisoner.forceMove(outside)
+	prisoner.Knockdown(10 SECONDS)
+	TEST_ASSERT(!prisoner.density, "a mob lying down is not dense")
+	TEST_ASSERT(officer.start_pulling(prisoner, supress_message = TRUE), "the officer still has hold of them")
+	TEST_ASSERT(sp_swap_into_cell(officer, prisoner, inside, outside), "lying down, they are dragged in")
+	TEST_ASSERT_EQUAL(get_turf(prisoner), inside, "the prisoner ends up inside either way")
+	TEST_ASSERT_EQUAL(get_turf(officer), outside, "and the officer outside either way")
+
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/decorator/sp_target_secured/secured = new
+	officer_ai.set_blackboard_key(BB_SP_PRISONER, prisoner)
+	officer_ai.set_blackboard_key(BB_SP_INCIDENT_TARGET, officer) // a fresh report, naming somebody unrestrained
+	TEST_ASSERT(secured.check_condition(officer_ai), "an escort under way is not interrupted by a new report")
+	qdel(secured)
+	qdel(officer_ai)
+
+/// A baton comes out of the belt switched off, and an inactive one is a club: the hit falls through to brute.
+/datum/unit_test/sp_baton_switched_on
+
+/datum/unit_test/sp_baton_switched_on/Run()
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/obj/item/storage/belt/security/full/belt = new(officer)
+	TEST_ASSERT_NOTNULL(belt, "the officer carries a security belt")
+	var/obj/item/melee/baton/security/baton = locate() in officer.get_all_contents_type(/obj/item/melee/baton/security)
+	TEST_ASSERT_NOTNULL(baton, "with a baton in it")
+	TEST_ASSERT(!baton.active, "which starts switched off")
+	TEST_ASSERT_NOTNULL(baton.cell, "and loaded")
+
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_equip_item/baton/draw = new
+	TEST_ASSERT(draw.perform(1, officer_ai) & AI_BEHAVIOR_SUCCEEDED, "the officer draws it")
+	TEST_ASSERT_EQUAL(officer.get_active_held_item(), baton, "into their hand")
+	TEST_ASSERT(baton.active, "switched on, so an arrest is a stun rather than a beating")
+	qdel(draw)
+	qdel(officer_ai)
+
+/// Lethal force is for threats, not for a smashed light tube: a petty arrest stays on stun at any alert level.
+/datum/unit_test/sp_petty_arrest_stays_nonlethal
+
+/datum/unit_test/sp_petty_arrest_stays_nonlethal/Run()
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/mob/living/carbon/human/suspect = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, EAST))
+	var/obj/item/gun/energy/e_gun/gun = allocate(/obj/item/gun/energy/e_gun, run_loc_floor_bottom_left)
+	officer.put_in_active_hand(gun)
+	TEST_ASSERT(length(gun.ammo_type) >= 2, "the gun has both a stun and a lethal setting")
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_set_fire_mode/fire_mode = new
+
+	officer_ai.set_blackboard_key(BB_SP_INCIDENT_TARGET, suspect)
+	officer_ai.set_blackboard_key(BB_SP_USE_LETHALS, TRUE)
+	fire_mode.perform(1, officer_ai)
+	TEST_ASSERT(sp_casing_is_lethal(gun.ammo_type[gun.select]), "under standing orders the gun is set to kill")
+
+	officer_ai.set_blackboard_key(BB_SP_ARREST_NONLETHAL, suspect)
+	fire_mode.perform(1, officer_ai)
+	TEST_ASSERT(!sp_casing_is_lethal(gun.ammo_type[gun.select]), "but not at somebody being arrested for petty crime")
+	qdel(fire_mode)
+	qdel(officer_ai)
+
+/// Somewhere to draw a kit from has to be somewhere this officer can actually open.
+/datum/unit_test/sp_arm_locker_usable
+
+/datum/unit_test/sp_arm_locker_usable/Run()
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/obj/structure/closet/secure_closet/security/sec/locker = allocate(/obj/structure/closet/secure_closet/security/sec, get_step(run_loc_floor_bottom_left, EAST))
+	TEST_ASSERT(locker.locked, "a security locker starts locked")
+	TEST_ASSERT(!sp_arm_locker_usable(locker, officer), "and an officer with no ID on them cannot open it")
+	locker.locked = FALSE
+	TEST_ASSERT(sp_arm_locker_usable(locker, officer), "unlocked, it is somewhere to draw from")
+	locker.welded = TRUE
+	TEST_ASSERT(!sp_arm_locker_usable(locker, officer), "welded shut, it is not")
+	locker.welded = FALSE
+	TEST_ASSERT(!sp_arm_locker_usable(null, officer), "and neither is a locker that is not there")
+
+/**
+ * An order is acted on once per listener. Before this, every word from the head of security for five seconds
+ * after an order was swallowed as that order, attacks they reported included.
+ */
+/datum/unit_test/sp_order_acted_on_once
+
+/datum/unit_test/sp_order_acted_on_once/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/boss = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/security/hos/boss_ai = new(boss)
+	boss_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+
+	// Written the way sp_issue_order() writes it, without the speech: the order rides alongside the line, and
+	// the listener reads it off the issuer's blackboard as they hear them speak.
+	boss_ai.override_blackboard_key(BB_SP_LAST_ORDER, list(
+		SP_ORDER_KIND = SP_ORDER_LETHAL,
+		SP_ORDER_TIME = world.time,
+		SP_ORDER_ISSUER = WEAKREF(boss),
+	))
+	officer_ai.on_pre_hear(officer, list(boss, null, "Lethal force is authorised.", null))
+	TEST_ASSERT(officer_ai.blackboard[BB_SP_USE_LETHALS], "the order is taken the first time it is heard")
+
+	officer_ai.clear_blackboard_key(BB_SP_USE_LETHALS)
+	officer_ai.on_pre_hear(officer, list(boss, null, "Two of them, heading for the bar.", null))
+	TEST_ASSERT_NULL(officer_ai.blackboard[BB_SP_USE_LETHALS], "and not again from the next thing they say")
+	qdel(boss_ai)
+	qdel(officer_ai)

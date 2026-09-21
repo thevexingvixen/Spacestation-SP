@@ -927,9 +927,11 @@ the first version tried. The swap leaves the officer outside and the prisoner in
 door between them, and the record reads Incarcerated. Every way the escort can fail lets go of the prisoner
 (`sp_abandon_escort()`), and the incident is closed only if it is still about this prisoner.
 
-Not yet handled, and not yet seen in a live round: a prisoner lying down is not dense, so there is nobody to
-swap with; a door that shuts itself during the swap fails the escort; and a report arriving mid-walk still
-pulls the officer away, because the branch is gated on the incident key rather than the prisoner.
+Three things the first cut of this could not do, now handled: a prisoner lying down is not dense, so there is
+nobody to swap with, and they are dragged the last step instead (`sp_swap_into_cell()`); a cell door that would
+shut itself mid-swap is held open until the handover is done (`sp_open_cell_doors()`, with `timer_start()`
+closing them for good afterwards); and a report arriving mid-walk no longer pulls the officer away, because the
+branch is held by the prisoner rather than by the incident key. None of it has been seen in a live round yet.
 
 ## Antagonists (`sp_antagonist.dm`, `ai/sp_antagonist_behaviors.dm`)
 An antagonist is an ordinary AI crew member carrying a **scheme** (`/datum/sp_scheme` on the blackboard
@@ -1184,6 +1186,17 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
 - `sp_cell_doorway_faces_the_locker` — a timer with nothing linked has no doorway; the cell is the side of
   the door's edge the locker stands on, including a locker level with the door, where plain distance ties;
   and a doorway with something solid in it is no doorway.
+- `sp_cell_swap_puts_them_in` — standing, the officer and the prisoner swap places, leaving the prisoner
+  inside and the officer out; lying down, where there is nothing to swap with, they are dragged the last step.
+  An escort under way also keeps its branch when a fresh report names somebody else.
+- `sp_baton_switched_on` — a baton drawn from the belt comes out switched on, so an arrest is a stun rather
+  than a beating that runs until the suspect reaches crit.
+- `sp_petty_arrest_stays_nonlethal` — under standing lethal orders the gun is set to kill, but not at somebody
+  being arrested for petty crime.
+- `sp_arm_locker_usable` — a locked locker nobody here has the ID for, and a welded one, are not somewhere to
+  draw a kit from.
+- `sp_order_acted_on_once` — an order is acted on once per listener, and the next thing the head of security
+  says is not that order again.
 - `sp_closed_closet_is_empty` — a freshly built locker reports nothing inside it, and opening it produces the
   belt that was there all along. This pins an assumption about upstream rather than about our own code: the
   locker search may only trust the contents of a closet somebody has opened. If TG ever populates closets at
@@ -1329,5 +1342,5 @@ the game server logs nothing at all.
 - The janitor, and the clown.
 - Written dialogue lines, on the engine sketched in `docs/01-dialogue-plan.md` (M1 and M2), which is where
   the seven hard-coded topics stop being hard-coded.
-- The security gaps above: the three cases the cell escort cannot handle yet, and the warden's side of the
-  brig, which is a session of its own.
+- The warden's side of the brig, which is a session of its own, and the cell escort in a live round: it is
+  tested now, but no prisoner has actually walked to a cell in play yet.

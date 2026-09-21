@@ -688,6 +688,8 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 /datum/bt_node/ai_behavior/sp_clear_incident
 
 /datum/bt_node/ai_behavior/sp_clear_incident/perform(seconds_per_tick, datum/ai_controller/controller)
+	// An escort that reached here is over too, and the prisoner is let go of rather than dragged about.
+	sp_abandon_escort(controller)
 	controller.clear_blackboard_key(BB_SP_INCIDENT_TARGET)
 	controller.clear_blackboard_key(BB_SP_INCIDENT_LOCATION)
 	controller.clear_blackboard_key(BB_SP_ATTACKER)
@@ -748,6 +750,11 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/key = BB_SP_INCIDENT_TARGET
 
 /datum/bt_node/decorator/sp_target_secured/check_condition(datum/ai_controller/controller)
+	// An escort already under way holds this branch whatever the incident key now says. A report arriving
+	// mid-walk used to swap the target out from under the officer, who then simply dragged the prisoner along.
+	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
+	if(!QDELETED(prisoner) && prisoner.stat != DEAD && HAS_TRAIT(prisoner, TRAIT_RESTRAINED))
+		return TRUE
 	var/mob/living/target = controller.blackboard[key]
 	if(QDELETED(target) || !isliving(target))
 		return TRUE
@@ -1027,17 +1034,56 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 /**
+ * The one move that puts a pulled prisoner in a cell and leaves the officer outside it.
+ *
+ * Standing, the prisoner is dense, and stepping into them swaps the pair: TG lets a puller swap places with
+ * whoever they are pulling (can_mobswap_with), while refusing to let anyone shove a restrained person past the
+ * one pulling them -- which is the move the first version of this tried, and why it never jailed anybody.
+ * Lying down, they are not dense at all (TRAIT_UNDENSE), so there is nothing to swap with and the officer
+ * simply walks onto their tile; dragging them the last step (Move_Pulled) finishes it. Returns TRUE once the
+ * prisoner is in and the officer is out.
+ */
+/proc/sp_swap_into_cell(mob/living/pawn, mob/living/prisoner, turf/inside, turf/outside)
+	if(QDELETED(pawn) || QDELETED(prisoner) || !isturf(inside) || !isturf(outside))
+		return FALSE
+	if(get_turf(pawn) == inside && get_turf(prisoner) == outside)
+		step(pawn, get_dir(inside, outside))
+	if(get_turf(pawn) == outside && get_turf(prisoner) == outside)
+		pawn.Move_Pulled(inside)
+	return get_turf(pawn) == outside && get_turf(prisoner) == inside
+
+/**
+ * Opens a cell's doors for the handover and stops them shutting themselves again.
+ *
+ * A windoor bumped open closes five seconds later on its own, which is long enough to shut in the middle of
+ * the swap and leave the officer holding a prisoner in a doorway. timer_start() closes them for good once the
+ * sentence starts. Returns TRUE while anything is still shut, so the caller waits rather than walking into it.
+ */
+/proc/sp_open_cell_doors(obj/machinery/status_display/door_timer/cell, mob/living/pawn)
+	var/waiting = FALSE
+	for(var/datum/weakref/door_ref as anything in cell?.doors)
+		var/obj/machinery/door/window/brigdoor/door = door_ref.resolve()
+		if(!istype(door))
+			continue
+		door.autoclose = FALSE
+		if(!door.density)
+			continue
+		waiting = TRUE
+		if(!door.operating && door.allowed(pawn))
+			INVOKE_ASYNC(door, TYPE_PROC_REF(/obj/machinery/door/window, open))
+	return waiting
+
+/**
  * Putting a cuffed prisoner in the cell and starting the clock, with the officer ending up outside.
  *
- * The officer arrives standing just inside the door, which leaves the prisoner they are pulling just outside it.
- * One step back out then swaps them: TG lets a puller swap places with whoever they are pulling
- * (can_mobswap_with), but refuses to shove a restrained person past the one pulling them -- which is exactly
- * the move the first version tried, and why it never put anybody in a cell. The swap leaves them adjacent
- * across the door's edge, officer outside and prisoner in, and timer_start() then shuts it between them.
+ * The officer arrives standing just inside the door, which leaves the prisoner they are pulling just outside
+ * it, and the handover is one move back out (sp_swap_into_cell()). Ending up outside is not cosmetic:
+ * timer_start() shuts the linked doors itself, so an officer still inside would serve the sentence alongside
+ * them. A prisoner who breaks the pull on the way is not dragged back; they are simply still at large.
  */
 /datum/bt_node/ai_behavior/sp_jail_target
-	/// Held across the async half.
-	VAR_PRIVATE/atom/movable/reach
+	/// Held across the async half: the tile just inside the cell door.
+	VAR_PRIVATE/turf/reach
 
 /datum/bt_node/ai_behavior/sp_jail_target/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/async_flags = handle_async()
@@ -1045,7 +1091,7 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 		return async_flags
 	var/mob/living/carbon/human/pawn = controller.pawn
 	reach = controller.blackboard[BB_SP_CELL_SPOT]
-	if(!istype(pawn) || QDELETED(reach) || get_turf(pawn) != reach)
+	if(!istype(pawn) || isnull(reach) || get_turf(pawn) != reach)
 		sp_abandon_escort(controller)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	return start_async()
@@ -1056,23 +1102,25 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/turf/outside = controller.blackboard[BB_SP_CELL_OUTSIDE]
 	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
 	var/obj/machinery/status_display/door_timer/cell = controller.blackboard[BB_SP_CELL]
-	if(!isturf(inside) || !isturf(outside) || QDELETED(prisoner) || QDELETED(cell) || pawn.pulling != prisoner || get_turf(prisoner) != outside)
-		sp_abandon_escort(controller)
-		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
-		return
-	// Brig windoors close by themselves, so open it again if it shut while we walked in.
-	for(var/datum/weakref/door_ref as anything in cell.doors)
-		var/obj/machinery/door/window/brigdoor/door = door_ref.resolve()
-		if(istype(door) && door.density && door.allowed(pawn))
-			INVOKE_ASYNC(door, TYPE_PROC_REF(/obj/machinery/door/window/brigdoor, open))
-	sleep(0.5 SECONDS)
-	if(!async_still_valid())
-		return
-	step(pawn, get_dir(inside, outside))
-	sleep(0.2 SECONDS)
-	if(!async_still_valid())
-		return
-	if(QDELETED(prisoner) || QDELETED(cell) || get_turf(pawn) != outside || get_turf(prisoner) != inside)
+	var/jailed = FALSE
+	// A few goes, one action each: the door may still be swinging open, and a prisoner lying down takes a move
+	// more than a standing one. Nothing here loops on a prisoner who is no longer in hand.
+	for(var/attempt in 1 to 5)
+		if(!isturf(inside) || !isturf(outside) || QDELETED(prisoner) || QDELETED(cell) || pawn.pulling != prisoner)
+			break
+		if(get_turf(pawn) == outside && get_turf(prisoner) == inside)
+			jailed = TRUE
+			break
+		if(get_turf(prisoner) != outside || (get_turf(pawn) != inside && get_turf(pawn) != outside))
+			break
+		if(sp_open_cell_doors(cell, pawn))
+			sleep(1.2 SECONDS) // a windoor drops its density only at the end of the opening animation
+		else
+			sp_swap_into_cell(pawn, prisoner, inside, outside)
+			sleep(0.2 SECONDS)
+		if(!async_still_valid())
+			return
+	if(!jailed)
 		sp_abandon_escort(controller)
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
