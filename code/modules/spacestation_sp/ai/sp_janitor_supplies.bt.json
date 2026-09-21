@@ -1,0 +1,54 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_janitor_supplies",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/sp_needs_supplies",
+	"child": {
+		"type": "selector",
+		"children": [
+			{
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_find_mop"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+						"vars": {
+							"target_key": "BB_SP_MOP",
+							"required_dist": 1,
+							"finish_on_arrival": true
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_take_mop"
+					}
+				]
+			},
+			{
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_find_water"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+						"vars": {
+							"target_key": "BB_SP_WATER",
+							"required_dist": 1,
+							"finish_on_arrival": true
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_wet_mop"
+					}
+				]
+			}
+		]
+	}
+}

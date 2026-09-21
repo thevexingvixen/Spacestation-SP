@@ -722,3 +722,62 @@
 #define BB_SP_PRISONER "sp_prisoner"
 /// The tile just outside the cell door, where the officer ends up once they have swapped the prisoner inside.
 #define BB_SP_CELL_OUTSIDE "sp_cell_outside"
+
+// --- Janitor -------------------------------------------------------------------------------------
+
+/// The mess we are on our way to clean.
+#define BB_SP_MESS "sp_mess"
+/// Messes we could not get to: mess -> when to consider it again.
+#define BB_SP_MESS_IGNORE "sp_mess_ignore"
+/// The mess we are currently trying to reach, and when we set off for it.
+#define BB_SP_MESS_ATTEMPT "sp_mess_attempt"
+#define BB_SP_MESS_ATTEMPT_AT "sp_mess_attempt_at"
+/// A mop lying about that we are walking over to pick up.
+#define BB_SP_MOP "sp_mop"
+/// Where we are going to fill the mop, and the one in our own office to fall back on.
+#define BB_SP_WATER "sp_water"
+#define BB_SP_WATER_HOME "sp_water_home"
+/// Litter worth picking up by hand rather than mopping: a banana peel, a dropped wrapper.
+#define BB_SP_LITTER "sp_litter"
+
+/// How far a janitor will walk for a mess, and how much further maintenance has to be to be worth it.
+#define SP_MESS_RANGE 14
+#define SP_MESS_MAINT_PENALTY 10
+/// How long a mess nobody could reach is left alone, and how long we try before writing it off.
+#define SP_MESS_IGNORE_TIME (3 MINUTES)
+#define SP_MESS_ATTEMPT_TIMEOUT (45 SECONDS)
+/// How far a janitor looks, once at the start of the shift, for a sink to fall back on.
+#define SP_MOP_HOME_RANGE 30
+/// A mop is fetched from anywhere on the station; litter is only picked up close by.
+#define SP_MOP_SEARCH_RANGE 60
+#define SP_LITTER_RANGE 7
+/// Below this much liquid a mop cleans nothing: mop.dm gives up under 0.1 and says so.
+#define SP_MOP_DRY 1
+
+// --- Clown ---------------------------------------------------------------------------------------
+
+/// Cooldowns on the clown's three habits.
+#define BB_SP_HONK_COOLDOWN "sp_honk_cooldown"
+#define BB_SP_PEEL_COOLDOWN "sp_peel_cooldown"
+#define BB_SP_BANANA_COOLDOWN "sp_banana_cooldown"
+/// How close somebody has to be to be worth honking at.
+#define SP_CLOWN_HONK_RANGE 5
+
+// --- Written dialogue ----------------------------------------------------------------------------
+
+/// The dialogue thread we are in the middle of.
+#define BB_SP_THREAD "sp_thread"
+/// Dialogue ids we have been through lately, so the same one is not had twice in a row.
+#define BB_SP_RECENT_DIALOGUE "sp_recent_dialogue"
+
+/// Where the dialogue files live.
+#define SP_DIALOGUE_PATH "strings/spacestation_sp/dialogue/"
+/// The edge that ends a thread. No node may be called this.
+#define SP_DIALOGUE_END "end"
+/// How long a line is left hanging before the next one, unless the node says otherwise.
+#define SP_DIALOGUE_GAP (3 SECONDS)
+/// How many dialogues back a crew member remembers, and the most lines one thread may run to.
+#define SP_DIALOGUE_MEMORY 5
+#define SP_DIALOGUE_MAX_LINES 12
+/// How far apart two people can drift before the conversation is over.
+#define SP_DIALOGUE_RANGE 5

@@ -112,6 +112,10 @@
 		return /datum/ai_controller/sp_crew/security
 	if(/datum/job_department/engineering in job.departments_list)
 		return /datum/ai_controller/sp_crew/engineer
+	if(istype(job, /datum/job/clown))
+		return /datum/ai_controller/sp_crew/clown
+	if(istype(job, /datum/job/janitor))
+		return /datum/ai_controller/sp_crew/janitor
 	if(istype(job, /datum/job/botanist))
 		return /datum/ai_controller/sp_crew/botanist
 	if(istype(job, /datum/job/cook))

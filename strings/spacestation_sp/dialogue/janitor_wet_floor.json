@@ -1,0 +1,89 @@
+{
+	"id": "janitor_wet_floor",
+	"weight": 2,
+	"roles": {
+		"janitor": {
+			"job": [
+				"Janitor"
+			]
+		},
+		"other": {}
+	},
+	"start": "warn",
+	"nodes": {
+		"warn": {
+			"speaker": "janitor",
+			"lines": [
+				"Mind yourself, %OTHER_FIRST%, that floor's wet.",
+				"Wet floor, %OTHER_FIRST%. I've only just done it.",
+				"Watch your step there. I'd rather not mop you up as well."
+			],
+			"next": [
+				{
+					"to": "sorry",
+					"weight": 3
+				},
+				{
+					"to": "cheek",
+					"weight": 1
+				}
+			]
+		},
+		"sorry": {
+			"speaker": "other",
+			"lines": [
+				"Noted. Thanks, %JANITOR_FIRST%.",
+				"I'll go round."
+			],
+			"next": [
+				{
+					"to": "grumble",
+					"weight": 2
+				},
+				{
+					"to": "end",
+					"weight": 1
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"janitor->other": 1
+					}
+				}
+			]
+		},
+		"cheek": {
+			"speaker": "other",
+			"lines": [
+				"It's a floor. It's been wet before.",
+				"Living dangerously today."
+			],
+			"next": [
+				{
+					"to": "grumble"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"janitor->other": -1
+					}
+				}
+			]
+		},
+		"grumble": {
+			"speaker": "janitor",
+			"lines": [
+				"Everyone's a comedian in %AREA%.",
+				"You can mop it yourself next time, then.",
+				"That's the thanks, is it."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

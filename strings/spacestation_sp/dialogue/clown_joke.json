@@ -1,0 +1,118 @@
+{
+	"id": "clown_joke",
+	"weight": 2,
+	"roles": {
+		"clown": {
+			"job": [
+				"Clown"
+			]
+		},
+		"other": {}
+	},
+	"start": "setup",
+	"nodes": {
+		"setup": {
+			"speaker": "clown",
+			"lines": [
+				"%OTHER_FIRST%. Why did the %OTHER_JOB% cross maintenance?",
+				"Knock knock, %OTHER_FIRST%.",
+				"Got one for you, %OTHER_FIRST%. Stop me if you've heard it."
+			],
+			"next": [
+				{
+					"to": "bite",
+					"weight": 2
+				},
+				{
+					"to": "flat",
+					"weight": 2
+				},
+				{
+					"to": "warm",
+					"weight": 3,
+					"if": {
+						"standing": {
+							"other->clown": ">=4"
+						}
+					}
+				}
+			]
+		},
+		"bite": {
+			"speaker": "other",
+			"lines": [
+				"Go on, then.",
+				"Who's there?",
+				"Why?"
+			],
+			"next": [
+				{
+					"to": "punchline"
+				}
+			]
+		},
+		"warm": {
+			"speaker": "other",
+			"lines": [
+				"Every time, %CLOWN_FIRST%. Go on.",
+				"You've heard it, you mean. Go on anyway."
+			],
+			"next": [
+				{
+					"to": "punchline"
+				}
+			]
+		},
+		"flat": {
+			"speaker": "other",
+			"lines": [
+				"No.",
+				"I'm working, %CLOWN_FIRST%."
+			],
+			"next": [
+				{
+					"to": "undeterred"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"clown->other": -1
+					}
+				}
+			]
+		},
+		"punchline": {
+			"speaker": "clown",
+			"lines": [
+				"To get to the other slide. HONK.",
+				"Because the bar was shut. HONK.",
+				"Neither did I, and I was there. HONK."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"other->clown": 1
+					}
+				}
+			]
+		},
+		"undeterred": {
+			"speaker": "clown",
+			"lines": [
+				"I'll save it for someone with a soul.",
+				"Tough room, %AREA%."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

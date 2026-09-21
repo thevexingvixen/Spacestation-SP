@@ -54,8 +54,17 @@
 						}
 					},
 					{
-						"type": "leaf",
-						"behavior": "/datum/bt_node/ai_behavior/sp_say_opener"
+						"type": "selector",
+						"children": [
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_run_dialogue"
+							},
+							{
+								"type": "leaf",
+								"behavior": "/datum/bt_node/ai_behavior/sp_say_opener"
+							}
+						]
 					}
 				]
 			}

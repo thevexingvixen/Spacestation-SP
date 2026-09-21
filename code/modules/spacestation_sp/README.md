@@ -22,6 +22,7 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 - `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
+- `sp_dialogue.dm` — written dialogue: reading the files, checking them, and running a thread.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
@@ -39,7 +40,9 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_kitchen.dm` — the prep table and counter, the prep-step table, the mixes, and the recipe scan.
 - `sp_medical.dm` — where medbay is, triage, picking a treatment for a limb, and the cryo tubes.
 - `ai/sp_medical_behaviors.dm` — the patient's side (hold still, come in for a checkup) and the medic's.
-- `ai/sp_social_behaviors.dm` — the leaves that carry a conversation.
+- `ai/sp_social_behaviors.dm` — the leaves that carry a conversation, written or otherwise.
+- `ai/sp_janitor_behaviors.dm` — the janitor: a mop, water for it, and the mess.
+- `ai/sp_clown_behaviors.dm` — the clown: a horn, a banana, and where a peel may go.
 - `ai/sp_cargo_behaviors.dm` — the quartermaster's paperwork and the technicians' hauling.
 - `ai/sp_chef_behaviors.dm` — the chef's stocking, prep, mixing, cooking and serving leaves.
 - `ai/sp_curiosity_behaviors.dm` — the idle leaves every job shares: roam, rummage, try a door.
@@ -102,6 +105,9 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_chef_cook` — stand at the prep table and craft whatever the pile currently supports.
 - `sp_chef_serve` — carry a finished dish to the counter, set it down, and say so on the service channel.
 - `sp_chef_supply` — when the kitchen has been picked clean, put a food crate on cargo's list.
+- `sp_janitor_supplies` — fetch a mop off the floor, and fill it at a sink, bucket or cart.
+- `sp_janitor_clean` — pick up the litter, then mop the nearest mess, maintenance last.
+- `sp_clown_antics` — honk at somebody, leave a peel somewhere public, ask botany for more bananas.
 - `sp_crew_rummage` — open a locker or crate in sight and pocket anything that takes their fancy.
 - `sp_crew_try_door` — walk up to a door they have no access to and try it anyway.
 - `sp_crew_roam` — wander off to somewhere else on the station for a while.
@@ -157,6 +163,58 @@ None of this outranks an emergency: conversation is the last entry in `sp_crew_c
 injury or a drawn weapon cuts it off, and being attacked clears the conversation outright. Officers answer
 people too, from below their security work, and take nothing up while they have an incident, a suspect,
 a prisoner, a briefing or a kit trip in hand.
+
+## Written dialogue (`sp_dialogue.dm`)
+Conversations are written as data, in `strings/spacestation_sp/dialogue`, one json file per dialogue. A
+dialogue is a small graph: each node names the role that speaks it, the lines it may use, and weighted
+edges to what comes next. Roles are cast against real crew when a thread starts, by job, so the janitor's
+line is the janitor's whichever of the pair walked over, and a role naming no jobs takes anybody.
+
+What a file may ask about (a dice roll, what one role thinks of the other) and what it may change
+(standing) is a closed vocabulary. Everything is checked as the file loads and again in a unit test:
+every edge leads somewhere real, every node is spoken by a declared role, every `%PLACEHOLDER%` is one
+that can be filled. A dialogue that fails is not loaded at all, because half a conversation is worse than
+none, and the test names the file.
+
+Both sides are ours, so one thread speaks for both of them, a line at a time with a gap in between. The
+listener's own hearing ignores those lines, because a line only counts as an opener while its speaker is
+at `SP_CHAT_OPENED`, which a thread never sets. A thread ends when the graph runs out, when the pair drift
+apart, or at `SP_DIALOGUE_MAX_LINES` if a file ever loops. Pairs remember the last few they have had, so
+the same one does not come round twice in a row, and the old keyword topics still run when no written
+dialogue fits the two of them.
+
+This is the first slice of `docs/01-dialogue-plan.md` M1: crew to crew, four dialogues to start (the
+janitor's wet floor, a clown joke that branches on whether you like them, shift talk, and a security
+check-in). Player-facing choices are M3 and are not built.
+
+## The janitor (`ai/sp_janitor_behaviors.dm`)
+MetaStation has no custodial closet, so the mop and the janitorial cart in the janitor's office are the
+whole kit, and the map's own decals -- some five hundred of them, mostly dirt -- are the work. It never
+runs out, so the order is what matters: litter first, because somebody can slip on that, then the nearest
+stain, with maintenance pushed to the back of the queue because the crew see the hallways.
+
+**Water is the catch.** A mop below `SP_MOP_DRY` cleans nothing and says so in a balloon nobody reads.
+Every mop bucket and the janitorial cart start the round bone dry, the janitor's own cart included, so a
+dry one is skipped rather than walked to; sinks fill themselves at Initialize and are the reliable source.
+Filling from a bucket or cart is the *secondary* interaction (`mop_bucket.dm`), so a plain click on one
+does nothing at all, while a sink takes the plain one. Each janitor finds a sink to fall back on once, at
+the start of the shift, rather than searching the station every time the mop runs dry.
+
+Not built: replacing broken light tubes. The light replacer is in engineering's shared storage on this
+map, not in the janitor's office, and the greytide's smashed tubes are what would make it worth the trip.
+
+## The clown (`ai/sp_clown_behaviors.dm`)
+Honks at whoever is nearby, and leaves a banana peel where somebody will find it. The horn is harmless by
+TG's own numbers -- no force, no hitsound -- and is used in hand rather than swung at anybody. The peel is
+the banana's own trash type, made directly rather than by eating, because a clown mask is in the way of
+eating and the peel is the point.
+
+**Where a peel may go** is the only line drawn: hallways, the commons and the service end. Never medbay,
+security, engineering or atmospherics, where somebody going over is a ruined shift rather than a joke.
+
+The clown starts with one banana, so the supply is the loop: out of bananas, they ask botany over the
+radio, in the words botany listens for, and bananas are now something botany can be asked to grow. Clown
+asks, botany plants, clown drops, janitor clears up.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -1202,6 +1260,25 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   locker search may only trust the contents of a closet somebody has opened. If TG ever populates closets at
   Initialize instead, this test fails loudly, where otherwise the symptom would be another silent round in
   which nobody fetches anything and nothing says why.
+- `sp_janitor_finds_a_mop` — a mop on the floor is picked up; one in somebody else's hands is not, and a
+  janitor holding one does not want another.
+- `sp_janitor_keeps_the_mop_wet` — a bucket starts empty and is not worth the walk; filled, it is, and the
+  mop comes away wet.
+- `sp_janitor_leaves_maintenance_for_last` — the nearest mess wins until it is in maintenance, and then the
+  hallway one does.
+- `sp_janitor_mops_it_up` — mopping actually removes the decal, through TG's own cleaning.
+- `sp_janitor_picks_up_a_peel` — a banana peel is picked up rather than mopped, so nobody slips on it.
+- `sp_clown_peels_in_public` — a hallway is somewhere to leave a peel; medbay is not.
+- `sp_clown_drops_a_peel` — the banana becomes a peel on the floor, and the banana is gone.
+- `sp_clown_honks_at_people` — honking wants an audience, and takes the horn out of the clown's pocket.
+- `sp_clown_asks_botany` — a clown with no bananas asks for some, in words botany takes as a request; one
+  who has a banana does not ask again.
+- `sp_dialogue_files_are_sound` — every dialogue we ship loads and hangs together, and one that leads
+  nowhere is refused with a reason rather than half-run.
+- `sp_dialogue_casts_by_job` — the janitor's dialogue needs a janitor, and casts them as the janitor
+  whichever of the two walked over.
+- `sp_dialogue_thread_runs` — a thread runs line by line to an end, moves standing on the way, is
+  remembered by both, and is not picked again straight afterwards.
 - `sp_behaviour_trees` — every SP controller points at a tree that was actually compiled.
 
 ```
@@ -1339,8 +1416,9 @@ the game server logs nothing at all.
   Hacking, slips and lube are antagonist territory rather than theirs.
 
 ## Next
-- The janitor, and the clown.
-- Written dialogue lines, on the engine sketched in `docs/01-dialogue-plan.md` (M1 and M2), which is where
-  the seven hard-coded topics stop being hard-coded.
-- The warden's side of the brig, which is a session of its own, and the cell escort in a live round: it is
-  tested now, but no prisoner has actually walked to a cell in play yet.
+- More written dialogue, and the rest of M1: memory (`BB_SP_MEMORY`), the conditions the plan lists beyond
+  a dice roll and standing, and the seven keyword topics moved into files.
+- Player-facing dialogue (M3): clickable replies, intents, a Talk verb.
+- The warden's side of the brig, which is a session of its own, and a live round for the things that are
+  tested but have never been played: the cell escort, the janitor, and the clown.
+- The janitor and broken light tubes, which needs the light replacer out of engineering storage.

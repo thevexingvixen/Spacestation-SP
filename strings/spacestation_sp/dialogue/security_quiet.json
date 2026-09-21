@@ -1,0 +1,91 @@
+{
+	"id": "security_quiet",
+	"weight": 2,
+	"roles": {
+		"officer": {
+			"job": [
+				"Security Officer",
+				"Head of Security",
+				"Warden",
+				"Detective"
+			]
+		},
+		"other": {}
+	},
+	"start": "check",
+	"nodes": {
+		"check": {
+			"speaker": "officer",
+			"lines": [
+				"Anything worth reporting, %OTHER_FIRST%?",
+				"Keep your ID visible and we'll get on fine, %OTHER_FIRST%.",
+				"Quiet on your end?"
+			],
+			"next": [
+				{
+					"to": "nothing",
+					"weight": 3
+				},
+				{
+					"to": "something",
+					"weight": 1
+				}
+			]
+		},
+		"nothing": {
+			"speaker": "other",
+			"lines": [
+				"Nothing from me.",
+				"All quiet where I've been."
+			],
+			"next": [
+				{
+					"to": "carry_on"
+				}
+			]
+		},
+		"something": {
+			"speaker": "other",
+			"lines": [
+				"There was someone in maintenance earlier. Probably nothing.",
+				"The lights went out in %AREA% for a bit."
+			],
+			"next": [
+				{
+					"to": "note_it"
+				}
+			]
+		},
+		"carry_on": {
+			"speaker": "officer",
+			"lines": [
+				"Good. Let's keep it that way.",
+				"You'll hear about it if that changes."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"note_it": {
+			"speaker": "officer",
+			"lines": [
+				"I'll have a look. Thanks, %OTHER_FIRST%.",
+				"Noted. That's what I'm here for."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"officer->other": 1
+					}
+				}
+			]
+		}
+	}
+}

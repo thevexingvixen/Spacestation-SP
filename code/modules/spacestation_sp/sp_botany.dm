@@ -148,9 +148,11 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 			best_distance = distance
 	return best
 
-/// Plants another department can ask botany for by name. Aloe bakes into the cream medics use on burns.
+/// Plants another department can ask botany for by name. Aloe bakes into the cream medics use on burns,
+/// and the clown gets through bananas faster than anybody else gets through anything.
 GLOBAL_LIST_INIT(sp_requestable_plants, list(
 	"aloe" = /obj/item/food/grown/aloe,
+	"banana" = /obj/item/food/grown/banana,
 ))
 
 /**

@@ -186,7 +186,9 @@ being attacked cuts a conversation off outright.
 3. ~~**Chef.** Cooks with botany's produce plus what cargo brings, and puts finished food on the
    counter. Draws its supplies through the cargo request queue.~~ Done.
 4. ~~**Bartender** — serve drinks.~~ Done.
-5. **Janitor** — mop decals and clean up. Next, with the clown.
+5. ~~**Janitor** — mop decals and clean up.~~ Done, with the clown: the janitor fetches a mop, keeps it
+   wet and works through the map's decals; the clown honks, leaves peels where they are only funny, and
+   asks botany for more bananas.
 6. ~~**Security** — use the disabler instead of melee, and jail suspects in the brig.~~ Done to the cell
    door: the confrontation ladder (a word, a note on the record, an arrest), the head of security's
    command layer, kit fetched from the department's own lockers, and a sentence served in a cell. The
@@ -200,6 +202,13 @@ being attacked cuts a conversation off outright.
    M0) is done; the engine and the written lines are next.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
+
+### 2026-09-20 (later) — The janitor, the clown, and dialogue as data
+
+The janitor and the clown are in, and conversations have started moving out of code and into json files
+under `strings/spacestation_sp/dialogue` (the first slice of `01-dialogue-plan.md` M1: crew to crew,
+checked at load and by a unit test, four dialogues written). The three jobs interlock on purpose -- the
+clown drops peels, the janitor picks them up, and botany grows the bananas.
 
 ### 2026-09-20 — Where things stand
 

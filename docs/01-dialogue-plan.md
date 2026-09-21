@@ -301,12 +301,16 @@ A node can say `"generate": {"style": "grumpy engineer", "max_words": 18}` in pl
 | # | Milestone | Done when |
 |---|---|---|
 | M0 | Fix the bugs in §1 (**done 2026-09-16**) | Unit tests cover `sp_answer_for` (word boundaries), a full AI exchange with no stuck keys, and base crew chatting; security answers |
-| M1 | Engine | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
+| M1 | Engine (**first slice done 2026-09-20**) | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
 | M2 | NPC↔NPC content | 10–15 dialogues from §3.3 with standing and memory effects; live tally `talk.threads`, `talk.finished`, `talk.abandoned` |
 | M3 | NPC↔player | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
 
-Next session (from 2026-09-20): the janitor and the clown first, then M1's engine and the first
-written lines, which is where the seven hard-coded topics stop being hard-coded.
+**Done 2026-09-20:** the first slice of M1, plus the janitor and the clown it was written alongside.
+Dialogues are json files under `strings/spacestation_sp/dialogue`, read and checked at load and in a unit
+test; roles are cast by job; a thread runs crew to crew, a line at a time, with weighted branches, a dice
+roll and standing as conditions, and standing as the one effect. Four dialogues are written. Still to do
+in M1: memory (`BB_SP_MEMORY`), the rest of the condition vocabulary, and moving the seven keyword topics
+into files. Player choices remain M3.
 | M4 | Consequences | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
 | M5 | Sidecar | `generate` nodes behind a budget, off by default |
 

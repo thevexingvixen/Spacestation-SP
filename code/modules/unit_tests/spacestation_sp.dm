@@ -1795,3 +1795,304 @@
 	TEST_ASSERT_NULL(officer_ai.blackboard[BB_SP_USE_LETHALS], "and not again from the next thing they say")
 	qdel(boss_ai)
 	qdel(officer_ai)
+
+// --- The janitor ----------------------------------------------------------------------------------
+
+/// A mop lying on a floor is one to pick up; a mop somebody else is holding is not.
+/datum/unit_test/sp_janitor_finds_a_mop
+
+/datum/unit_test/sp_janitor_finds_a_mop/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/somebody = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/obj/item/mop/carried = allocate(/obj/item/mop, spot)
+	somebody.put_in_hands(carried)
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_find_mop/find = new
+
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_FAILED, "a mop in somebody else's hands is not lying about")
+	var/obj/item/mop/loose = allocate(/obj/item/mop, get_step(spot, EAST))
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "one on the floor is")
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_MOP], loose, "and it is the one they set off for")
+
+	var/datum/bt_node/ai_behavior/sp_take_mop/take = new
+	janitor.forceMove(get_turf(loose))
+	TEST_ASSERT(take.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "they pick it up")
+	TEST_ASSERT_EQUAL(sp_carried_mop(janitor), loose, "and are carrying it")
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_FAILED, "a janitor with a mop does not want another")
+	qdel(find)
+	qdel(take)
+	qdel(janitor_ai)
+
+/// A dry mop cleans nothing, so it is filled first: at a bucket, a cart or a sink.
+/datum/unit_test/sp_janitor_keeps_the_mop_wet
+
+/datum/unit_test/sp_janitor_keeps_the_mop_wet/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/mop/mop = allocate(/obj/item/mop, spot)
+	janitor.put_in_hands(mop)
+	var/obj/structure/mop_bucket/bucket = allocate(/obj/structure/mop_bucket, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/decorator/sp_needs_supplies/needs = new
+
+	TEST_ASSERT(!sp_mop_is_wet(mop), "a mop starts dry")
+	TEST_ASSERT(needs.check_condition(janitor_ai), "which is something the janitor needs to see to")
+	var/datum/bt_node/ai_behavior/sp_find_water/find = new
+	// Every bucket and cart on the map starts the round empty, the janitor's own cart included.
+	TEST_ASSERT(!sp_holds_water(bucket), "a bucket starts dry")
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_FAILED, "and an empty bucket is not worth the walk")
+	bucket.reagents.add_reagent(/datum/reagent/water, 60)
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "a filled one is")
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_WATER], bucket, "the bucket beside them")
+
+	var/datum/bt_node/ai_behavior/sp_wet_mop/wet = new
+	wet.owning_controller = janitor_ai
+	wet.perform(1, janitor_ai)
+	sleep(3 SECONDS)
+	TEST_ASSERT(sp_mop_is_wet(mop), "and after dipping it, the mop is wet")
+	TEST_ASSERT(!needs.check_condition(janitor_ai), "so there is nothing left to fetch")
+	qdel(needs)
+	qdel(find)
+	qdel(wet)
+	qdel(janitor_ai)
+
+/// The nearest mess wins, except in maintenance, which waits: the crew see the hallways.
+/datum/unit_test/sp_janitor_leaves_maintenance_for_last
+
+/datum/unit_test/sp_janitor_leaves_maintenance_for_last/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/mop/mop = allocate(/obj/item/mop, spot)
+	janitor.put_in_hands(mop)
+	mop.reagents.add_reagent(/datum/reagent/water, 10)
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_find_mess/find = new
+
+	var/turf/near_turf = get_step(spot, EAST)
+	var/turf/far_turf = get_step(near_turf, EAST)
+	var/obj/effect/decal/cleanable/dirt/nearby = allocate(/obj/effect/decal/cleanable/dirt, near_turf)
+	var/obj/effect/decal/cleanable/dirt/further = allocate(/obj/effect/decal/cleanable/dirt, far_turf)
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "there is a mess to clean")
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_MESS], nearby, "and the nearest one is taken first")
+
+	// Put the near one in maintenance, and the further one wins instead.
+	var/area/station/maintenance/aft/tunnel = new
+	tunnel.contents += near_turf
+	TEST_ASSERT_EQUAL(get_area(nearby), tunnel, "the test moved the tile into maintenance")
+	TEST_ASSERT(sp_mess_priority(nearby, janitor) > sp_mess_priority(further, janitor), "maintenance goes to the back of the queue")
+	find.perform(1, janitor_ai)
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_MESS], further, "so the hallway is cleaned first")
+	qdel(find)
+	qdel(janitor_ai)
+
+/// Mopping actually removes the mess, through TG's own cleaning.
+/datum/unit_test/sp_janitor_mops_it_up
+
+/datum/unit_test/sp_janitor_mops_it_up/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/mop/mop = allocate(/obj/item/mop, spot)
+	janitor.put_in_hands(mop)
+	mop.reagents.add_reagent(/datum/reagent/water, 10)
+	var/obj/effect/decal/cleanable/dirt/mess = allocate(/obj/effect/decal/cleanable/dirt, spot)
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+	janitor_ai.set_blackboard_key(BB_SP_MESS, mess)
+
+	var/datum/bt_node/ai_behavior/sp_mop_mess/mopping = new
+	mopping.owning_controller = janitor_ai
+	mopping.perform(1, janitor_ai)
+	sleep(4 SECONDS)
+	TEST_ASSERT(QDELETED(mess), "the mess is mopped up")
+	TEST_ASSERT(!janitor_ai.blackboard_key_exists(BB_SP_MESS), "and forgotten about")
+	qdel(mopping)
+	qdel(janitor_ai)
+
+/// A banana peel is picked up rather than mopped, which is what the clown leaves behind.
+/datum/unit_test/sp_janitor_picks_up_a_peel
+
+/datum/unit_test/sp_janitor_picks_up_a_peel/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/grown/bananapeel/peel = allocate(/obj/item/grown/bananapeel, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_find_litter/find = new
+
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "a peel on the floor is litter")
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_LITTER], peel, "and it is what they set off for")
+	var/datum/bt_node/ai_behavior/sp_take_litter/take = new
+	janitor.forceMove(get_turf(peel))
+	TEST_ASSERT(take.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "they pick it up")
+	TEST_ASSERT(!isturf(peel.loc), "so nobody slips on it")
+	qdel(find)
+	qdel(take)
+	qdel(janitor_ai)
+
+// --- The clown ------------------------------------------------------------------------------------
+
+/// A peel goes down in the hallways, not in medbay: somebody going over on the way to a patient is not a joke.
+/datum/unit_test/sp_clown_peels_in_public
+
+/datum/unit_test/sp_clown_peels_in_public/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/area/station/hallway/primary/central/hallway = new
+	hallway.contents += spot
+	TEST_ASSERT(sp_clown_prank_spot(spot), "a hallway is somewhere to leave a peel")
+	var/area/station/medical/medbay/central/ward = new
+	ward.contents += spot
+	TEST_ASSERT(!sp_clown_prank_spot(spot), "medbay is not")
+
+/// The banana becomes a peel on the floor, which is the whole point of the banana.
+/datum/unit_test/sp_clown_drops_a_peel
+
+/datum/unit_test/sp_clown_drops_a_peel/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/area/station/hallway/primary/central/hallway = new
+	hallway.contents += spot
+	var/mob/living/carbon/human/clown = allocate(/mob/living/carbon/human/consistent, spot)
+	var/datum/ai_controller/sp_crew/clown/clown_ai = new(clown)
+	clown_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_clown_peel/prank = new
+
+	TEST_ASSERT(prank.perform(1, clown_ai) & AI_BEHAVIOR_FAILED, "a clown with no banana has nothing to drop")
+	var/obj/item/food/grown/banana/banana = new(clown)
+	TEST_ASSERT_EQUAL(sp_carried_banana(clown), banana, "the clown is carrying a banana")
+	TEST_ASSERT(prank.perform(1, clown_ai) & AI_BEHAVIOR_SUCCEEDED, "and leaves the skin behind")
+	TEST_ASSERT(QDELETED(banana), "the banana is gone")
+	var/obj/item/grown/bananapeel/peel = locate() in spot
+	TEST_ASSERT_NOTNULL(peel, "and a peel is on the floor where they stood")
+	qdel(prank)
+	qdel(clown_ai)
+
+/// Honking wants an audience, and takes the horn out of the clown's pocket to do it.
+/datum/unit_test/sp_clown_honks_at_people
+
+/datum/unit_test/sp_clown_honks_at_people/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/clown = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/bikehorn/horn = new(clown)
+	var/datum/ai_controller/sp_crew/clown/clown_ai = new(clown)
+	clown_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_clown_honk/honk = new
+
+	TEST_ASSERT(honk.perform(1, clown_ai) & AI_BEHAVIOR_FAILED, "there is no point honking at an empty corridor")
+	var/mob/living/carbon/human/audience = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	TEST_ASSERT_NOTNULL(audience, "somebody walks past")
+	TEST_ASSERT(honk.perform(1, clown_ai) & AI_BEHAVIOR_SUCCEEDED, "so the clown honks")
+	TEST_ASSERT_EQUAL(clown.get_active_held_item(), horn, "with the horn in hand")
+	qdel(honk)
+	qdel(clown_ai)
+
+/// Out of bananas, the clown asks botany, in words botany actually listens for.
+/datum/unit_test/sp_clown_asks_botany
+
+/datum/unit_test/sp_clown_asks_botany/Run()
+	var/mob/living/carbon/human/clown = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/datum/ai_controller/sp_crew/clown/clown_ai = new(clown)
+	clown_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_clown_restock/ask = new
+
+	TEST_ASSERT_EQUAL(sp_plant_asked_for("Botany, bananas please."), "banana", "botany takes a request for bananas")
+	TEST_ASSERT(ask.perform(1, clown_ai) & AI_BEHAVIOR_SUCCEEDED, "a clown with no bananas asks for some")
+	var/obj/item/food/grown/banana/banana = new(clown)
+	TEST_ASSERT_NOTNULL(banana, "then somebody sends one")
+	TEST_ASSERT(ask.perform(1, clown_ai) & AI_BEHAVIOR_FAILED, "and a clown who has one does not ask again")
+	qdel(ask)
+	qdel(clown_ai)
+
+// --- Written dialogue -----------------------------------------------------------------------------
+
+/// Every dialogue we ship loads and hangs together, and a broken one is refused rather than half-run.
+/datum/unit_test/sp_dialogue_files_are_sound
+
+/datum/unit_test/sp_dialogue_files_are_sound/Run()
+	var/list/all = sp_all_dialogues()
+	TEST_ASSERT(length(all) >= 4, "the dialogue files loaded: [length(all)] of them")
+	for(var/file_name in flist(SP_DIALOGUE_PATH))
+		if(!findtext(file_name, ".json"))
+			continue
+		var/list/problems = list()
+		TEST_ASSERT_NOTNULL(sp_read_dialogue(SP_DIALOGUE_PATH + file_name, problems), "[file_name] did not load: [problems.Join("; ")]")
+
+	// One that leads somewhere that is not there is refused, and says which node and where.
+	var/path = "data/sp_dialogue_unit_test.json"
+	fdel(path)
+	var/list/broken = list(
+		"id" = "broken",
+		"roles" = list("a" = list(), "b" = list()),
+		"start" = "one",
+		"nodes" = list("one" = list("speaker" = "a", "lines" = list("Hello."), "next" = list(list("to" = "two")))),
+	)
+	text2file(json_encode(broken), path)
+	var/list/problems = list()
+	TEST_ASSERT_NULL(sp_read_dialogue(path, problems), "a dialogue leading nowhere is refused")
+	TEST_ASSERT(length(problems), "and says what was wrong with it")
+	fdel(path)
+
+/// Roles are cast by job, whichever of the two walked over.
+/datum/unit_test/sp_dialogue_casts_by_job
+
+/datum/unit_test/sp_dialogue_casts_by_job/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/cleaner = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/passer_by = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/list/all = sp_all_dialogues()
+	var/datum/sp_dialogue/wet_floor = all["janitor_wet_floor"]
+	TEST_ASSERT_NOTNULL(wet_floor, "the wet floor dialogue is one of ours")
+	TEST_ASSERT_NULL(sp_cast_dialogue(wet_floor, cleaner, passer_by), "with no janitor about, nobody can play it")
+
+	cleaner.mind_initialize()
+	cleaner.mind.assigned_role = SSjob.get_job_type(/datum/job/janitor)
+	var/list/cast = sp_cast_dialogue(wet_floor, cleaner, passer_by)
+	TEST_ASSERT_NOTNULL(cast, "with one, it can be cast")
+	TEST_ASSERT_EQUAL(cast["janitor"], cleaner, "and the janitor plays the janitor")
+	cast = sp_cast_dialogue(wet_floor, passer_by, cleaner)
+	TEST_ASSERT_EQUAL(cast["janitor"], cleaner, "whichever of them walked over")
+
+/// A thread runs line by line to an end, moves standing on the way, and is not had twice in a row.
+/datum/unit_test/sp_dialogue_thread_runs
+
+/datum/unit_test/sp_dialogue_thread_runs/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/asker = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/other = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	asker.real_name = "Ada Quill"
+	other.real_name = "Bram Tully"
+	var/datum/ai_controller/sp_crew/asker_ai = new(asker)
+	asker_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/other_ai = new(other)
+	other_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/datum/sp_dialogue/shift = sp_all_dialogues()["shift_talk"]
+	TEST_ASSERT_NOTNULL(shift, "two crew with nothing in common can still talk about the shift")
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(shift, asker, other)
+	TEST_ASSERT_NOTNULL(thread, "so a thread starts")
+	var/turns = 0
+	while(thread.advance() && turns < SP_DIALOGUE_MAX_LINES)
+		turns++
+	TEST_ASSERT(thread.lines_said >= 3, "a thread is more than a line and an answer: [thread.lines_said] said")
+	TEST_ASSERT_NULL(thread.current, "and it reaches an end rather than stopping")
+	sp_dialogue_remember(thread)
+	var/list/recent = asker_ai.blackboard[BB_SP_RECENT_DIALOGUE]
+	TEST_ASSERT(("shift_talk" in recent), "both of them remember having had it")
+	TEST_ASSERT_NULL(sp_pick_dialogue(asker, other), "so it is not picked again straight afterwards")
+	qdel(thread)
+
+	// The janitor's one moves standing whichever way it branches: thanked or given cheek.
+	asker.mind_initialize()
+	asker.mind.assigned_role = SSjob.get_job_type(/datum/job/janitor)
+	var/datum/sp_dialogue/wet_floor = sp_all_dialogues()["janitor_wet_floor"]
+	var/datum/sp_dialogue_thread/second = sp_begin_dialogue(wet_floor, asker, other)
+	TEST_ASSERT_NOTNULL(second, "the janitor has something to say about the floor")
+	turns = 0
+	while(second.advance() && turns < SP_DIALOGUE_MAX_LINES)
+		turns++
+	TEST_ASSERT(sp_reputation(asker_ai, other) != 0, "and what the other said about it changed what they think of them")
+	qdel(second)
+	qdel(asker_ai)
+	qdel(other_ai)

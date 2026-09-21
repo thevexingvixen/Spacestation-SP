@@ -1,0 +1,83 @@
+{
+	"id": "shift_talk",
+	"weight": 4,
+	"roles": {
+		"asker": {},
+		"other": {}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "asker",
+			"lines": [
+				"Long one today, %OTHER_FIRST%?",
+				"How's your shift going, %OTHER_FIRST%?",
+				"You been on since the start?"
+			],
+			"next": [
+				{
+					"to": "same",
+					"weight": 3
+				},
+				{
+					"to": "busy",
+					"weight": 2
+				}
+			]
+		},
+		"same": {
+			"speaker": "other",
+			"lines": [
+				"Same as every shift. Ask me again in an hour.",
+				"Can't complain. Well, I can, but I won't."
+			],
+			"next": [
+				{
+					"to": "agree",
+					"weight": 3
+				},
+				{
+					"to": "end",
+					"weight": 1
+				}
+			]
+		},
+		"busy": {
+			"speaker": "other",
+			"lines": [
+				"Busy enough. Better than standing about.",
+				"Don't say quiet. You'll jinx it."
+			],
+			"next": [
+				{
+					"to": "agree"
+				}
+			]
+		},
+		"agree": {
+			"speaker": "asker",
+			"lines": [
+				"Fair enough. Back to it.",
+				"Ha. Yeah.",
+				"That's the station for you."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"asker->other": 1
+					}
+				},
+				{
+					"standing": {
+						"other->asker": 1
+					}
+				}
+			]
+		}
+	}
+}

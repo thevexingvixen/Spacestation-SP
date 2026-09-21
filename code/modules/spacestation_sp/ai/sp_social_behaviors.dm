@@ -79,6 +79,16 @@
 	var/mob/living/carbon/human/partner = sp_find_chat_partner(pawn)
 	if(isnull(partner))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// A written dialogue if these two have one going spare (sp_dialogue.dm), the old topic exchange if not.
+	var/datum/sp_dialogue/dialogue = sp_pick_dialogue(pawn, partner)
+	var/datum/sp_dialogue_thread/thread = isnull(dialogue) ? null : sp_begin_dialogue(dialogue, pawn, partner)
+	if(!isnull(thread))
+		controller.set_blackboard_key(BB_SP_THREAD, thread)
+		controller.set_blackboard_key(BB_SP_CHAT_PARTNER, partner)
+		controller.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_PICKED)
+		sp_record("talk.thread")
+		log_sp("[pawn.real_name] started [dialogue.id] with [partner.real_name]")
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 	var/datum/sp_topic/topic = sp_pick_topic(pawn)
 	if(isnull(topic) || !length(topic.openers))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
@@ -176,3 +186,36 @@
 		"Does anyone actually read these announcements?",
 	), RADIO_CHANNEL_COMMON)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+// --- Written dialogue --------------------------------------------------------------------------
+
+/**
+ * Plays a written dialogue, a line at a time.
+ *
+ * The thread speaks for both sides, so it runs on whoever started it: one line per turn, with the gap the
+ * file asked for in between. It ends when the graph runs out, when the pair drift apart, or when a file
+ * that loops reaches SP_DIALOGUE_MAX_LINES. Failing when there is no thread is what lets the old topic
+ * exchange sit behind this one in the tree.
+ */
+/datum/bt_node/ai_behavior/sp_run_dialogue
+
+/datum/bt_node/ai_behavior/sp_run_dialogue/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/datum/sp_dialogue_thread/thread = controller.blackboard[BB_SP_THREAD]
+	if(isnull(thread))
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	if(world.time < thread.next_due)
+		return AI_BEHAVIOR_DELAY // mid-conversation, and the next line is not due yet
+	if(thread.advance())
+		return AI_BEHAVIOR_DELAY
+	var/said = thread.lines_said
+	var/id = thread.dialogue?.id
+	sp_dialogue_remember(thread)
+	controller.clear_blackboard_key(BB_SP_THREAD)
+	controller.clear_blackboard_key(BB_SP_CHAT_PARTNER)
+	controller.clear_blackboard_key(BB_SP_CHAT_TOPIC)
+	controller.clear_blackboard_key(BB_SP_CHAT_STAGE)
+	qdel(thread)
+	sp_record(said ? "talk.finished" : "talk.abandoned")
+	log_sp("[controller.pawn] came to the end of [id] after [said] lines")
+	return AI_BEHAVIOR_DELAY | (said ? AI_BEHAVIOR_SUCCEEDED : AI_BEHAVIOR_FAILED)
+
