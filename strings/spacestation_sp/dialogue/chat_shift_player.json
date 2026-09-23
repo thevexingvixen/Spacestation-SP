@@ -1,0 +1,94 @@
+{
+	"id": "chat_shift_player",
+	"title": "Chat about the shift",
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "crew",
+			"lines": [
+				"How's the shift treating you, %PLAYER_FIRST%?",
+				"Surviving so far?"
+			],
+			"next": [
+				{
+					"to": "answer"
+				}
+			]
+		},
+		"answer": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Not bad, actually.",
+					"to": "glad",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": 1
+							}
+						}
+					]
+				},
+				{
+					"text": "Busy.",
+					"to": "busy"
+				},
+				{
+					"text": "Don't ask.",
+					"to": "sympathy",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": 1
+							}
+						}
+					]
+				}
+			],
+			"timeout_to": "end"
+		},
+		"glad": {
+			"speaker": "crew",
+			"lines": [
+				"Don't say that too loud. The station's listening.",
+				"Enjoy it while it lasts."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"busy": {
+			"speaker": "crew",
+			"lines": [
+				"Better than bored. Just.",
+				"Tell me about it."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"sympathy": {
+			"speaker": "crew",
+			"lines": [
+				"That bad? You're not alone.",
+				"Say no more. I've been there."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

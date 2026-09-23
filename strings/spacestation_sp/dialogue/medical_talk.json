@@ -1,0 +1,108 @@
+{
+	"id": "medical_talk",
+	"weight": 3,
+	"roles": {
+		"medic": {
+			"department": [
+				"Medical"
+			]
+		},
+		"other": {}
+	},
+	"start": "open",
+	"nodes": {
+		"open": {
+			"speaker": "medic",
+			"lines": [
+				"You're looking well, %OTHER_FIRST%. Keep it that way, I'm busy.",
+				"Medbay's clear. Give it an hour.",
+				"%OTHER_FIRST%, if anything starts hurting, come and see me before it starts falling off."
+			],
+			"next": [
+				{
+					"to": "ok",
+					"weight": 2
+				},
+				{
+					"to": "joke",
+					"weight": 1
+				},
+				{
+					"to": "noticed",
+					"weight": 8,
+					"if": {
+						"hurt": {
+							"other": true
+						}
+					}
+				}
+			]
+		},
+		"ok": {
+			"speaker": "other",
+			"lines": [
+				"I'll bear that in mind.",
+				"No promises."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"joke": {
+			"speaker": "other",
+			"lines": [
+				"You say that to everyone."
+			],
+			"next": [
+				{
+					"to": "gallows"
+				}
+			]
+		},
+		"gallows": {
+			"speaker": "medic",
+			"lines": [
+				"And most of them listen eventually. Usually from the morgue drawer.",
+				"Everyone listens in the end."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"noticed": {
+			"speaker": "other",
+			"lines": [
+				"It's nothing.",
+				"It's fine. Mostly."
+			],
+			"next": [
+				{
+					"to": "insist"
+				}
+			]
+		},
+		"insist": {
+			"speaker": "medic",
+			"lines": [
+				"That's what they all say on the way to the table. Medbay. Now.",
+				"I've buried people who said 'it's nothing'. Come and see me."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			],
+			"effects": [
+				{
+					"remember": {
+						"medic->other": "told_to_see_medbay"
+					}
+				}
+			]
+		}
+	}
+}

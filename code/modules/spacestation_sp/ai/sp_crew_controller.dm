@@ -42,6 +42,7 @@
 	RegisterSignal(human_pawn, COMSIG_ATOM_WAS_ATTACKED, PROC_REF(on_attacked))
 	RegisterSignal(human_pawn, COMSIG_MOVABLE_PRE_HEAR, PROC_REF(on_pre_hear))
 	RegisterSignal(human_pawn, COMSIG_MOVABLE_BUMP, PROC_REF(on_bump))
+	RegisterSignal(human_pawn, COMSIG_ATOM_EXAMINE, PROC_REF(on_examined))
 	// Until a proper needs subtree exists, AI crew do not starve. Documented limitation.
 	ADD_TRAIT(human_pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
 	// A list value has to go in with override_blackboard_key: set_blackboard_key refuses to write over
@@ -144,9 +145,10 @@
 		. = ours | SSid_access.get_region_access_list(list(REGION_MEDBAY))
 
 /datum/ai_controller/sp_crew/UnpossessPawn(destroy)
+	forget_conversation()
 	if(!isnull(pawn))
 		REMOVE_TRAIT(pawn, TRAIT_NOHUNGER, SP_CREW_TRAIT)
-		UnregisterSignal(pawn, list(COMSIG_ATOM_WAS_ATTACKED, COMSIG_MOVABLE_PRE_HEAR, COMSIG_MOVABLE_BUMP, COMSIG_MOB_INCAPACITATE_CHANGED, COMSIG_DO_AFTER_BEGAN, COMSIG_DO_AFTER_ENDED))
+		UnregisterSignal(pawn, list(COMSIG_ATOM_WAS_ATTACKED, COMSIG_MOVABLE_PRE_HEAR, COMSIG_MOVABLE_BUMP, COMSIG_ATOM_EXAMINE, COMSIG_MOB_INCAPACITATE_CHANGED, COMSIG_DO_AFTER_BEGAN, COMSIG_DO_AFTER_ENDED))
 	return ..()
 
 /**
@@ -217,18 +219,6 @@
 		return
 
 	var/is_radio = !isnull(hearing_args[HEARING_RADIO_FREQ])
-	var/list/entry = list(
-		SP_HEARD_SPEAKER = WEAKREF(speaker),
-		SP_HEARD_NAME = speaker.name,
-		SP_HEARD_MESSAGE = raw_message,
-		SP_HEARD_TIME = world.time,
-		SP_HEARD_RADIO = is_radio,
-	)
-	add_blackboard_key_lazylist(BB_SP_HEARD, entry)
-	var/list/heard = blackboard[BB_SP_HEARD]
-	while(length(heard) > SP_HEARD_MAX)
-		remove_from_blackboard_lazylist_key(BB_SP_HEARD, heard[1])
-		heard = blackboard[BB_SP_HEARD]
 
 	// Radio speakers arrive wrapped in a virtualspeaker; unwrap to the real mob where we can.
 	var/atom/movable/real_speaker = speaker
@@ -267,32 +257,23 @@
 	consider_conversation(real_speaker, raw_message)
 
 /**
- * Decides whether something said nearby was meant for us, and queues an answer if so.
+ * Decides whether something said nearby was meant for us, and what to do about it.
  *
- * AI crew talk to each other only through topics (sp_start_chat). What another crew member says is ours to
- * answer only when it is the opener of a chat with us, and an opener is taken up once. Their replies, closing
- * remarks and words to other people are not: a closer once restarted the whole exchange, and "Help yourself."
- * got "What do you need?"
- *
- * Anyone else -- a player, usually -- is answered when they use our name, or when they say something plainly
- * aimed at a person and we are the nearest crew member free to take it (sp_first_to_answer()). Our name and
- * nothing more gets a look up (sp_crew_social), where it used to get silence.
+ * Crew talk to each other through written threads, which say both sides' lines themselves, so a crew member's
+ * line is never ours to answer, and nor is anything a player says to somebody they are already talking to.
+ * A player's line is ours when they use our name, or say something plainly aimed at a person and we are the
+ * nearest crew member free to take it (sp_first_to_answer()). A line that opens a written conversation starts
+ * one; anything else gets a line back; our name and nothing more gets a look up.
  */
 /datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
-	var/datum/ai_controller/sp_crew/their_ai = speaker.ai_controller
-	if(istype(their_ai))
-		if(their_ai.blackboard[BB_SP_CHAT_PARTNER] != pawn || their_ai.blackboard[BB_SP_CHAT_STAGE] != SP_CHAT_OPENED)
-			return
-		// Heard once, whether or not we are free to answer it: nothing else they say is an opener.
-		their_ai.set_blackboard_key(BB_SP_CHAT_STAGE, SP_CHAT_OPENER_HEARD)
-		var/datum/sp_topic/topic = their_ai.blackboard[BB_SP_CHAT_TOPIC]
-		if(!isnull(topic) && free_to_talk(speaker))
-			queue_reply(speaker, raw_message, topic)
+	if(istype(speaker.ai_controller, /datum/ai_controller/sp_crew) || sp_in_any_thread(speaker))
 		return
-
 	if(!free_to_talk(speaker))
 		return
 	var/list/words = sp_words(raw_message)
+	sp_notice_id(src, speaker)
+	if(sp_introduces_self(words, speaker))
+		sp_learn_name(src, speaker)
 	var/intent = sp_speech_intent(words)
 	if(sp_named(words, pawn))
 		if(isnull(intent))
@@ -302,36 +283,48 @@
 			return
 	else if(isnull(intent) || !sp_first_to_answer(pawn, speaker, words))
 		return
+	var/mob/living/carbon/human/human_pawn = pawn
+	var/mob/living/carbon/human/human_speaker = speaker
+	if(istype(human_pawn) && istype(human_speaker))
+		var/datum/sp_dialogue/opened = sp_pick_dialogue(human_pawn, human_speaker, intent)
+		if(!isnull(sp_start_thread(src, opened, human_pawn, human_speaker)))
+			set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
+			return
 	queue_reply(speaker, raw_message)
 
 /**
- * Whether we could take up something said to us right now. A line we have already taken up still leaves us free
- * for that same line from that same speaker, because listeners decide one after another (sp_first_to_answer()).
+ * Whether we could take up something said to us right now. A line we have already taken up -- as an answer
+ * owed or a conversation started -- still leaves us free for that same line from that same speaker, because
+ * listeners decide one after another (sp_first_to_answer()).
  */
 /datum/ai_controller/sp_crew/proc/free_to_talk(mob/living/speaker)
 	var/mob/living/carbon/human/human_pawn = pawn
 	if(!istype(human_pawn) || human_pawn.stat != STABLE || human_pawn.client || busy_with_work())
 		return FALSE
+	if(blackboard_key_exists(BB_SP_IN_THREAD))
+		return FALSE
 	var/owed = blackboard[BB_SP_CHAT_REPLY_DUE] || blackboard[BB_SP_ATTENTION_TARGET]
+	var/datum/sp_dialogue_thread/thread = blackboard[BB_SP_THREAD]
+	if(!isnull(thread))
+		owed = sp_dialogue_other(thread, pawn)
 	if(!isnull(owed))
 		return owed == speaker && blackboard[BB_SP_CHAT_ASKED_AT] == world.time
 	var/ready_at = blackboard[BB_SP_GREET_COOLDOWN]
 	return isnull(ready_at) || ready_at <= world.time
 
-/// Owes `speaker` an answer to `raw_message`: the reply to `topic` if it opened a chat, a keyword answer if not.
-/datum/ai_controller/sp_crew/proc/queue_reply(mob/living/speaker, raw_message, datum/sp_topic/topic)
+/// Owes `speaker` a one-line answer to `raw_message`.
+/datum/ai_controller/sp_crew/proc/queue_reply(mob/living/speaker, raw_message)
 	set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
 	set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time)
 	set_blackboard_key(BB_SP_CHAT_HEARD, raw_message)
-	if(isnull(topic))
-		clear_blackboard_key(BB_SP_CHAT_REPLY_TOPIC)
-	else
-		set_blackboard_key(BB_SP_CHAT_REPLY_TOPIC, topic)
 	set_blackboard_key(BB_SP_CHAT_REPLY_DUE, speaker)
 
-/// Drops every conversation in hand: one we started, and anything we owed somebody an answer to.
+/// Drops every conversation in hand: a thread we are running, and anything we owed somebody an answer to.
 /datum/ai_controller/sp_crew/proc/forget_conversation()
-	var/static/list/chat_keys = list(BB_SP_CHAT_PARTNER, BB_SP_CHAT_TOPIC, BB_SP_CHAT_STAGE, BB_SP_CHAT_REPLY_DUE, BB_SP_CHAT_REPLY_TOPIC, BB_SP_CHAT_HEARD, BB_SP_CHAT_ASKED_AT, BB_SP_ATTENTION_TARGET)
+	var/datum/sp_dialogue_thread/thread = blackboard[BB_SP_THREAD]
+	if(!isnull(thread))
+		sp_end_dialogue(src, thread)
+	var/static/list/chat_keys = list(BB_SP_CHAT_PARTNER, BB_SP_CHAT_REPLY_DUE, BB_SP_CHAT_HEARD, BB_SP_CHAT_ASKED_AT, BB_SP_ATTENTION_TARGET)
 	for(var/key in chat_keys)
 		clear_blackboard_key(key)
 

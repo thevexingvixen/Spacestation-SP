@@ -17,8 +17,6 @@
 /// Cooldown key between wander legs.
 #define BB_SP_WANDER_COOLDOWN "sp_wander_cooldown"
 
-/// Lazylist of recently heard speech. Each entry is an assoc list, see SP_HEARD_* below.
-#define BB_SP_HEARD "sp_heard"
 /// Someone who said our name and nothing else; the social subtree looks up ("Yes, Tom?") and clears it.
 #define BB_SP_ATTENTION_TARGET "sp_attention_target"
 /// When we may next take up something said to us, so a burst of lines gets one answer rather than one each.
@@ -45,16 +43,6 @@
 #define SP_CHECKUP_DAMAGE 15
 /// How long a patient waits in medbay to be seen before giving up on it.
 #define SP_CHECKUP_PATIENCE (2 MINUTES)
-
-// --- Heard-entry fields ----------------------------------------------------------------------
-
-#define SP_HEARD_SPEAKER "speaker"
-#define SP_HEARD_NAME "name"
-#define SP_HEARD_MESSAGE "message"
-#define SP_HEARD_TIME "time"
-#define SP_HEARD_RADIO "radio"
-/// How many heard entries a crew member remembers.
-#define SP_HEARD_MAX 12
 
 /// Prefix all SP game-log lines so they are easy to grep in data/logs/*/game.log
 #define log_sp(msg) log_game("SP: " + (msg))
@@ -252,32 +240,14 @@
 
 // --- Conversation and standing ------------------------------------------------------------------
 
-/// The person we are talking to.
+/// The person we are in a conversation with, whichever of us started it.
 #define BB_SP_CHAT_PARTNER "sp_chat_partner"
-/// The /datum/sp_topic we are talking about.
-#define BB_SP_CHAT_TOPIC "sp_chat_topic"
-/// Where a chat we started has got to: one of the SP_CHAT_* stages below.
-#define BB_SP_CHAT_STAGE "sp_chat_stage"
 /// Set when somebody has said something to us that we owe an answer to.
 #define BB_SP_CHAT_REPLY_DUE "sp_chat_reply_due"
 /// What they said, so the answer can suit it.
 #define BB_SP_CHAT_HEARD "sp_chat_heard"
-/// The topic of an opener we owe a reply to. Kept apart from BB_SP_CHAT_TOPIC, the topic of a chat we started:
-/// sharing one key left the last topic behind to answer whoever spoke to us next, players included.
-#define BB_SP_CHAT_REPLY_TOPIC "sp_chat_reply_topic"
 /// When the line we owe an answer to (or a look up for) was said.
 #define BB_SP_CHAT_ASKED_AT "sp_chat_asked_at"
-
-// Stages of a chat, held by whoever started it. Speech goes out through INVOKE_ASYNC, so a listener may hear a
-// line before or after its speaker's next statement: each stage is set before the line it belongs to is said.
-/// Partner and topic picked, walking over.
-#define SP_CHAT_PICKED 1
-/// Opener said and not yet heard. Only a line from a speaker at this stage is taken for an opener.
-#define SP_CHAT_OPENED 2
-/// The partner heard the opener, so nothing else said now passes for one. Closers used to, and could loop.
-#define SP_CHAT_OPENER_HEARD 3
-/// The partner answered, so a closing remark follows something.
-#define SP_CHAT_ANSWERED 4
 
 /// The shortest gap between two answers from one crew member.
 #define SP_REPLY_GAP (3 SECONDS)
@@ -790,10 +760,31 @@
 
 // --- Written dialogue ----------------------------------------------------------------------------
 
-/// The dialogue thread we are in the middle of.
+/// The dialogue thread we started and are running. The thread says both sides' lines itself.
 #define BB_SP_THREAD "sp_thread"
-/// Dialogue ids we have been through lately, so the same one is not had twice in a row.
-#define BB_SP_RECENT_DIALOGUE "sp_recent_dialogue"
+/// The thread somebody else is running with us in it, so we are not picked for another conversation.
+#define BB_SP_IN_THREAD "sp_in_thread"
+
+/// What a crew member remembers of people: key -> entry. A player is filed under their mind, so a new body
+/// does not reset what the crew know of them; a crew member under their name. See sp_memory_of().
+#define BB_SP_MEMORY "sp_memory"
+/// Fields of a memory entry.
+#define SP_MEM_NAME "name"
+#define SP_MEM_TALKED "talked"
+#define SP_MEM_RECENT "recent"
+#define SP_MEM_FACTS "facts"
+
+/// How long a player has to pick a reply before the conversation takes the silence as an answer.
+#define SP_DIALOGUE_ANSWER_TIME (30 SECONDS)
+/// The longest any one conversation may run, however it is written.
+#define SP_DIALOGUE_MAX_TIME (2 MINUTES)
+
+/// Fields of a station event, the things the crew talk about afterwards (sp_station_event()).
+#define SP_EVENT_TAG "tag"
+#define SP_EVENT_AREA_NAME "area"
+#define SP_EVENT_TIME "time"
+/// How long something that happened stays worth talking about.
+#define SP_EVENT_MEMORY (15 MINUTES)
 
 /// Where the dialogue files live.
 #define SP_DIALOGUE_PATH "strings/spacestation_sp/dialogue/"

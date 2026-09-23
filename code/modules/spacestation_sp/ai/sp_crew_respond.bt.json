@@ -1,24 +1,41 @@
 {
 	"dm_type": "/datum/bt_node/subtree/sp_crew_respond",
-	"type": "decorator",
-	"decorator": "/datum/bt_node/decorator/sp_owes_reply",
-	"vars": {
-		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
-	},
-	"child": {
-		"type": "sequence",
-		"children": [
-			{
-				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/sp_say_reply"
+	"type": "selector",
+	"children": [
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/bb_key_set",
+			"vars": {
+				"key": "BB_SP_THREAD",
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
 			},
-			{
+			"child": {
 				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/wait",
-				"vars": {
-					"duration": "2 SECONDS"
-				}
+				"behavior": "/datum/bt_node/ai_behavior/sp_run_dialogue"
 			}
-		]
-	}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/sp_owes_reply",
+			"vars": {
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+			},
+			"child": {
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_say_reply"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/wait",
+						"vars": {
+							"duration": "2 SECONDS"
+						}
+					}
+				]
+			}
+		}
+	]
 }

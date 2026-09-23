@@ -11,6 +11,12 @@ anything is built on top of it.
 
 ## 1. What exists today
 
+**Status, 2026-09-22:** M0, M1 and M3 are built. Dialogue lives in json files with a closed, validated
+vocabulary; crew have memory; a player replies by clicking links, can start a conversation with Talk to, and
+is learned by name through introduction or by having their ID read up close. The detail is in
+`code/modules/spacestation_sp/README.md` under "Written dialogue". What follows is the state before M0, kept
+for the record of what was fixed.
+
 **AI↔AI chat.** Seven topics are hard-coded as `/datum/sp_topic` subtypes: shift, food, gossip, engineering,
 medical, security and botany. Each has openers, replies and sometimes closers.
 
@@ -301,9 +307,9 @@ A node can say `"generate": {"style": "grumpy engineer", "max_words": 18}` in pl
 | # | Milestone | Done when |
 |---|---|---|
 | M0 | Fix the bugs in §1 (**done 2026-09-16**) | Unit tests cover `sp_answer_for` (word boundaries), a full AI exchange with no stuck keys, and base crew chatting; security answers |
-| M1 | Engine (**first slice done 2026-09-20**) | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
+| M1 | Engine (**done 2026-09-22**) | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
 | M2 | NPC↔NPC content | 10–15 dialogues from §3.3 with standing and memory effects; live tally `talk.threads`, `talk.finished`, `talk.abandoned` |
-| M3 | NPC↔player | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
+| M3 | NPC↔player (**built 2026-09-22; seen only in tests so far**) | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
 
 **Done 2026-09-20:** the first slice of M1, plus the janitor and the clown it was written alongside.
 Dialogues are json files under `strings/spacestation_sp/dialogue`, read and checked at load and in a unit
@@ -312,8 +318,12 @@ roll and standing as conditions, and standing as the one effect. Four dialogues 
 in M1: memory (`BB_SP_MEMORY`), the rest of the condition vocabulary, and moving the seven keyword topics
 into files. Player choices remain M3.
 
-**Next session (chosen 2026-09-22):** the rest of M1 -- memory, the full condition vocabulary, and the seven
-keyword topics moved into files -- then M3: clickable replies and a Talk verb.
+**Done 2026-09-22:** the rest of M1 -- memory, the whole condition and effect vocabulary, reachability checks,
+and the seven keyword topics as files -- and M3: reply links under the NPC's line, the Talk to verb, player
+dialogues (introductions, what they do, asking for a hand, the shift, rumours), names learned by introduction
+or from an ID read up close, and standing shown on examine at the extremes. Not built from the plan: effects
+that start a behaviour (follow, go to, open a door, call on the radio), directions worked out from where the
+crew member stands, and a debug verb that dumps memory.
 | M4 | Consequences | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
 | M5 | Sidecar | `generate` nodes behind a budget, off by default |
 
@@ -333,12 +343,12 @@ keyword topics moved into files -- then M3: clickable replies and a Talk verb.
 
 ---
 
-## 6. Questions for you
+## 6. Questions for you (answered 2026-09-22)
 
-1. **Player replies.** Clickable links under the NPC's line (least intrusive), a popup list, or both?
-2. **What NPCs know about you.** Should they learn your name from your ID at a glance, or only when you
-   introduce yourself?
-3. **Tone.** Light and friendly throughout, or SS13's grimmer office humour where it fits (security,
-   engineering)?
-4. **Standing.** Should it be visible to you in some form (a word like "friendly" on examine), or stay
-   hidden and only felt?
+1. **Player replies.** Links under the NPC's line. Built.
+2. **What NPCs know about you.** Your name only once you introduce yourself or they stand close enough to read
+   your ID. Built.
+3. **Tone.** Light, with dry office humour by default, and grimmer where a department suits it: security
+   suspicious, medical gallows humour, engineering fatalistic.
+4. **Standing.** Shown only at the extremes: "seems to like you" or "seems wary of you" on examine, and felt
+   the rest of the time. Built.

@@ -78,6 +78,7 @@
 	var/obj/item/peel = new banana.trash_type(get_turf(pawn))
 	qdel(banana)
 	sp_record("clown.peel")
+	sp_station_event("peel", pawn)
 	log_sp("[pawn.real_name] left [peel.name] in [get_area_name(pawn)]")
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 

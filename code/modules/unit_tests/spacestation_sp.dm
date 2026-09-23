@@ -1407,7 +1407,14 @@
 
 /// Whether a crew member owes someone an answer, or a look up.
 /proc/sp_test_owes_answer(datum/ai_controller/sp_crew/ai)
-	return ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE) || ai.blackboard_key_exists(BB_SP_ATTENTION_TARGET)
+	return ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE) || ai.blackboard_key_exists(BB_SP_ATTENTION_TARGET) || ai.blackboard_key_exists(BB_SP_THREAD)
+
+/// Who a crew member is answering: somebody owed a line, somebody they looked up at, or their partner in a thread.
+/proc/sp_test_answering(datum/ai_controller/sp_crew/ai)
+	var/datum/sp_dialogue_thread/thread = ai.blackboard[BB_SP_THREAD]
+	if(!isnull(thread))
+		return sp_dialogue_other(thread, ai.pawn)
+	return ai.blackboard[BB_SP_CHAT_REPLY_DUE] || ai.blackboard[BB_SP_ATTENTION_TARGET]
 
 /// Lets a crew member be spoken to afresh. A test runs inside one tick, where "this same line" (free_to_talk())
 /// would otherwise cover every line said in it.
@@ -1536,7 +1543,7 @@
 	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_CHAT_REPLY_DUE), "rather than an answer to nothing")
 
 	sp_test_hush(crew_ai)
-	crew_ai.consider_conversation(player, "Hello")
+	crew_ai.consider_conversation(player, "How are you?")
 	crew_ai.set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time - SP_REPLY_STALE - 1)
 	TEST_ASSERT(reply.perform(1, crew_ai) & AI_BEHAVIOR_FAILED, "an answer this late is not given")
 	TEST_ASSERT(!sp_test_owes_answer(crew_ai), "and is forgotten")
@@ -1544,7 +1551,7 @@
 	qdel(reply)
 	qdel(crew_ai)
 
-/// Two crew hold a chat end to end, through real speech: an opener, a reply, a closer, and nothing left set.
+/// Two crew hold a written conversation end to end: it starts, runs line by line, and lets both of them go.
 /datum/unit_test/sp_crew_exchange
 
 /datum/unit_test/sp_crew_exchange/Run()
@@ -1557,43 +1564,31 @@
 	var/datum/ai_controller/sp_crew/listener_ai = new(listener)
 	listener_ai.set_ai_status(AI_STATUS_OFF)
 	var/datum/bt_node/ai_behavior/sp_start_chat/start = new
-	var/datum/bt_node/ai_behavior/sp_say_opener/open = new
-	var/datum/bt_node/ai_behavior/sp_say_reply/reply = new
-	var/datum/bt_node/ai_behavior/sp_say_closer/close = new
-	close.closer_chance = 100
+	var/datum/bt_node/ai_behavior/sp_run_dialogue/run = new
 
 	TEST_ASSERT(start.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "a free crew member alongside is someone to talk to")
-	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_PARTNER], listener, "and becomes the partner")
-	// The topic is picked at random; this one has closers, so the last step has something to say.
-	opener_ai.set_blackboard_key(BB_SP_CHAT_TOPIC, locate(/datum/sp_topic/shift) in sp_all_topics())
+	var/datum/sp_dialogue_thread/thread = opener_ai.blackboard[BB_SP_THREAD]
+	TEST_ASSERT_NOTNULL(thread, "and a conversation starts")
+	TEST_ASSERT_EQUAL(listener_ai.blackboard[BB_SP_IN_THREAD], thread, "with the other one in it")
+	TEST_ASSERT(!listener_ai.free_to_talk(opener), "who is not free for anybody else meanwhile")
+	var/turns = 0
+	while(opener_ai.blackboard_key_exists(BB_SP_THREAD) && turns < 30)
+		var/datum/sp_dialogue_thread/running = opener_ai.blackboard[BB_SP_THREAD]
+		running.next_due = world.time // no waiting between lines in a test
+		run.perform(1, opener_ai)
+		turns++
+	TEST_ASSERT(!opener_ai.blackboard_key_exists(BB_SP_THREAD), "the conversation came to an end")
+	TEST_ASSERT(!listener_ai.blackboard_key_exists(BB_SP_IN_THREAD), "and let the other one go")
+	TEST_ASSERT(!opener_ai.blackboard_key_exists(BB_SP_CHAT_PARTNER), "leaving nobody holding a partner")
+	TEST_ASSERT(!sp_in_any_thread(opener) && !sp_in_any_thread(listener), "or counted as mid-conversation")
 
-	TEST_ASSERT(open.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "the opener is said")
-	TEST_ASSERT_EQUAL(listener_ai.blackboard[BB_SP_CHAT_REPLY_DUE], opener, "and heard as one, owing a reply")
-	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_STAGE], SP_CHAT_OPENER_HEARD, "heard once, so nothing else can pass for it")
-	TEST_ASSERT(!listener_ai.blackboard_key_exists(BB_SP_CHAT_PARTNER), "answering is not starting a chat of one's own")
-
-	TEST_ASSERT(reply.perform(1, listener_ai) & AI_BEHAVIOR_SUCCEEDED, "the reply is said")
-	TEST_ASSERT_EQUAL(opener_ai.blackboard[BB_SP_CHAT_STAGE], SP_CHAT_ANSWERED, "and the opener knows it was answered")
-	TEST_ASSERT(!sp_test_owes_answer(opener_ai), "a reply is not an opener to answer")
-
-	TEST_ASSERT(close.perform(1, opener_ai) & AI_BEHAVIOR_SUCCEEDED, "the opener closes")
-	TEST_ASSERT(!sp_test_owes_answer(listener_ai), "and a closer does not start it all again")
-	TEST_ASSERT_EQUAL(sp_reputation(opener_ai, listener), 1, "a chat makes strangers a little less strange")
-	var/list/chat_keys = list(BB_SP_CHAT_PARTNER, BB_SP_CHAT_TOPIC, BB_SP_CHAT_STAGE, BB_SP_CHAT_REPLY_DUE, BB_SP_CHAT_REPLY_TOPIC, BB_SP_CHAT_HEARD, BB_SP_CHAT_ASKED_AT)
-	for(var/key in chat_keys)
-		TEST_ASSERT(!opener_ai.blackboard_key_exists(key), "the opener was left holding [key]")
-		TEST_ASSERT(!listener_ai.blackboard_key_exists(key), "the listener was left holding [key]")
-
-	// Whoever speaks to them next gets an answer to what they said, not the chat's topic.
+	// Whoever speaks to them next is answered for what they said.
 	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(run_loc_floor_bottom_left, NORTH))
 	sp_test_hush(listener_ai)
 	listener_ai.consider_conversation(player, "Bram, who are you?")
-	TEST_ASSERT_EQUAL(listener_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "a player is answered after a chat")
-	TEST_ASSERT_NULL(listener_ai.blackboard[BB_SP_CHAT_REPLY_TOPIC], "with no topic left over to answer them from")
+	TEST_ASSERT_EQUAL(sp_test_answering(listener_ai), player, "a player is answered after a conversation")
 	qdel(start)
-	qdel(open)
-	qdel(reply)
-	qdel(close)
+	qdel(run)
 	qdel(opener_ai)
 	qdel(listener_ai)
 
@@ -1616,13 +1611,13 @@
 	// Whichever of them hears it first, only the nearer one answers.
 	near_ai.consider_conversation(player, "Hello")
 	far_ai.consider_conversation(player, "Hello")
-	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the nearest crew member answers a hello")
+	TEST_ASSERT_EQUAL(sp_test_answering(near_ai), player, "the nearest crew member answers a hello")
 	TEST_ASSERT(!sp_test_owes_answer(far_ai), "and nobody else does")
 	sp_test_hush(near_ai)
 	sp_test_hush(far_ai)
 	far_ai.consider_conversation(player, "Hello")
 	near_ai.consider_conversation(player, "Hello")
-	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the nearest answers, whoever heard it first")
+	TEST_ASSERT_EQUAL(sp_test_answering(near_ai), player, "the nearest answers, whoever heard it first")
 	TEST_ASSERT(!sp_test_owes_answer(far_ai), "and the other leaves it to them")
 
 	// Named, the line is theirs however far away they are.
@@ -1631,7 +1626,7 @@
 	near_ai.consider_conversation(player, "Hello Fitz")
 	far_ai.consider_conversation(player, "Hello Fitz")
 	TEST_ASSERT(!sp_test_owes_answer(near_ai), "a hello for somebody else is not answered")
-	TEST_ASSERT_EQUAL(far_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "the one it was for answers")
+	TEST_ASSERT_EQUAL(sp_test_answering(far_ai), player, "the one it was for answers")
 
 	// The nearest already owes somebody else an answer, so it falls to the next.
 	sp_test_hush(near_ai)
@@ -1640,7 +1635,7 @@
 	near_ai.consider_conversation(player, "Hello")
 	far_ai.consider_conversation(player, "Hello")
 	TEST_ASSERT_EQUAL(near_ai.blackboard[BB_SP_CHAT_REPLY_DUE], far, "a crew member owing an answer does not take on another")
-	TEST_ASSERT_EQUAL(far_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "so the next nearest answers")
+	TEST_ASSERT_EQUAL(sp_test_answering(far_ai), player, "so the next nearest answers")
 	qdel(near_ai)
 	qdel(far_ai)
 
@@ -2041,6 +2036,10 @@
 	var/turf/spot = run_loc_floor_bottom_left
 	var/mob/living/carbon/human/cleaner = allocate(/mob/living/carbon/human/consistent, spot)
 	var/mob/living/carbon/human/passer_by = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/cleaner_ai = new(cleaner)
+	cleaner_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/passer_ai = new(passer_by)
+	passer_ai.set_ai_status(AI_STATUS_OFF)
 	var/list/all = sp_all_dialogues()
 	var/datum/sp_dialogue/wet_floor = all["janitor_wet_floor"]
 	TEST_ASSERT_NOTNULL(wet_floor, "the wet floor dialogue is one of ours")
@@ -2053,6 +2052,8 @@
 	TEST_ASSERT_EQUAL(cast["janitor"], cleaner, "and the janitor plays the janitor")
 	cast = sp_cast_dialogue(wet_floor, passer_by, cleaner)
 	TEST_ASSERT_EQUAL(cast["janitor"], cleaner, "whichever of them walked over")
+	qdel(cleaner_ai)
+	qdel(passer_ai)
 
 /// A thread runs line by line to an end, moves standing on the way, and is not had twice in a row.
 /datum/unit_test/sp_dialogue_thread_runs
@@ -2102,9 +2103,11 @@
 	TEST_ASSERT(thread.lines_said >= 2, "a thread is at least a line and an answer: [thread.lines_said] said")
 	TEST_ASSERT_NULL(thread.current, "and it reaches an end rather than stopping")
 	sp_dialogue_remember(thread)
-	var/list/recent = asker_ai.blackboard[BB_SP_RECENT_DIALOGUE]
-	TEST_ASSERT(("shift_talk" in recent), "both of them remember having had it")
-	TEST_ASSERT_NULL(sp_pick_dialogue(asker, other), "so it is not picked again straight afterwards")
+	TEST_ASSERT(("shift_talk" in sp_memory_recent(asker_ai, other)), "both of them remember having had it")
+	TEST_ASSERT(("shift_talk" in sp_memory_recent(other_ai, asker)), "the other one too")
+	for(var/i in 1 to 20)
+		var/datum/sp_dialogue/again = sp_pick_dialogue(asker, other)
+		TEST_ASSERT(again?.id != "shift_talk", "so it is not picked again straight afterwards")
 	qdel(thread)
 
 	// The janitor's one moves standing whichever way it branches: thanked or given cheek.
@@ -2204,3 +2207,302 @@
 	qdel(find)
 	qdel(give_up)
 	qdel(janitor_ai)
+
+// --- Dialogue: memory, the vocabulary, and the player's side ----------------------------------------
+
+/// A made-up dialogue for tests, with a player in it when asked for.
+/proc/sp_test_dialogue(with_player = FALSE)
+	var/datum/sp_dialogue/made = new
+	made.id = "unit_test_[with_player ? "player" : "crew"]"
+	made.title = with_player ? "A test" : null
+	made.roles = list("a" = list(), "b" = with_player ? list("player" = TRUE) : list())
+	made.start = "one"
+	made.nodes = list("one" = list("speaker" = "a", "lines" = list("One."), "next" = list(list("to" = SP_DIALOGUE_END))))
+	return made
+
+/// Writes a dialogue to a scratch file and reads it back, for the loader's checks.
+/proc/sp_test_read(list/definition, list/problems)
+	var/path = "data/sp_dialogue_unit_test.json"
+	fdel(path)
+	text2file(json_encode(definition), path)
+	var/datum/sp_dialogue/read = sp_read_dialogue(path, problems)
+	fdel(path)
+	return read
+
+/// Crew know each other and learn a player's name; facts are kept; a player is known by mind, not by body.
+/datum/unit_test/sp_dialogue_memory
+
+/datum/unit_test/sp_dialogue_memory/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/colleague = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/colleague_ai = new(colleague)
+	colleague_ai.set_ai_status(AI_STATUS_OFF)
+	player.mind_initialize()
+
+	TEST_ASSERT(sp_knows_name(crew_ai, colleague), "crew know each other")
+	TEST_ASSERT(!sp_knows_name(crew_ai, player), "but not a stranger")
+	TEST_ASSERT(sp_learn_name(crew_ai, player), "until they are told")
+	TEST_ASSERT(sp_knows_name(crew_ai, player), "after which they know")
+	sp_remember_fact(crew_ai, player, "offered_help")
+	TEST_ASSERT(sp_remembers(crew_ai, player, "offered_help"), "facts are kept")
+	sp_forget_fact(crew_ai, player, "offered_help")
+	TEST_ASSERT(!sp_remembers(crew_ai, player, "offered_help"), "and can be let go of")
+
+	// Filed under the mind: a new body is the same person to them.
+	var/mob/living/carbon/human/new_body = allocate(/mob/living/carbon/human/consistent, get_step(spot, SOUTH))
+	player.mind.transfer_to(new_body)
+	TEST_ASSERT(sp_knows_name(crew_ai, new_body), "a player in a new body is still somebody they know")
+	qdel(crew_ai)
+	qdel(colleague_ai)
+
+/// Every condition a file can ask about answers both ways.
+/datum/unit_test/sp_dialogue_conditions
+
+/datum/unit_test/sp_dialogue_conditions/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/first = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/second = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/first_ai = new(first)
+	first_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/second_ai = new(second)
+	second_ai.set_ai_status(AI_STATUS_OFF)
+	first.mind_initialize()
+	first.mind.assigned_role = SSjob.get_job_type(/datum/job/janitor)
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(sp_test_dialogue(), first, second)
+	TEST_ASSERT_NOTNULL(thread, "two crew can be cast in the test dialogue")
+
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("random" = 0)), "a nought per cent roll fails")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("random" = 100)), "a certain one does not")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("job" = list("a" = list("Janitor")))), "the janitor is a janitor")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("job" = list("a" = list("Clown")))), "and not a clown")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("department" = list("a" = list("Service")))), "a janitor is service")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("department" = list("a" = list("Security")))), "not security")
+
+	sp_adjust_reputation(first_ai, second, 5, "test")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("standing" = list("a->b" = ">=4"))), "standing is compared")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("standing" = list("a->b" = "<0"))), "both ways")
+	sp_remember_fact(first_ai, second, "owes_me")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("memory" = list("a->b" = "owes_me"))), "a remembered fact holds")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("memory" = list("a->b" = "!owes_me"))), "and its negation does not")
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("knows_name" = list("a->b" = TRUE))), "crew know crew by name")
+
+	var/area/station/hallway/primary/central/hallway = new
+	hallway.contents += spot
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("place" = list("hallway"))), "the hallway is the hallway")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("place" = list("medbay"))), "and not medbay")
+
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("hurt" = list("b" = FALSE))), "somebody healthy is not hurt")
+	second.apply_damage(60, BRUTE)
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("hurt" = list("b" = TRUE))), "and somebody bleeding is")
+
+	var/obj/item/mop/mop = allocate(/obj/item/mop, spot)
+	first.put_in_hands(mop)
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("holding" = list("a" = "/obj/item/mop"))), "a mop in hand is held")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("holding" = list("b" = "/obj/item/mop"))), "and not by the other one")
+
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("time_into_shift" = ">=0")), "the shift has started")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("time_into_shift" = "<0")), "and has not not started")
+
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("recent_event" = "graffiti")), "nothing has happened yet")
+	sp_station_event("graffiti", first)
+	TEST_ASSERT(sp_dialogue_conditions_hold(thread, list("recent_event" = "graffiti")), "and then something has")
+	TEST_ASSERT_EQUAL(thread.event?[SP_EVENT_TAG], "graffiti", "which the thread keeps, for a rumour to name")
+	TEST_ASSERT(!sp_dialogue_conditions_hold(thread, list("nonsense" = TRUE)), "a condition nobody knows is false")
+	qdel(thread)
+	qdel(first_ai)
+	qdel(second_ai)
+
+/// Every effect a file can have does what it says, and a gift is only ever something the giver carries.
+/datum/unit_test/sp_dialogue_effects
+
+/datum/unit_test/sp_dialogue_effects/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	player.mind_initialize()
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(sp_test_dialogue(with_player = TRUE), crew, player)
+	TEST_ASSERT_NOTNULL(thread, "a crew member and a player can be cast")
+
+	sp_dialogue_effect(thread, list("standing" = list("a->b" = 2)))
+	TEST_ASSERT_EQUAL(sp_reputation(crew_ai, player), 2, "standing moves")
+	sp_dialogue_effect(thread, list("remember" = list("a->b" = "was_kind")))
+	TEST_ASSERT(sp_remembers(crew_ai, player, "was_kind"), "a fact is remembered")
+	sp_dialogue_effect(thread, list("learn_name" = list("a->b" = TRUE)))
+	TEST_ASSERT(sp_knows_name(crew_ai, player), "a name is learned")
+	sp_dialogue_effect(thread, list("event" = "gossip"))
+	TEST_ASSERT_NOTNULL(sp_recent_event("gossip"), "an event is recorded")
+
+	sp_dialogue_effect(thread, list("give" = list("from" = "a", "to" = "b", "item" = "/obj/item/mop")))
+	TEST_ASSERT(!length(player.get_all_contents_type(/obj/item/mop)), "nothing is conjured: no mop, no gift")
+	var/obj/item/mop/mop = new(crew)
+	sp_dialogue_effect(thread, list("give" = list("from" = "a", "to" = "b", "item" = "/obj/item/mop")))
+	TEST_ASSERT(mop in player.get_all_contents_type(/obj/item/mop), "a mop the giver carries changes hands")
+	qdel(thread)
+	qdel(crew_ai)
+
+/// The loader refuses what it cannot run, and says why.
+/datum/unit_test/sp_dialogue_validation
+
+/datum/unit_test/sp_dialogue_validation/Run()
+	var/list/problems = list()
+	var/list/nodes = list(
+		"one" = list("speaker" = "a", "lines" = list("One."), "next" = list(list("to" = SP_DIALOGUE_END))),
+		"island" = list("speaker" = "b", "lines" = list("Nobody gets here."), "next" = list(list("to" = SP_DIALOGUE_END))),
+	)
+	TEST_ASSERT_NULL(sp_test_read(list("id" = "t", "roles" = list("a" = list(), "b" = list()), "start" = "one", "nodes" = nodes), problems), "a node nothing leads to is refused")
+	TEST_ASSERT(findtext(problems.Join(" "), "never be reached"), "and it says so: [problems.Join("; ")]")
+
+	problems = list()
+	nodes = list("one" = list("speaker" = "b", "timeout_to" = SP_DIALOGUE_END))
+	TEST_ASSERT_NULL(sp_test_read(list("id" = "t", "title" = "T", "roles" = list("a" = list(), "b" = list("player" = TRUE)), "start" = "one", "nodes" = nodes), problems), "a player's turn with no replies is refused")
+
+	problems = list()
+	nodes = list("one" = list("speaker" = "a", "lines" = list("One."), "next" = list(list("to" = SP_DIALOGUE_END, "if" = list("moon_phase" = 3)))))
+	TEST_ASSERT_NULL(sp_test_read(list("id" = "t", "roles" = list("a" = list(), "b" = list()), "start" = "one", "nodes" = nodes), problems), "a condition nobody knows is refused")
+
+	problems = list()
+	nodes = list("one" = list("speaker" = "a", "lines" = list("Hello %NOBODY_FIRST%."), "next" = list(list("to" = SP_DIALOGUE_END))))
+	TEST_ASSERT_NULL(sp_test_read(list("id" = "t", "roles" = list("a" = list(), "b" = list()), "start" = "one", "nodes" = nodes), problems), "a placeholder nobody fills is refused")
+
+	problems = list()
+	nodes = list("one" = list("speaker" = "a", "lines" = list("One."), "next" = list(list("to" = SP_DIALOGUE_END))))
+	TEST_ASSERT_NULL(sp_test_read(list("id" = "t", "roles" = list("a" = list(), "b" = list("player" = TRUE)), "start" = "one", "nodes" = nodes), problems), "a dialogue with a player in it needs a title to be offered by")
+
+/// A player's turn: replies on offer, nobody else can take them, and silence goes where the file says.
+/datum/unit_test/sp_player_replies
+
+/datum/unit_test/sp_player_replies/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/sp_dialogue/asked = sp_test_dialogue(with_player = TRUE)
+	asked.nodes = list(
+		"one" = list("speaker" = "a", "lines" = list("Well?"), "next" = list(list("to" = "reply"))),
+		"reply" = list("speaker" = "b", "options" = list(list("text" = "Yes.", "to" = "yes"), list("text" = "No.", "to" = SP_DIALOGUE_END)), "timeout_to" = "huh"),
+		"yes" = list("speaker" = "a", "lines" = list("Good."), "next" = list(list("to" = SP_DIALOGUE_END))),
+		"huh" = list("speaker" = "a", "lines" = list("...Right."), "next" = list(list("to" = SP_DIALOGUE_END))),
+	)
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(asked, crew, player)
+	TEST_ASSERT_NOTNULL(thread, "the crew member and the player are cast")
+	TEST_ASSERT(thread.advance(), "the crew member says their line")
+	TEST_ASSERT(thread.advance(), "and then it is the player's turn")
+	TEST_ASSERT_EQUAL(length(thread.pending_options), 2, "with both replies on offer")
+	TEST_ASSERT(!thread.choose(crew, 1), "nobody else can answer for them")
+	TEST_ASSERT(!thread.choose(player, 3), "and there is no third reply to pick")
+	TEST_ASSERT(thread.choose(player, 1), "the player picks one")
+	TEST_ASSERT_EQUAL(thread.current, "yes", "and the conversation goes where that reply leads")
+
+	thread.current = "reply"
+	TEST_ASSERT(thread.advance(), "offered again")
+	thread.options_expire = world.time - 1
+	TEST_ASSERT(!thread.choose(player, 1), "an offer that has lapsed is refused")
+	thread.expire()
+	TEST_ASSERT_EQUAL(thread.current, "huh", "and the silence goes where the file says")
+	qdel(thread)
+	qdel(crew_ai)
+
+/// A stranger saying hello is introduced; somebody they know gets a hello back; saying your name teaches it.
+/datum/unit_test/sp_player_speech_opens_dialogue
+
+/datum/unit_test/sp_player_speech_opens_dialogue/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	player.real_name = "Tom Hartley"
+	player.mind_initialize()
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	crew_ai.consider_conversation(player, "Hello")
+	var/datum/sp_dialogue_thread/thread = crew_ai.blackboard[BB_SP_THREAD]
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "introductions", "a stranger saying hello gets introduced")
+	sp_test_hush(crew_ai)
+
+	crew_ai.consider_conversation(player, "I'm Tom, by the way.")
+	TEST_ASSERT(sp_knows_name(crew_ai, player), "saying your name teaches it")
+	sp_test_hush(crew_ai)
+	crew_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_THREAD), "somebody they know is not introduced twice")
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "they just get a hello back")
+	qdel(crew_ai)
+
+/// A name is read off an ID from beside somebody, and not from across a room.
+/datum/unit_test/sp_id_read_up_close
+
+/datum/unit_test/sp_id_read_up_close/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(get_step(spot, EAST), EAST))
+	player.mind_initialize()
+	// An ID clips to a jumpsuit, so the test dresses them first: a bare body has nowhere to wear one.
+	player.equip_to_slot_or_del(new /obj/item/clothing/under/color/grey(player), ITEM_SLOT_ICLOTHING)
+	var/obj/item/card/id/advanced/card = new(player)
+	card.registered_name = player.real_name
+	TEST_ASSERT(player.equip_to_slot_if_possible(card, ITEM_SLOT_ID), "the test put the ID on them")
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	TEST_ASSERT(!sp_notice_id(crew_ai, player), "an ID two tiles off cannot be read")
+	player.forceMove(get_step(spot, EAST))
+	TEST_ASSERT(sp_notice_id(crew_ai, player), "one right beside you can")
+	TEST_ASSERT(sp_knows_name(crew_ai, player), "and then they know the name")
+	qdel(crew_ai)
+
+/// How a crew member regards you shows on examine at the extremes, and not in between.
+/datum/unit_test/sp_standing_on_examine
+
+/datum/unit_test/sp_standing_on_examine/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/list/seen = list()
+	SEND_SIGNAL(crew, COMSIG_ATOM_EXAMINE, player, seen)
+	TEST_ASSERT(!length(seen), "a stranger reads nothing into them")
+	sp_adjust_reputation(crew_ai, player, 5, "test")
+	seen = list()
+	SEND_SIGNAL(crew, COMSIG_ATOM_EXAMINE, player, seen)
+	TEST_ASSERT(findtext(jointext(seen, " "), "like you"), "somebody who likes you shows it")
+	sp_adjust_reputation(crew_ai, player, -12, "test")
+	seen = list()
+	SEND_SIGNAL(crew, COMSIG_ATOM_EXAMINE, player, seen)
+	TEST_ASSERT(findtext(jointext(seen, " "), "wary"), "and somebody who does not shows that")
+	qdel(crew_ai)
+
+/// The Talk to list offers what fits the two of you now, and nothing that does not.
+/datum/unit_test/sp_talk_offers_what_fits
+
+/datum/unit_test/sp_talk_offers_what_fits/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	player.mind_initialize()
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/list/choices = sp_dialogues_for_talk(crew, player)
+	TEST_ASSERT(("Introduce yourself" in choices), "a stranger can introduce themselves")
+	TEST_ASSERT(("Ask what they do" in choices), "and ask what they do")
+	sp_learn_name(crew_ai, player)
+	choices = sp_dialogues_for_talk(crew, player)
+	TEST_ASSERT(!("Introduce yourself" in choices), "but not introduce themselves twice")
+	TEST_ASSERT(!length(sp_dialogues_for_talk(crew, crew)), "and nobody talks to themselves")
+	qdel(crew_ai)
+
+/// The seven keyword topics are dialogue files now, alongside the rest.
+/datum/unit_test/sp_topics_are_files
+
+/datum/unit_test/sp_topics_are_files/Run()
+	var/list/all = sp_all_dialogues()
+	for(var/id in list("shift_talk", "food_talk", "gossip_talk", "engineering_talk", "medical_talk", "security_quiet", "botany_talk"))
+		TEST_ASSERT(!isnull(all[id]), "the [id] topic is a dialogue file")

@@ -21,8 +21,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   `/engineer` subtypes. Hearing hook, incident routing, attacker memory, `TRAIT_NOHUNGER`.
 - `ai/sp_crew_behaviors.dm` — leaves, decorators, targeting strategies and subtree declarations.
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
-- `sp_conversation.dm` — conversation topics, standing, and the keyword answers players get.
-- `sp_dialogue.dm` — written dialogue: reading the files, checking them, and running a thread.
+- `sp_conversation.dm` — what a crew member makes of what somebody says, standing, and one-line answers.
+- `sp_dialogue.dm` — written dialogue: the files and their checks, memory, threads, reply links, Talk to.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
@@ -63,10 +63,10 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crew_checkup` — idle and carrying 15+ brute and burn (or a wound) with a medic on duty: walk to
   medbay, say so, wait to be seen.
 - `sp_crew_social` — someone said our first name and nothing else: face them and ask what they want.
-- `sp_crew_respond` — somebody said something that wants an answer: give it, unless it is 15 s too late.
-  Officers run it below their security work.
-- `sp_crew_chatter` — the idle side of talk: greet a newcomer, start a chat and close it, and the odd remark
-  over common. Every crew tree runs it.
+- `sp_crew_respond` — carry on a conversation under way, a line at a time, or give the one-line answer
+  somebody is owed, unless it is 15 s too late. Officers run it below their security work.
+- `sp_crew_chatter` — the idle side of talk: introduce yourself to a newcomer, start a conversation with
+  somebody nearby, and the odd remark over common. Every crew tree runs it.
 - `sp_department_wander` — pick a turf in `BB_SP_WANDER_AREAS` (or home area) → JPS move → linger.
 - `sp_medical_patient` — pick a patient → walk over → scan them → either take them to cryo or treat
   them limb by limb. See "Medbay" below.
@@ -127,65 +127,68 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_bartender_glasses` — buy more glasses from the dinnerware vendor when the shelf is bare.
 
 ## Conversation and standing (`sp_conversation.dm`)
-Two crew who end up near each other with nothing urgent on will hold a short exchange: an opener, an
-answer, and sometimes a closing remark. Because both sides are ours, the listener reads the topic
-straight off the speaker's controller, so replies actually match what was said. Topics are weighted
-and some are job-specific, so an engineer opens with the power and a doctor with medbay.
+Crew talk to each other, and to you, through written conversations (next section). This file is what a crew
+member makes of a line somebody says to them, and how they feel about that person.
 
-**An exchange is a handshake, not a guess.** AI crew answer each other only through topics. The opener
-moves through `SP_CHAT_*` stages, each set *before* its line is said, because speech goes out through
-`INVOKE_ASYNC` and a listener may hear a line before or after the speaker's next statement. A listener takes
-a line for an opener only while its speaker is at `SP_CHAT_OPENED`, and marks it heard, so nothing else said
-afterwards passes for one. The reply's topic lives in its own key (`BB_SP_CHAT_REPLY_TOPIC`) and is spent as
-the reply is said. The replier is then done. The opener has the last word, and only once the partner has
-answered, having forgotten the chat before saying it. Before this, a closer could restart the exchange, a
-leftover topic answered the next person to speak (players included), and base crew, who never ran the chat
-subtree at all, were stuck holding a partner for good after their first reply.
+What a player says to a crew member in singleplayer is fairly predictable, so it is read in whole words
+(`sp_words()`) into an intent: a greeting, "who are you", "where is x", asking for help, thanks, abuse, "how
+are you", "follow me". A crew member takes up a line with their first name in it, and looks up and asks what
+you want when the name is all there is. A line naming nobody is taken by the nearest crew member free to take
+it (`sp_first_to_answer()`), and a line naming somebody else is left to them. A line that opens a written
+conversation starts one -- a stranger saying hello gets introduced -- and anything else gets a line back,
+dropped if it would come more than 15 seconds late. Crew also introduce themselves to a player they have not
+met as they come near, and make the odd remark to the whole station over common.
 
-Players are handled from the other direction. What someone says to a crew member in singleplayer is
-fairly predictable, so greetings, "what do you do", "where is x", asking for help, thanks and abuse
-are matched by keyword and answered in character. Everything is read in whole words (`sp_words()`), so
-"they" is not "hey" and "tomorrow" is not "Tom". A crew member answers a line with their first name in
-it, and looks up and asks what you want when the name is all there is. A line naming nobody gets one
-answer, from the nearest crew member free to give it (`sp_first_to_answer()`), and a line naming somebody
-else is left to them. An answer not given within 15 seconds is dropped. Crew also greet a player once
-each when they first come near, which no longer waits on the chat cooldown, and make the occasional
-remark to the whole station over common.
+Every exchange moves how that crew member feels about the person, held in `BB_SP_REPUTATION`, once per line
+answered: deciding whether to answer (`sp_speech_intent()`) changes nothing. Politeness and conversation raise
+it, an attack drops it sharply, and it colours answers and which way a conversation goes. At the extremes it
+shows on examine -- "seems to like you", "seems wary of you" -- and the rest of the time it is only felt.
 
-Every exchange moves how that crew member feels about the person, held in `BB_SP_REPUTATION`, once per
-line answered: deciding whether to answer (`sp_speech_intent()`) changes nothing.
-Politeness and conversation raise it, an attack drops it sharply. Answers already vary with standing:
-a stranger gets "What do you need?", someone they like gets greeted by name, and someone who has been
-abusive gets told to ask elsewhere. Asking a crew member to follow you is recognised and refused
-politely below the friendly threshold, which is where the follow behaviour will hook in.
-
-None of this outranks an emergency: conversation is the last entry in `sp_crew_core`, so a fight, an
-injury or a drawn weapon cuts it off, and being attacked clears the conversation outright. Officers answer
-people too, from below their security work, and take nothing up while they have an incident, a suspect,
-a prisoner, a briefing or a kit trip in hand.
+None of this outranks an emergency: conversation sits in `sp_crew_core` below every alarm, so a fight, an
+injury or a drawn weapon cuts it off, being attacked ends it outright, and work that turns up ends it too.
+Officers talk to people from below their security work, and take nothing up while they have an incident, a
+suspect, a prisoner, a briefing or a kit trip in hand.
 
 ## Written dialogue (`sp_dialogue.dm`)
-Conversations are written as data, in `strings/spacestation_sp/dialogue`, one json file per dialogue. A
-dialogue is a small graph: each node names the role that speaks it, the lines it may use, and weighted
-edges to what comes next. Roles are cast against real crew when a thread starts, by job, so the janitor's
-line is the janitor's whichever of the pair walked over, and a role naming no jobs takes anybody.
+Conversations are written as data, one json file each in `strings/spacestation_sp/dialogue`. A dialogue is a
+small graph: each node names the role that speaks it and the lines it may use, and weighted edges say where it
+goes next. Roles are cast against real people when a conversation starts -- by job, by department, and by
+whether a player or a crew member plays them -- so the janitor's line is the janitor's whichever of the pair
+walked over.
 
-What a file may ask about (a dice roll, what one role thinks of the other) and what it may change
-(standing) is a closed vocabulary. Everything is checked as the file loads and again in a unit test:
-every edge leads somewhere real, every node is spoken by a declared role, every `%PLACEHOLDER%` is one
-that can be filled. A dialogue that fails is not loaded at all, because half a conversation is worse than
-none, and the test names the file.
+**The vocabulary is closed.** A file may ask about a dice roll, a job, a department, what one role thinks of
+the other, what one remembers of the other, whether they know the other's name, where they are, whether
+somebody is hurt or holding something, how far into the shift it is, and what has happened on the station
+lately. It may move standing, remember or forget a fact, learn a name, record an event, and hand over an item
+-- only one the giver actually carries, since nothing is conjured. All of it is checked as the file loads and
+again in a unit test: every edge and reply leads somewhere, every node can be reached, every placeholder can
+be filled. A dialogue that fails is not loaded at all, and the test names it.
 
-Both sides are ours, so one thread speaks for both of them, a line at a time with a gap in between. The
-listener's own hearing ignores those lines, because a line only counts as an opener while its speaker is
-at `SP_CHAT_OPENED`, which a thread never sets. A thread ends when the graph runs out, when the pair drift
-apart, or at `SP_DIALOGUE_MAX_LINES` if a file ever loops. Pairs remember the last few they have had, so
-the same one does not come round twice in a row, and the old keyword topics still run when no written
-dialogue fits the two of them.
+**Memory.** Each crew member keeps a book on people (`BB_SP_MEMORY`): whether they know the name, how often
+they have talked, the last few conversations had, and facts. A player is filed under their mind, so a new body
+does not make them a stranger. The crew know each other; a player's name they learn by being told -- an "I'm
+Tom" in any line, or the introduction -- or by standing beside you long enough to read your ID
+(`sp_notice_id()`). Until then you are "mate", or to security, "citizen".
 
-This is the first slice of `docs/01-dialogue-plan.md` M1: crew to crew, four dialogues to start (the
-janitor's wet floor, a clown joke that branches on whether you like them, shift talk, and a security
-check-in). Player-facing choices are M3 and are not built.
+**Your side of it.** When it is your turn, your replies appear as links under the line you are answering. A
+click says the reply aloud through your own character, so everybody nearby hears it the ordinary way, and the
+conversation goes where that reply leads. Only you can pick, an offer lapses after 30 seconds, and silence is
+an answer the file decides what to do with. You can also start one: right-click a crew member and use **Talk
+to**, which lists what they will talk to you about just now -- an introduction only to a stranger, a rumour
+only once something has happened.
+
+**Crew among themselves.** One thread speaks for both sides, a line at a time with a gap between, run from the
+respond subtree so it is not left half-finished for a stroll. The other one is marked as in it
+(`BB_SP_IN_THREAD`) and nobody else starts one with them. A conversation ends when the graph runs out, when the
+pair drift apart, when work or an emergency turns up for either of them, or after two minutes whatever the
+file says. What a pair have had lately is remembered per person, so the same one does not come round twice.
+
+**What they talk about.** The seven keyword topics the crew used to share are files now, in the tones picked
+for them: dry office humour by default, darker where a department suits it -- the engineer who does not trust
+the engine, the doctor who has "buried people who said it's nothing". Rumours retell what actually happened
+(`sp_station_event()`): a fight, an arrest, the lights going out, somebody's graffiti, the clown's latest
+peel, and where. Five dialogues are written for a player: introductions, asking what somebody does, asking for
+a hand, chatting about the shift, and asking whether they have heard anything.
 
 ## The janitor (`ai/sp_janitor_behaviors.dm`)
 MetaStation has no custodial closet, so the mop and the janitorial cart in the janitor's office are the
@@ -1203,8 +1206,8 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
 - `sp_distress_needs_urgency` — a list of calls for help that must count and calm requests that must not.
 - `sp_answer_once` — being thanked moves standing once, as the answer is given; a name alone gets a look up;
   an answer 15 s late is dropped without moving anything.
-- `sp_crew_exchange` — two crew hold a whole chat through real speech: the opener is heard once, the reply
-  tells the opener it was answered, the closer starts nothing, and neither side is left holding a key.
+- `sp_crew_exchange` — two crew hold a written conversation end to end: it starts, the other one is marked as
+  in it and free for nobody else, and when it ends neither of them is left holding anything.
 - `sp_one_answer_per_line` — a hello gets one answer, from the nearer crew member whichever hears it first; a
   hello naming the other one is theirs; a crew member already owing an answer passes it on.
 - `sp_security_answers` — an officer mid-arrest does not stop to chat, and a free one answers.
@@ -1306,6 +1309,21 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   whichever of the two walked over.
 - `sp_dialogue_thread_runs` — a thread runs line by line to an end, moves standing on the way, is
   remembered by both, and is not picked again straight afterwards.
+- `sp_dialogue_memory` — crew know each other and learn a player's name; facts are kept and let go; a player
+  in a new body is still somebody they know.
+- `sp_dialogue_conditions` — every condition a file can ask about answers both ways.
+- `sp_dialogue_effects` — every effect does what it says, and a gift is only ever something the giver carries.
+- `sp_dialogue_validation` — the loader refuses a node nothing leads to, a player's turn with no replies, a
+  condition or placeholder it does not know, and a player dialogue with no title to offer it by.
+- `sp_player_replies` — replies are offered, nobody else can pick them, a lapsed offer is refused, and
+  silence goes where the file says.
+- `sp_player_speech_opens_dialogue` — a stranger saying hello is introduced; "I'm Tom" teaches the name;
+  somebody known just gets a hello back.
+- `sp_id_read_up_close` — a name is read off a worn ID from beside somebody, and not from across a room.
+- `sp_standing_on_examine` — how a crew member regards you shows on examine at the extremes, not between.
+- `sp_talk_offers_what_fits` — the Talk to list offers what fits the two of you now, and nobody talks to
+  themselves.
+- `sp_topics_are_files` — the seven keyword topics are dialogue files.
 - `sp_arrest_is_not_an_attack` — a report by somebody being arrested, naming the arresting officer, is
   dropped; an actual attacker still gets answered.
 - `sp_janitor_leaves_shut_rooms_alone` — a room the janitor cannot get into is set aside as a room, and a
@@ -1437,24 +1455,18 @@ the game server logs nothing at all.
   other two benches keep the twenty units each that they started with.
 - Medics do not yet collect patches from the chemistry fridge. They treat with what they carry, and players
   can take from the fridge.
-- Conversation has no dialogue trees yet: crew answer one line at a time rather than tracking a
-  thread with a player, and standing is not yet spent on anything (following, favours, access). The plan
-  for branching NPC-NPC and NPC-player dialogue is in `docs/01-dialogue-plan.md`; the chat bugs it listed to
-  fix first (its milestone M0) are fixed.
+- Conversation branches and remembers now, but it only talks. Standing is felt in how people speak to you
+  and shows at the extremes; it is not yet spent on anything they would do for you -- follow you, open a door
+  they have access to, fetch something. Directions are stock answers rather than worked out from where the
+  crew member stands. The reply links and Talk to have been driven by unit tests, not seen by a player.
 - Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
   Hacking, slips and lube are antagonist territory rather than theirs.
 
 ## Next
-Next session, chosen 2026-09-22, is dialogue:
-- The rest of M1: memory (`BB_SP_MEMORY`), the condition vocabulary the plan lists beyond a dice roll and
-  standing, and the seven keyword topics moved out of code and into files.
-- Then M3, player-facing dialogue: clickable replies under an NPC's line, intents, and a Talk verb. For a
-  station played alone this is the biggest single payoff left.
-
-After that:
-- The warden's side of the brig: prisoners, timed releases, the armoury. A prisoner now actually arrives in
-  a cell, so there is something for a warden to do.
-- Searches and confiscation. An officer files the crime and makes the arrest, but a thief who keeps walking
-  keeps the loot.
-- The janitor and broken light tubes, which needs the light replacer out of engineering storage.
-- The lawyer still answers to nobody, being in the service department rather than security.
+- A round with you in it. The reply links, Talk to and being introduced have only been driven by tests: this
+  is the first thing in the project a headless round cannot show.
+- Spending standing: crew who think well of you doing things for you -- following, opening a door they have
+  access to, fetching something. The plan's list of effects names these; none is built.
+- More written dialogue (the plan's M2): bartender and patron, doctor and patient, chef and botanist, the HoP
+  and the all-access request, security and the assistant who was seen pranking.
+- The warden's side of the brig, then searches and confiscation.

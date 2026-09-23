@@ -153,6 +153,7 @@
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	sp_record("tide.[kind]")
+	sp_station_event("[kind]", pawn)
 	log_sp("[pawn.real_name] pulled a prank ([kind]) in [get_area_name(pawn)]")
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 

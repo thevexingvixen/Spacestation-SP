@@ -199,9 +199,18 @@ being attacked cuts a conversation off outright.
 8. **Python sidecar** — reads `BB_SP_HEARD` and station state, few high-value model calls.
 9. **Dialogue trees + spending standing** — player conversations that track a thread, and crew
    agreeing to follow someone they think well of. The bug list that came first (`01-dialogue-plan.md`
-   M0) is done, and so is the first slice of M1. Next session: the rest of M1, then M3's clickable replies.
+   M0) is done, and so are M1 and M3: memory, a closed and validated vocabulary, reply links and a Talk verb.
+   What is left is spending standing on things crew will do for you.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
+
+### 2026-09-22 — Dialogue as a system
+
+Conversations are data with a closed vocabulary, crew remember people, and a player can finally talk back: by
+clicking a reply under an NPC's line, or by starting a conversation with the Talk to verb. The seven topics the
+crew shared became dialogue files, the station now gossips about what actually happened on it, and a player's
+name is learned by introduction or by having an ID read up close. 94 SP tests pass. None of the player side has
+been seen with a real client yet; that is the next thing to do.
 
 ### 2026-09-21 — Six rounds, spent proving it
 

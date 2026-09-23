@@ -1,0 +1,137 @@
+{
+	"id": "ask_help",
+	"title": "Ask for a hand",
+	"triggers": [
+		"help"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"start": "listen",
+	"nodes": {
+		"listen": {
+			"speaker": "crew",
+			"lines": [
+				"Depends what you need.",
+				"Help with what?"
+			],
+			"next": [
+				{
+					"to": "warm",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						}
+					}
+				},
+				{
+					"to": "cold",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": "<=-4"
+						}
+					}
+				},
+				{
+					"to": "neutral",
+					"weight": 1
+				}
+			]
+		},
+		"warm": {
+			"speaker": "crew",
+			"lines": [
+				"For you, %PLAYER_FIRST%? Name it.",
+				"Anything for a friend. Within reason."
+			],
+			"next": [
+				{
+					"to": "need"
+				}
+			]
+		},
+		"neutral": {
+			"speaker": "crew",
+			"lines": [
+				"If it's quick.",
+				"Go on, then."
+			],
+			"next": [
+				{
+					"to": "need"
+				}
+			]
+		},
+		"cold": {
+			"speaker": "crew",
+			"lines": [
+				"Ask someone else.",
+				"Not from me you won't."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"need": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Where's medbay?",
+					"to": "medbay"
+				},
+				{
+					"text": "Something's broken.",
+					"to": "broken"
+				},
+				{
+					"text": "Never mind.",
+					"to": "nevermind"
+				}
+			],
+			"timeout_to": "end"
+		},
+		"medbay": {
+			"speaker": "crew",
+			"lines": [
+				"Follow the blue signs. Or the screaming, if the signs run out.",
+				"Blue doors. You'll know it by the smell."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"broken": {
+			"speaker": "crew",
+			"lines": [
+				"Engineering's your lot. Or the HoP, if you'd like to be told to fill in a form."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"nevermind": {
+			"speaker": "crew",
+			"lines": [
+				"Right you are.",
+				"Suit yourself."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

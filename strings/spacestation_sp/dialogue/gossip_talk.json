@@ -1,0 +1,66 @@
+{
+	"id": "gossip_talk",
+	"weight": 2,
+	"roles": {
+		"teller": {},
+		"other": {}
+	},
+	"start": "open",
+	"nodes": {
+		"open": {
+			"speaker": "teller",
+			"lines": [
+				"You hear about what happened in maintenance, %OTHER_FIRST%?",
+				"Command's been quiet today. Never a good sign.",
+				"Is it me, or has the clown been unusually calm?"
+			],
+			"next": [
+				{
+					"to": "vague",
+					"weight": 2
+				},
+				{
+					"to": "dismiss",
+					"weight": 2
+				}
+			]
+		},
+		"vague": {
+			"speaker": "other",
+			"lines": [
+				"I heard something. Didn't get the details.",
+				"Give it time. It never lasts."
+			],
+			"next": [
+				{
+					"to": "agree"
+				}
+			]
+		},
+		"dismiss": {
+			"speaker": "other",
+			"lines": [
+				"I try not to ask. Makes the shift shorter.",
+				"I make a point of not knowing."
+			],
+			"next": [
+				{
+					"to": "agree"
+				}
+			]
+		},
+		"agree": {
+			"speaker": "teller",
+			"lines": [
+				"That's the station for you.",
+				"Suppose so.",
+				"Can't argue with that."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

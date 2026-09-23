@@ -3,29 +3,6 @@
 	"type": "selector",
 	"children": [
 		{
-			"type": "decorator",
-			"decorator": "/datum/bt_node/decorator/bb_key_set",
-			"vars": {
-				"key": "BB_SP_CHAT_PARTNER"
-			},
-			"child": {
-				"type": "sequence",
-				"children": [
-					{
-						"type": "leaf",
-						"behavior": "/datum/bt_node/ai_behavior/wait",
-						"vars": {
-							"duration": "4 SECONDS"
-						}
-					},
-					{
-						"type": "leaf",
-						"behavior": "/datum/bt_node/ai_behavior/sp_say_closer"
-					}
-				]
-			}
-		},
-		{
 			"type": "leaf",
 			"behavior": "/datum/bt_node/ai_behavior/sp_greet_newcomer"
 		},
@@ -38,35 +15,8 @@
 				"lock_on_succeed": false
 			},
 			"child": {
-				"type": "sequence",
-				"children": [
-					{
-						"type": "leaf",
-						"behavior": "/datum/bt_node/ai_behavior/sp_start_chat"
-					},
-					{
-						"type": "leaf",
-						"behavior": "/datum/bt_node/ai_behavior/move_to_target",
-						"vars": {
-							"target_key": "BB_SP_CHAT_PARTNER",
-							"required_dist": 2,
-							"finish_on_arrival": true
-						}
-					},
-					{
-						"type": "selector",
-						"children": [
-							{
-								"type": "leaf",
-								"behavior": "/datum/bt_node/ai_behavior/sp_run_dialogue"
-							},
-							{
-								"type": "leaf",
-								"behavior": "/datum/bt_node/ai_behavior/sp_say_opener"
-							}
-						]
-					}
-				]
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_start_chat"
 			}
 		},
 		{

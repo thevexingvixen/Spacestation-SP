@@ -1,0 +1,121 @@
+{
+	"id": "introductions",
+	"title": "Introduce yourself",
+	"triggers": [
+		"newcomer",
+		"greeting"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"knows_name": {
+			"crew->player": false
+		}
+	},
+	"start": "greet",
+	"nodes": {
+		"greet": {
+			"speaker": "crew",
+			"lines": [
+				"Don't think we've met. %CREW_NAME%, %CREW_JOB%.",
+				"New face. I'm %CREW_FIRST%, %CREW_JOB% round here.",
+				"Afternoon. %CREW_FIRST%. And you are?"
+			],
+			"next": [
+				{
+					"to": "answer"
+				}
+			]
+		},
+		"answer": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "I'm %PLAYER_NAME%.",
+					"to": "pleased",
+					"effects": [
+						{
+							"learn_name": {
+								"crew->player": true
+							}
+						},
+						{
+							"standing": {
+								"crew->player": 1
+							}
+						}
+					]
+				},
+				{
+					"text": "Just passing through.",
+					"to": "shrug"
+				},
+				{
+					"text": "Who's asking?",
+					"to": "prickly",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": -1
+							}
+						}
+					]
+				}
+			],
+			"timeout_to": "silent"
+		},
+		"pleased": {
+			"speaker": "crew",
+			"lines": [
+				"Good to meet you, %PLAYER_FIRST%.",
+				"%PLAYER_FIRST%. I'll remember that."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"shrug": {
+			"speaker": "crew",
+			"lines": [
+				"Fair enough. Mind how you go.",
+				"Suit yourself."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"prickly": {
+			"speaker": "crew",
+			"lines": [
+				"The one you're talking to, %PLAYER_FIRST%.",
+				"Somebody being polite. Your turn next time."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"silent": {
+			"speaker": "crew",
+			"lines": [
+				"...Right.",
+				"Talkative one, aren't you."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,100 @@
+{
+	"id": "heard_anything",
+	"title": "Ask if they've heard anything",
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"start": "think",
+	"nodes": {
+		"think": {
+			"speaker": "crew",
+			"lines": [
+				"Hm. Let me think.",
+				"Heard anything? Around here?"
+			],
+			"next": [
+				{
+					"to": "rumour",
+					"weight": 10,
+					"if": {
+						"recent_event": {
+							"graffiti": 12,
+							"lights": 12,
+							"vandalism": 12,
+							"bell": 12,
+							"knock": 12,
+							"honk": 12,
+							"arrest": 12,
+							"fight": 12
+						}
+					}
+				},
+				{
+					"to": "quiet",
+					"weight": 1
+				}
+			]
+		},
+		"rumour": {
+			"speaker": "crew",
+			"lines": [
+				"There was %EVENT% in %EVENT_AREA% not long ago. Wasn't me.",
+				"Word is %EVENT_AREA% had %EVENT%."
+			],
+			"next": [
+				{
+					"to": "react"
+				}
+			]
+		},
+		"quiet": {
+			"speaker": "crew",
+			"lines": [
+				"Quiet shift, far as I know. Don't jinx it.",
+				"Nothing. Which worries me."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"react": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Thanks for the tip.",
+					"to": "end",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": 1
+							}
+						}
+					]
+				},
+				{
+					"text": "Sounds like trouble.",
+					"to": "trouble"
+				}
+			],
+			"timeout_to": "end"
+		},
+		"trouble": {
+			"speaker": "crew",
+			"lines": [
+				"On this station? Always.",
+				"It usually is."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

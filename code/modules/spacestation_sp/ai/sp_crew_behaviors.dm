@@ -562,6 +562,7 @@
 		SP_INCIDENT_TIME = world.time,
 	))
 	sp_crew_speak(pawn, message, RADIO_CHANNEL_COMMON)
+	sp_station_event("fight", pawn)
 	log_sp("[pawn.real_name] reported an attack by [who] in [where] ([istype(pawn.ears, /obj/item/radio/headset) ? "radio" : "shouted"])")
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
@@ -1198,6 +1199,7 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 		controller.clear_blackboard_key(BB_SP_INCIDENT_LOCATION)
 	sp_clear_escort_keys(controller)
 	sp_record("sec.jailed")
+	sp_station_event("arrest", cell)
 	log_sp("[pawn.real_name] put [prisoner.real_name] in [cell.name] for [round(sentence / 600)] minutes")
 	sp_crew_speak(pawn, "[prisoner.real_name] is in a cell. [round(sentence / 600)] minutes.", RADIO_CHANNEL_SECURITY)
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)

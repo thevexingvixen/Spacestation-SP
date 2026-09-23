@@ -1,0 +1,106 @@
+{
+	"id": "food_talk",
+	"weight": 2,
+	"roles": {
+		"asker": {},
+		"other": {}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "asker",
+			"lines": [
+				"Has the kitchen put anything out yet, %OTHER_FIRST%?",
+				"I'd kill for a decent meal right now.",
+				"%OTHER_FIRST%, any idea if there's anything left in the kitchen?"
+			],
+			"next": [
+				{
+					"to": "some",
+					"weight": 2
+				},
+				{
+					"to": "none",
+					"weight": 2
+				},
+				{
+					"to": "go_look",
+					"weight": 1
+				}
+			]
+		},
+		"some": {
+			"speaker": "other",
+			"lines": [
+				"There was something earlier. Probably gone by now.",
+				"Botany's been dropping things off, if you like vegetables."
+			],
+			"next": [
+				{
+					"to": "thanks"
+				}
+			]
+		},
+		"none": {
+			"speaker": "other",
+			"lines": [
+				"Last I looked, it was empty.",
+				"The chef was staring into an empty fridge, so, no."
+			],
+			"next": [
+				{
+					"to": "figures"
+				}
+			]
+		},
+		"go_look": {
+			"speaker": "other",
+			"lines": [
+				"Go and check. I'm not your errand runner."
+			],
+			"next": [
+				{
+					"to": "figures"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"asker->other": -1
+					}
+				}
+			]
+		},
+		"thanks": {
+			"speaker": "asker",
+			"lines": [
+				"Worth a look, thanks.",
+				"I'll take my chances."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			],
+			"effects": [
+				{
+					"standing": {
+						"asker->other": 1
+					}
+				}
+			]
+		},
+		"figures": {
+			"speaker": "asker",
+			"lines": [
+				"Figures.",
+				"Story of this station."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

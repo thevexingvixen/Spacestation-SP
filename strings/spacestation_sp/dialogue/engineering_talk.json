@@ -1,0 +1,81 @@
+{
+	"id": "engineering_talk",
+	"weight": 3,
+	"roles": {
+		"engineer": {
+			"department": [
+				"Engineering"
+			]
+		},
+		"other": {}
+	},
+	"start": "open",
+	"nodes": {
+		"open": {
+			"speaker": "engineer",
+			"lines": [
+				"Power's holding, %OTHER_FIRST%. For now. Everything's for now.",
+				"If the lights flicker, that's on me. If they go out, that's on the engine, and then it's on all of us.",
+				"Engine's behaving itself. I don't trust it."
+			],
+			"next": [
+				{
+					"to": "hopeful",
+					"weight": 2
+				},
+				{
+					"to": "worried",
+					"weight": 1
+				}
+			]
+		},
+		"hopeful": {
+			"speaker": "other",
+			"lines": [
+				"Good. I'd rather not do this shift in the dark.",
+				"Long may it last."
+			],
+			"next": [
+				{
+					"to": "fatalism"
+				}
+			]
+		},
+		"worried": {
+			"speaker": "other",
+			"lines": [
+				"Should I be worried?",
+				"That's not reassuring, %ENGINEER_FIRST%."
+			],
+			"next": [
+				{
+					"to": "reassure"
+				}
+			]
+		},
+		"fatalism": {
+			"speaker": "engineer",
+			"lines": [
+				"Nothing lasts. Enjoy the lights while you've got them.",
+				"Ask me again after the next power spike."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"reassure": {
+			"speaker": "engineer",
+			"lines": [
+				"Always. But not today. Probably.",
+				"Worried is the correct amount of worried."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

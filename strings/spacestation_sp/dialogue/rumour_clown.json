@@ -1,0 +1,40 @@
+{
+	"id": "rumour_clown",
+	"weight": 5,
+	"roles": {
+		"teller": {},
+		"other": {}
+	},
+	"if": {
+		"recent_event": {
+			"peel": 12
+		}
+	},
+	"start": "tell",
+	"nodes": {
+		"tell": {
+			"speaker": "teller",
+			"lines": [
+				"Mind your step in %EVENT_AREA%. The clown's been at it again.",
+				"There's a banana peel in %EVENT_AREA% with my name on it. I just know it."
+			],
+			"next": [
+				{
+					"to": "groan"
+				}
+			]
+		},
+		"groan": {
+			"speaker": "other",
+			"lines": [
+				"Every. Single. Shift.",
+				"I've gone over twice already today."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

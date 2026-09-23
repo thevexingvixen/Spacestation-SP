@@ -1,0 +1,169 @@
+{
+	"id": "ask_job",
+	"title": "Ask what they do",
+	"triggers": [
+		"who"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"start": "explain",
+	"nodes": {
+		"explain": {
+			"speaker": "crew",
+			"lines": [
+				"%CREW_JOB%. Which mostly means %AREA%, all shift.",
+				"I'm the %CREW_JOB%. Don't let the title fool you."
+			],
+			"next": [
+				{
+					"to": "engineering",
+					"weight": 10,
+					"if": {
+						"department": {
+							"crew": [
+								"Engineering"
+							]
+						}
+					}
+				},
+				{
+					"to": "medical",
+					"weight": 10,
+					"if": {
+						"department": {
+							"crew": [
+								"Medical"
+							]
+						}
+					}
+				},
+				{
+					"to": "security",
+					"weight": 10,
+					"if": {
+						"department": {
+							"crew": [
+								"Security"
+							]
+						}
+					}
+				},
+				{
+					"to": "general",
+					"weight": 1
+				}
+			]
+		},
+		"engineering": {
+			"speaker": "crew",
+			"lines": [
+				"Keeping the power on. Nobody notices until it's off, and then everybody notices at once."
+			],
+			"next": [
+				{
+					"to": "react"
+				}
+			]
+		},
+		"medical": {
+			"speaker": "crew",
+			"lines": [
+				"Patching people up. Some of them even stay patched."
+			],
+			"next": [
+				{
+					"to": "react"
+				}
+			]
+		},
+		"security": {
+			"speaker": "crew",
+			"lines": [
+				"Keeping order. And an eye on people who ask a lot of questions."
+			],
+			"next": [
+				{
+					"to": "react"
+				}
+			]
+		},
+		"general": {
+			"speaker": "crew",
+			"lines": [
+				"It isn't glamorous, but somebody has to do it.",
+				"Honest work. Mostly honest."
+			],
+			"next": [
+				{
+					"to": "react"
+				}
+			]
+		},
+		"react": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Sounds like a lot.",
+					"to": "sympathy",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": 1
+							}
+						}
+					]
+				},
+				{
+					"text": "Need a hand with anything?",
+					"to": "offered",
+					"effects": [
+						{
+							"standing": {
+								"crew->player": 2
+							}
+						},
+						{
+							"remember": {
+								"crew->player": "offered_help"
+							}
+						}
+					]
+				},
+				{
+					"text": "I'll let you get on.",
+					"to": "end"
+				}
+			],
+			"timeout_to": "end"
+		},
+		"sympathy": {
+			"speaker": "crew",
+			"lines": [
+				"It is. Thanks for noticing.",
+				"Tell that to the HoP."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"offered": {
+			"speaker": "crew",
+			"lines": [
+				"Kind of you. I'll let you know.",
+				"Careful. I might hold you to that."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

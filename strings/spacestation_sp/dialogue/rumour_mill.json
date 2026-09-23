@@ -1,0 +1,78 @@
+{
+	"id": "rumour_mill",
+	"weight": 5,
+	"roles": {
+		"teller": {},
+		"other": {}
+	},
+	"if": {
+		"recent_event": {
+			"graffiti": 12,
+			"lights": 12,
+			"vandalism": 12,
+			"bell": 12,
+			"knock": 12,
+			"honk": 12,
+			"arrest": 12,
+			"fight": 12
+		}
+	},
+	"start": "tell",
+	"nodes": {
+		"tell": {
+			"speaker": "teller",
+			"lines": [
+				"Did you hear? There was %EVENT% in %EVENT_AREA%.",
+				"Word is %EVENT_AREA% had %EVENT% not long ago.",
+				"%OTHER_FIRST%, you missed it. %EVENT% in %EVENT_AREA%."
+			],
+			"next": [
+				{
+					"to": "sigh",
+					"weight": 2
+				},
+				{
+					"to": "curious",
+					"weight": 2
+				}
+			]
+		},
+		"sigh": {
+			"speaker": "other",
+			"lines": [
+				"Every shift.",
+				"Of course there was.",
+				"Someone should tell security. Someone else."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"curious": {
+			"speaker": "other",
+			"lines": [
+				"Who was it?",
+				"Anyone we know?"
+			],
+			"next": [
+				{
+					"to": "shrug"
+				}
+			]
+		},
+		"shrug": {
+			"speaker": "teller",
+			"lines": [
+				"Didn't ask. Didn't want to be next.",
+				"No idea. Half the station, if you ask me."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

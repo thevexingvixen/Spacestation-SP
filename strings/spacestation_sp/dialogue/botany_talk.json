@@ -1,0 +1,79 @@
+{
+	"id": "botany_talk",
+	"weight": 3,
+	"roles": {
+		"botanist": {
+			"job": [
+				"Botanist"
+			]
+		},
+		"other": {}
+	},
+	"start": "open",
+	"nodes": {
+		"open": {
+			"speaker": "botanist",
+			"lines": [
+				"I've got something new coming up in the trays, %OTHER_FIRST%.",
+				"There's produce on the table in hydroponics if you want any.",
+				"%OTHER_FIRST%, do me a favour and don't touch the tray at the back."
+			],
+			"next": [
+				{
+					"to": "curious",
+					"weight": 2
+				},
+				{
+					"to": "contrary",
+					"weight": 1
+				}
+			]
+		},
+		"curious": {
+			"speaker": "other",
+			"lines": [
+				"What is it this time?",
+				"I might take you up on that."
+			],
+			"next": [
+				{
+					"to": "tease"
+				}
+			]
+		},
+		"contrary": {
+			"speaker": "other",
+			"lines": [
+				"I wasn't going to. Now I want to."
+			],
+			"next": [
+				{
+					"to": "warn"
+				}
+			]
+		},
+		"tease": {
+			"speaker": "botanist",
+			"lines": [
+				"You'll see.",
+				"Help yourself."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"warn": {
+			"speaker": "botanist",
+			"lines": [
+				"It bites. I'm not joking. Probably not joking."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}
