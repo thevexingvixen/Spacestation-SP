@@ -32,17 +32,31 @@
 					"behavior": "/datum/bt_node/ai_behavior/sp_find_mess"
 				},
 				{
-					"type": "leaf",
-					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
-					"vars": {
-						"target_key": "BB_SP_MESS",
-						"required_dist": 1,
-						"finish_on_arrival": true
-					}
-				},
-				{
-					"type": "leaf",
-					"behavior": "/datum/bt_node/ai_behavior/sp_mop_mess"
+					"type": "selector",
+					"children": [
+						{
+							"type": "sequence",
+							"children": [
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+									"vars": {
+										"target_key": "BB_SP_MESS",
+										"required_dist": 1,
+										"finish_on_arrival": true
+									}
+								},
+								{
+									"type": "leaf",
+									"behavior": "/datum/bt_node/ai_behavior/sp_mop_mess"
+								}
+							]
+						},
+						{
+							"type": "leaf",
+							"behavior": "/datum/bt_node/ai_behavior/sp_mess_unreachable"
+						}
+					]
 				}
 			]
 		}

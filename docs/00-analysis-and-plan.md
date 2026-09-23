@@ -199,9 +199,27 @@ being attacked cuts a conversation off outright.
 8. **Python sidecar** — reads `BB_SP_HEARD` and station state, few high-value model calls.
 9. **Dialogue trees + spending standing** — player conversations that track a thread, and crew
    agreeing to follow someone they think well of. The bug list that came first (`01-dialogue-plan.md`
-   M0) is done; the engine and the written lines are next.
+   M0) is done, and so is the first slice of M1. Next session: the rest of M1, then M3's clickable replies.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
+
+### 2026-09-21 — Six rounds, spent proving it
+
+The three things that were built but never played all work now, and none of them worked first time. A
+prisoner was arrested and locked in a cell (49 seconds, door swap and all); the janitor cleans (thirteen
+stains in five minutes); written dialogue runs between crew all shift. Every failure on the way was found by
+watching a round rather than by reading code, and two of them could not have been unit-tested at all:
+
+- **An arrest turned the department into a brawl.** The suspect radios that the officer hit them, every other
+  officer believes it, and they fight each other while the suspect walks away. No arrest reached a cell until
+  a report naming the arresting officer was dropped.
+- **The janitor never waited for its own mopping.** TG cleans through `INVOKE_ASYNC`, so the click returns
+  at once; checking two milliseconds later and walking off cancelled the very action it had started.
+- Two starvation bugs: unreachable litter outranking every stain, and a locked room being written off one
+  decal at a time.
+
+The diagnostics added along the way are the reason the last three were found in one round each: a behaviour
+that does nothing should say why.
 
 ### 2026-09-20 (later) — The janitor, the clown, and dialogue as data
 

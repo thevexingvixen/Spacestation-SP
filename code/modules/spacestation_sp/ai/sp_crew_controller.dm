@@ -649,6 +649,12 @@
 	var/datum/weakref/attacker_ref = incident[SP_INCIDENT_ATTACKER]
 	var/mob/living/attacker = attacker_ref?.resolve()
 	var/turf/where = incident[SP_INCIDENT_TURF]
+	// Somebody being taken in calls it in as an attack, and they are not wrong: the officer did hit them.
+	// Acting on it turns one arrest into a brawl. In a live round an officer moved in, the suspect radioed
+	// it, every other officer took the arresting officer for an attacker, and four of them fought each other
+	// in the aft hallway while the suspect wandered off to try the mech bay door.
+	if(ishuman(attacker) && sp_is_authority(attacker) && sp_is_arresting(attacker, reporter))
+		return
 	if(!isnull(attacker) && attacker != pawn)
 		set_blackboard_key(BB_SP_INCIDENT_TARGET, attacker)
 	if(!isnull(where))
@@ -665,6 +671,9 @@
 
 /datum/ai_controller/sp_crew/security/on_heard_distress(mob/living/speaker, raw_message, is_radio)
 	if(speaker == pawn || blackboard_key_exists(BB_SP_INCIDENT_TARGET))
+		return
+	// Shouting for help while being taken in is not an emergency for the rest of the department.
+	if(sp_wanted_for_arrest(speaker))
 		return
 	var/turf/where = get_turf(speaker)
 	if(isnull(where))

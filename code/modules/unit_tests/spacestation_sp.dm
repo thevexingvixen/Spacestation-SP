@@ -2068,14 +2068,38 @@
 	var/datum/ai_controller/sp_crew/other_ai = new(other)
 	other_ai.set_ai_status(AI_STATUS_OFF)
 
+	// A chain built here rather than a shipped one: the written dialogues branch on the dice, so counting
+	// their lines would be testing the odds. This counts the runtime.
+	var/datum/sp_dialogue/chain = new
+	chain.id = "unit_test_chain"
+	chain.roles = list("a" = list(), "b" = list())
+	chain.start = "one"
+	chain.nodes = list(
+		"one" = list("speaker" = "a", "lines" = list("One."), "next" = list(list("to" = "two"))),
+		"two" = list("speaker" = "b", "lines" = list("Two."), "next" = list(list("to" = "three"))),
+		"three" = list("speaker" = "a", "lines" = list("Three, %B_FIRST%."), "next" = list(list("to" = "four"))),
+		"four" = list("speaker" = "b", "lines" = list("Four."), "next" = list(list("to" = SP_DIALOGUE_END)),
+			"effects" = list(list("standing" = list("b->a" = 2)))),
+	)
+	var/datum/sp_dialogue_thread/chained = sp_begin_dialogue(chain, asker, other)
+	TEST_ASSERT_NOTNULL(chained, "a thread starts between two crew with no job between them")
+	var/turns = 0
+	while(chained.advance() && turns < SP_DIALOGUE_MAX_LINES)
+		turns++
+	TEST_ASSERT_EQUAL(chained.lines_said, 4, "every node in the chain was said")
+	TEST_ASSERT_NULL(chained.current, "and the thread reached its end")
+	TEST_ASSERT_EQUAL(sp_reputation(other_ai, asker), 2, "the effect on the last node was applied")
+	qdel(chained)
+
 	var/datum/sp_dialogue/shift = sp_all_dialogues()["shift_talk"]
 	TEST_ASSERT_NOTNULL(shift, "two crew with nothing in common can still talk about the shift")
 	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(shift, asker, other)
 	TEST_ASSERT_NOTNULL(thread, "so a thread starts")
-	var/turns = 0
+	turns = 0
 	while(thread.advance() && turns < SP_DIALOGUE_MAX_LINES)
 		turns++
-	TEST_ASSERT(thread.lines_said >= 3, "a thread is more than a line and an answer: [thread.lines_said] said")
+	// Shipped dialogue branches, so the shortest way through shift_talk is an opener and an answer.
+	TEST_ASSERT(thread.lines_said >= 2, "a thread is at least a line and an answer: [thread.lines_said] said")
 	TEST_ASSERT_NULL(thread.current, "and it reaches an end rather than stopping")
 	sp_dialogue_remember(thread)
 	var/list/recent = asker_ai.blackboard[BB_SP_RECENT_DIALOGUE]
@@ -2092,7 +2116,91 @@
 	turns = 0
 	while(second.advance() && turns < SP_DIALOGUE_MAX_LINES)
 		turns++
-	TEST_ASSERT(sp_reputation(asker_ai, other) != 0, "and what the other said about it changed what they think of them")
+	// Both of the second nodes in that dialogue move standing, so two lines said means standing moved. The
+	// counts are in the messages because a thread that stops early is the interesting failure, not the sum.
+	TEST_ASSERT(second.lines_said >= 2, "the janitor got an answer about the floor: [second.lines_said] lines said")
+	TEST_ASSERT(sp_reputation(asker_ai, other) != 0, "and it moved what they think of them ([second.lines_said] lines said)")
 	qdel(second)
 	qdel(asker_ai)
 	qdel(other_ai)
+
+/**
+ * A person being arrested shouting that the officer attacked them is not a crime report.
+ *
+ * Without this one arrest becomes a brawl: seen in a live round, where the suspect radioed it in, every
+ * officer took the arresting officer for an attacker, and four of them fought each other in a hallway while
+ * the suspect walked away.
+ */
+/datum/unit_test/sp_arrest_is_not_an_attack
+
+/datum/unit_test/sp_arrest_is_not_an_attack/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/colleague = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/suspect = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	officer.real_name = "Margaret Beck"
+	suspect.real_name = "Addison Earl"
+	officer.mind_initialize()
+	officer.mind.assigned_role = SSjob.get_job_type(/datum/job/security_officer)
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/security/colleague_ai = new(colleague)
+	colleague_ai.set_ai_status(AI_STATUS_OFF)
+
+	officer_ai.set_blackboard_key(BB_SP_INCIDENT_TARGET, suspect)
+	TEST_ASSERT(sp_is_arresting(officer, suspect), "the officer is in the middle of arresting them")
+	var/list/incident = list(
+		SP_INCIDENT_ATTACKER = WEAKREF(officer),
+		SP_INCIDENT_VICTIM = WEAKREF(suspect),
+		SP_INCIDENT_TURF = get_turf(suspect),
+		SP_INCIDENT_TIME = world.time,
+	)
+	colleague_ai.on_heard_incident(suspect, incident)
+	TEST_ASSERT(!colleague_ai.blackboard_key_exists(BB_SP_INCIDENT_TARGET), "their colleague is not treated as an attacker")
+
+	// Somebody else attacking the same officer still is one.
+	var/mob/living/carbon/human/thug = allocate(/mob/living/carbon/human/consistent, get_step(spot, SOUTH))
+	var/list/real_attack = list(
+		SP_INCIDENT_ATTACKER = WEAKREF(thug),
+		SP_INCIDENT_VICTIM = WEAKREF(officer),
+		SP_INCIDENT_TURF = get_turf(officer),
+		SP_INCIDENT_TIME = world.time,
+	)
+	colleague_ai.on_heard_incident(officer, real_attack)
+	TEST_ASSERT_EQUAL(colleague_ai.blackboard[BB_SP_INCIDENT_TARGET], thug, "an actual attacker still gets answered")
+	qdel(officer_ai)
+	qdel(colleague_ai)
+
+/// A room the janitor cannot get into is left alone as a room, not one stain at a time.
+/datum/unit_test/sp_janitor_leaves_shut_rooms_alone
+
+/datum/unit_test/sp_janitor_leaves_shut_rooms_alone/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/turf/away = get_step(get_step(spot, EAST), EAST)
+	var/mob/living/carbon/human/janitor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/obj/item/mop/mop = allocate(/obj/item/mop, spot)
+	janitor.put_in_hands(mop)
+	mop.reagents.add_reagent(/datum/reagent/water, 10)
+	var/datum/ai_controller/sp_crew/janitor/janitor_ai = new(janitor)
+	janitor_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/area/station/engineering/atmos/shut = new
+	shut.contents += away
+	var/obj/effect/decal/cleanable/dirt/unreachable = allocate(/obj/effect/decal/cleanable/dirt, away)
+	TEST_ASSERT_EQUAL(get_area(unreachable), shut, "the test put that tile in a room of its own")
+	var/datum/bt_node/ai_behavior/sp_find_mess/find = new
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "the mess is worth walking to at first")
+
+	// The walk failed, so the room is what gets remembered.
+	janitor_ai.set_blackboard_key(BB_SP_MESS, unreachable)
+	var/datum/bt_node/ai_behavior/sp_mess_unreachable/give_up = new
+	TEST_ASSERT(give_up.perform(1, janitor_ai) & AI_BEHAVIOR_FAILED, "giving up is a note, not a job")
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_FAILED, "and every stain in that room is left alone")
+
+	// A mess somewhere else is still worth doing.
+	var/obj/effect/decal/cleanable/dirt/nearby = allocate(/obj/effect/decal/cleanable/dirt, get_step(spot, NORTH))
+	TEST_ASSERT(find.perform(1, janitor_ai) & AI_BEHAVIOR_SUCCEEDED, "a mess in a room they can walk into is not")
+	TEST_ASSERT_EQUAL(janitor_ai.blackboard[BB_SP_MESS], nearby, "and it is the one they set off for")
+	qdel(find)
+	qdel(give_up)
+	qdel(janitor_ai)

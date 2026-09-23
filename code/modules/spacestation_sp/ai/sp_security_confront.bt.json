@@ -7,27 +7,36 @@
 		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
 	},
 	"child": {
-		"type": "sequence",
+		"type": "selector",
 		"children": [
 			{
-				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
-				"vars": {
-					"target_key": "BB_SP_SUSPECT",
-					"required_dist": 1,
-					"finish_on_arrival": true
-				}
+				"type": "sequence",
+				"children": [
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+						"vars": {
+							"target_key": "BB_SP_SUSPECT",
+							"required_dist": 1,
+							"finish_on_arrival": true
+						}
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/sp_confront_suspect"
+					},
+					{
+						"type": "leaf",
+						"behavior": "/datum/bt_node/ai_behavior/wait",
+						"vars": {
+							"duration": "3 SECONDS"
+						}
+					}
+				]
 			},
 			{
 				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/sp_confront_suspect"
-			},
-			{
-				"type": "leaf",
-				"behavior": "/datum/bt_node/ai_behavior/wait",
-				"vars": {
-					"duration": "3 SECONDS"
-				}
+				"behavior": "/datum/bt_node/ai_behavior/sp_give_up_suspect"
 			}
 		]
 	}

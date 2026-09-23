@@ -723,12 +723,24 @@
 /// The tile just outside the cell door, where the officer ends up once they have swapped the prisoner inside.
 #define BB_SP_CELL_OUTSIDE "sp_cell_outside"
 
+/// When we first failed to reach the suspect we are trying to have a word with.
+#define BB_SP_SUSPECT_SINCE "sp_suspect_since"
+/// How long an officer keeps trying to reach a suspect before calling it in and letting it go.
+#define SP_SUSPECT_PATIENCE (60 SECONDS)
+
+/// When we last said out loud that a suspect had gone somewhere we cannot follow.
+#define BB_SP_LOST_THEM_AT "sp_lost_them_at"
+#define SP_LOST_THEM_GAP (45 SECONDS)
+
 // --- Janitor -------------------------------------------------------------------------------------
 
 /// The mess we are on our way to clean.
 #define BB_SP_MESS "sp_mess"
 /// Messes we could not get to: mess -> when to consider it again.
 #define BB_SP_MESS_IGNORE "sp_mess_ignore"
+/// Whole areas we could not get into. One stain in atmospherics is every stain in atmospherics: a janitor
+/// with no access spent a round working through them one 45-second timeout at a time.
+#define BB_SP_AREA_IGNORE "sp_area_ignore"
 /// The mess we are currently trying to reach, and when we set off for it.
 #define BB_SP_MESS_ATTEMPT "sp_mess_attempt"
 #define BB_SP_MESS_ATTEMPT_AT "sp_mess_attempt_at"
@@ -737,8 +749,19 @@
 /// Where we are going to fill the mop, and the one in our own office to fall back on.
 #define BB_SP_WATER "sp_water"
 #define BB_SP_WATER_HOME "sp_water_home"
+/// The last thing we said about having no work, and when, so a quiet janitor says it once rather than
+/// every three seconds. A janitor who does nothing for a whole round should say why in the log.
+#define BB_SP_JANI_NOTE "sp_jani_note"
+#define BB_SP_JANI_NOTE_AT "sp_jani_note_at"
+#define SP_JANI_NOTE_GAP (60 SECONDS)
 /// Litter worth picking up by hand rather than mopping: a banana peel, a dropped wrapper.
 #define BB_SP_LITTER "sp_litter"
+/// Litter we could not get to, and the one we are trying for. A single unreachable wrapper starved the
+/// mopping for a whole round: litter outranks mess, so it kept winning and kept failing.
+#define BB_SP_LITTER_IGNORE "sp_litter_ignore"
+#define BB_SP_LITTER_ATTEMPT "sp_litter_attempt"
+#define BB_SP_LITTER_ATTEMPT_AT "sp_litter_attempt_at"
+#define SP_LITTER_ATTEMPT_TIMEOUT (20 SECONDS)
 
 /// How far a janitor will walk for a mess, and how much further maintenance has to be to be worth it.
 #define SP_MESS_RANGE 14
@@ -751,6 +774,8 @@
 /// A mop is fetched from anywhere on the station; litter is only picked up close by.
 #define SP_MOP_SEARCH_RANGE 60
 #define SP_LITTER_RANGE 7
+/// How long one mopping may take before it is written off. TG's own mopping is a second and a half.
+#define SP_MOP_TIMEOUT (30 SECONDS)
 /// Below this much liquid a mop cleans nothing: mop.dm gives up under 0.1 and says so.
 #define SP_MOP_DRY 1
 

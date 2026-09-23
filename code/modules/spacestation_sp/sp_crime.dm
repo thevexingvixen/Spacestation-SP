@@ -213,3 +213,26 @@ GLOBAL_LIST_INIT(sp_crime_record_names, list(
 		if(thing.density && !istype(thing, /obj/machinery/door) && !ismob(thing))
 			return FALSE
 	return TRUE
+
+/// Whether this person's record says they are to be taken in.
+/proc/sp_wanted_for_arrest(mob/living/who)
+	if(QDELETED(who))
+		return FALSE
+	var/datum/record/crew/record = find_record(who?.real_name)
+	return record?.wanted_status == WANTED_ARREST
+
+/**
+ * Whether `officer` is in the middle of arresting `who`.
+ *
+ * Either they are the officer's current incident, or the record says they are wanted and the officer is
+ * security. Both sides of that matter: an arrest in progress is not on anybody's record until it is called,
+ * and a record outlives the officer who filed it.
+ */
+/proc/sp_is_arresting(mob/living/officer, mob/living/who)
+	if(QDELETED(officer) || QDELETED(who))
+		return FALSE
+	var/datum/ai_controller/sp_crew/security/theirs = officer.ai_controller
+	if(istype(theirs) && theirs.blackboard[BB_SP_INCIDENT_TARGET] == who)
+		return TRUE
+	return sp_wanted_for_arrest(who)
+

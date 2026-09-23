@@ -348,6 +348,7 @@ SUBSYSTEM_DEF(spacestation_sp)
  */
 /datum/controller/subsystem/spacestation_sp/proc/debug_arrest()
 	var/mob/living/carbon/human/culprit
+	var/list/candidates = list()
 	var/datum/ai_controller/sp_crew/security/officer_ai
 	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
 		var/datum/ai_controller/sp_crew/security/sec = crew.ai_controller
@@ -356,9 +357,19 @@ SUBSYSTEM_DEF(spacestation_sp)
 			if(isnull(officer_ai) && !istype(sec, /datum/ai_controller/sp_crew/security/hos))
 				officer_ai = sec
 			continue
-		if(isnull(culprit))
-			culprit = crew
+		candidates += crew
 	var/mob/living/carbon/human/officer = officer_ai?.pawn
+	// Somewhere an officer can actually walk into, and the nearest of those. Two rounds were spent watching
+	// the pathfinder correctly refuse to open the Head of Personnel's office and atmospherics: this lever is
+	// meant to demonstrate an arrest, not to rediscover that security ID does not open every door.
+	for(var/mob/living/carbon/human/crew as anything in candidates)
+		if(isnull(officer) || !sp_clown_prank_spot(crew))
+			continue
+		if(!isnull(culprit) && get_dist(officer, crew) >= get_dist(officer, culprit))
+			continue
+		culprit = crew
+	if(isnull(culprit))
+		log_sp("debug: nobody is standing anywhere public; the arrest would only prove the pathfinder right")
 	if(isnull(culprit) || isnull(officer))
 		log_sp("debug: wanted an arrest, but there is no officer and culprit to arrange one between")
 		return

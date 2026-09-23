@@ -311,6 +311,9 @@ test; roles are cast by job; a thread runs crew to crew, a line at a time, with 
 roll and standing as conditions, and standing as the one effect. Four dialogues are written. Still to do
 in M1: memory (`BB_SP_MEMORY`), the rest of the condition vocabulary, and moving the seven keyword topics
 into files. Player choices remain M3.
+
+**Next session (chosen 2026-09-22):** the rest of M1 -- memory, the full condition vocabulary, and the seven
+keyword topics moved into files -- then M3: clickable replies and a Talk verb.
 | M4 | Consequences | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
 | M5 | Sidecar | `generate` nodes behind a budget, off by default |
 

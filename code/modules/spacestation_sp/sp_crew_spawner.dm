@@ -145,6 +145,9 @@
 		/datum/job/bartender,
 		/datum/job/quartermaster,
 		/datum/job/cargo_technician,
+		// The map ships five hundred-odd decals and the greytide adds more; without a janitor none of it
+		// is ever cleaned, and every other job on this list is one whose work the station notices.
+		/datum/job/janitor,
 	)
 	return essential
 

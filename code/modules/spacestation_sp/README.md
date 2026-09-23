@@ -193,6 +193,21 @@ whole kit, and the map's own decals -- some five hundred of them, mostly dirt --
 runs out, so the order is what matters: litter first, because somebody can slip on that, then the nearest
 stain, with maintenance pushed to the back of the queue because the crew see the hallways.
 
+**Nothing happens until you wait for it.** TG's cleaner component runs the cleaning itself through
+`INVOKE_ASYNC`, so clicking a floor with a mop returns within the same tick while the mopping goes on behind
+it. The first version checked whether the stain had gone two milliseconds after asking, declared failure, and
+walked off to the next one -- which cancelled the `do_after` that was still running. Four rounds of a janitor
+losing a unit of water per stain and cleaning none of them came down to that. The leaf now stands still and
+waits for the stain to actually go, up to a deadline. A unit test could not have caught it: the test called
+the cleaning directly and slept, which is exactly what the live crew member was not doing.
+
+**Two ways to starve a janitor**, both found in play and both fixed by remembering a failure rather than
+repeating it. Litter outranks mess, because people slip on it, so one bag of popcorn behind a wall in
+maintenance won that contest every few seconds, failed the walk, and cancelled the walk to the mess each
+time: litter now gets the same give-up list a mess has. And a stain in a room the janitor has no access to is
+every stain in that room, so the whole area is set aside for a few minutes rather than each decal costing its
+own 45-second timeout.
+
 **Water is the catch.** A mop below `SP_MOP_DRY` cleans nothing and says so in a balloon nobody reads.
 Every mop bucket and the janitorial cart start the round bone dry, the janitor's own cart included, so a
 dry one is skipped rather than walked to; sinks fill themselves at Initialize and are the reliable source.
@@ -215,6 +230,18 @@ security, engineering or atmospherics, where somebody going over is a ruined shi
 The clown starts with one banana, so the supply is the loop: out of bananas, they ask botany over the
 radio, in the words botany listens for, and bananas are now something botany can be asked to grow. Clown
 asks, botany plants, clown drops, janitor clears up.
+
+## An arrest is not an attack
+A person being taken in radios that the officer attacked them, and they are not wrong: the officer did hit
+them. Acting on that report turns one arrest into a brawl. In a live round the suspect called it in, every
+other officer took the arresting officer for an attacker, and four of them fought each other in the aft
+hallway while the suspect wandered off to try the mech bay door — and no arrest in five rounds ever reached
+a cell until this was fixed.
+
+`sp_is_arresting()` answers the question two ways: the officer's current incident is this person, or the
+person's record says they are wanted. A report naming an officer who is arresting the reporter is dropped,
+and somebody shouting for help while being taken in does not summon the department. A genuine attack on an
+officer still gets answered, which is what `sp_arrest_is_not_an_attack` pins.
 
 ## Incident reporting chain
 1. A crew member is attacked → `on_attacked` sets `BB_SP_ATTACKER`.
@@ -1279,6 +1306,10 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   whichever of the two walked over.
 - `sp_dialogue_thread_runs` — a thread runs line by line to an end, moves standing on the way, is
   remembered by both, and is not picked again straight afterwards.
+- `sp_arrest_is_not_an_attack` — a report by somebody being arrested, naming the arresting officer, is
+  dropped; an actual attacker still gets answered.
+- `sp_janitor_leaves_shut_rooms_alone` — a room the janitor cannot get into is set aside as a room, and a
+  mess in a room they can walk into is still taken.
 - `sp_behaviour_trees` — every SP controller points at a tree that was actually compiled.
 
 ```
@@ -1354,7 +1385,6 @@ the game server logs nothing at all.
 - Breach repair patches floors only. Broken walls, windows and airlocks are left alone, and nobody
   re-pressurises the room afterwards.
 - Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.
-- Security uses melee and cuffs, never the disabler in their suit slot.
 - Cargo never sells anything, works the mining or materials markets, or handles the express console;
   there are no miners yet. Crates are dragged, so a technician moves one at a time, and a haul that
   has not finished within two minutes is abandoned where it stands rather than blocking the
@@ -1362,18 +1392,17 @@ the game server logs nothing at all.
 - Machine lookups here deliberately avoid `oview()`. It is sight-limited, so a console one room away
   behind a wall is invisible and the quartermaster would never find their own desk.
 - Botanists do not compost, fight pests, or use grafts and the DNA manipulator.
-- An antagonist has not yet been seen completing a theft in a live round. The scheme attaches, picks a
-  target and reports honestly when it cannot reach one, and the parts are unit-tested, but the whole
-  chain — walk to it, take it, keep it — is still unproven in play. Two rounds' worth of reasons are
-  written up in `docs/02-antagonist-plan.md`.
+- An antagonist completed a theft in a live round for the first time on 2026-09-21 (`antag.stole`), on a
+  station of 32 crew. It is one sighting, not a pattern: with 17 crew the same scheme still finds nothing
+  liftable it can reach, for the access reasons written up in `docs/02-antagonist-plan.md`.
 - Schemes can only steal, and only from TG's own steal catalogue filtered down to things actually
   liftable (out on a turf, or in a closet this thief can open). Most of that catalogue is deliberately
   locked away, so the choice is narrow. Sabotage, framing and escape-with-the-loot are not written.
-- The cell has never actually been used in a round. Reaching it organically wants three witnessed crimes by
-  the same person, and the greytide spaces mischief minutes apart behind a coin-flip of a troublemaker roll,
-  so a short round cannot get there. What has been proven is the parts: the sentence ladder, the landmark
-  guard, and that none of it throws. The walk itself resists a unit test -- pulling, `Move_Pulled()` and
-  `timer_start()` all want a real cell with linked doors and a locker, which the test map has not got.
+- The cell was used in a live round on 2026-09-21: *"put Isabelle Leach in Cell 1 for 8 minutes"*, 49
+  seconds from the arrest being called, through the chase, the cuffing, the walk and the swap through the
+  door. It took five rounds to see, and four of those failed for reasons that had nothing to do with the
+  escort: the only officer was in surgery, the suspect was in atmospherics, the suspect was in the Head of
+  Personnel's office, and then the arrest turned into a brawl (see below).
 - None of the escalation above red has been seen in a round yet. The alert ladder, the armoury, the arming
   order and the fire-mode switch are built and tested, but a quiet shift never reaches red, so what has
   actually been watched end to end is a briefing and a stand down. `SP_DEBUG_SECURITY_ALARM` exists to force
@@ -1416,9 +1445,16 @@ the game server logs nothing at all.
   Hacking, slips and lube are antagonist territory rather than theirs.
 
 ## Next
-- More written dialogue, and the rest of M1: memory (`BB_SP_MEMORY`), the conditions the plan lists beyond
-  a dice roll and standing, and the seven keyword topics moved into files.
-- Player-facing dialogue (M3): clickable replies, intents, a Talk verb.
-- The warden's side of the brig, which is a session of its own, and a live round for the things that are
-  tested but have never been played: the cell escort, the janitor, and the clown.
+Next session, chosen 2026-09-22, is dialogue:
+- The rest of M1: memory (`BB_SP_MEMORY`), the condition vocabulary the plan lists beyond a dice roll and
+  standing, and the seven keyword topics moved out of code and into files.
+- Then M3, player-facing dialogue: clickable replies under an NPC's line, intents, and a Talk verb. For a
+  station played alone this is the biggest single payoff left.
+
+After that:
+- The warden's side of the brig: prisoners, timed releases, the armoury. A prisoner now actually arrives in
+  a cell, so there is something for a warden to do.
+- Searches and confiscation. An officer files the crime and makes the arrest, but a thief who keeps walking
+  keeps the loot.
 - The janitor and broken light tubes, which needs the light replacer out of engineering storage.
+- The lawyer still answers to nobody, being in the service department rather than security.

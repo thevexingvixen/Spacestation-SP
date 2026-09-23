@@ -667,6 +667,7 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/priors = sp_file_crime_record(suspect, crime, "Reported in [scene ? scene.name : "the station"].", pawn)
 	sp_adjust_reputation(controller, suspect, SP_WITNESS_REPUTATION_HIT, "had to have a word with them")
 	sp_record("sec.confronted")
+	controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
 	log_sp("[pawn.real_name] had a word with [suspect.real_name] about [crime || "it"] in [scene ? scene.name : "the station"]")
 	// A pattern on the record, rather than one bad afternoon: now it is an arrest.
 	// sp_mark_for_arrest() returns FALSE for anybody already wanted, and nothing ever clears WANTED_ARREST, so a
@@ -682,6 +683,65 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 	var/list/lines = GLOB.sp_confrontation_lines[crime]
 	sp_crew_speak(pawn, length(lines) ? pick(lines) : "I will be keeping an eye on you.")
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/**
+ * The suspect is somewhere we cannot walk to: say so on the radio, and hold on to the incident.
+ *
+ * Officers carry brig and maintenance access, not atmospherics or engineering, so a suspect who wanders into
+ * one is genuinely out of reach and the pathfinder is right to refuse. Giving up on them would be wrong --
+ * they have to come out -- and silently retrying is what made an arrest that never happened look like an
+ * arrest that was never called. This is a note in passing rather than something an officer stands and
+ * does: it always fails, so the shift carries on and the incident stays open.
+ */
+/datum/bt_node/ai_behavior/sp_lost_them
+	time_between_perform = 10 SECONDS
+
+/datum/bt_node/ai_behavior/sp_lost_them/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/target = controller.blackboard[BB_SP_INCIDENT_TARGET]
+	if(!istype(pawn) || QDELETED(target))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/said_at = controller.blackboard[BB_SP_LOST_THEM_AT] || 0
+	if(world.time - said_at < SP_LOST_THEM_GAP)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED // already called in; get on with the patrol
+	controller.set_blackboard_key(BB_SP_LOST_THEM_AT, world.time)
+	sp_crew_speak(pawn, "[target.real_name] is in [get_area_name(target)] and I cannot get in. Keep an eye out.", RADIO_CHANNEL_SECURITY)
+	sp_record("sec.lost_them")
+	log_sp("[pawn.real_name] cannot reach [target.real_name] in [get_area_name(target)] and called it in")
+	// Always fails, so the incident stays open and the officer gets on with the shift rather than standing
+	// at a door they cannot open. When the suspect comes back out, the ordinary approach picks them up.
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+
+/**
+ * A suspect who cannot be reached at all: call it in, and after a while let it go.
+ *
+ * Security carry brig and maintenance access, so a suspect sitting in the Head of Personnel's office or in
+ * atmospherics is genuinely out of reach, and the pathfinder is right to refuse. An officer who keeps trying
+ * is an officer who never does anything else for the rest of the shift, so after SP_SUSPECT_PATIENCE the word
+ * is called in over the radio and the suspect is dropped. The record keeps the crimes either way.
+ */
+/datum/bt_node/ai_behavior/sp_give_up_suspect
+	time_between_perform = 5 SECONDS
+
+/datum/bt_node/ai_behavior/sp_give_up_suspect/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/suspect = controller.blackboard[BB_SP_SUSPECT]
+	if(!istype(pawn) || QDELETED(suspect))
+		controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/failing_since = controller.blackboard[BB_SP_SUSPECT_SINCE]
+	if(isnull(failing_since))
+		controller.set_blackboard_key(BB_SP_SUSPECT_SINCE, world.time)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	if(world.time - failing_since < SP_SUSPECT_PATIENCE)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	sp_crew_speak(pawn, "[suspect.real_name] is in [get_area_name(suspect)] and I cannot get to them. Somebody with the access, please.", RADIO_CHANNEL_SECURITY)
+	log_sp("[pawn.real_name] gave up on reaching [suspect.real_name] in [get_area_name(suspect)]")
+	sp_record("sec.lost_them")
+	controller.clear_blackboard_key(BB_SP_SUSPECT)
+	controller.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
+	controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 /// Clears the current incident (and our own attacker memory). Always succeeds.
