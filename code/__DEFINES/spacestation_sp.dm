@@ -797,3 +797,14 @@
 #define SP_DIALOGUE_MAX_LINES 12
 /// How far apart two people can drift before the conversation is over.
 #define SP_DIALOGUE_RANGE 5
+
+// --- The stand-in player (sp_stand_in.dm) ------------------------------------------------------------
+
+/// When we last told a player we were too busy to talk, so it is said once rather than to every line.
+#define BB_SP_BRUSHED_OFF_AT "sp_brushed_off_at"
+#define SP_BRUSH_OFF_GAP (20 SECONDS)
+
+/// Marks a body the crew should treat as a player although no client is connected: the stand-in debug tool.
+#define TRAIT_SP_STAND_IN "sp_stand_in"
+/// The source SP traits are added under.
+#define SP_TRAIT_SOURCE "spacestation_sp"

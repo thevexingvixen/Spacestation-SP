@@ -23,6 +23,7 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `ai/sp_botanist_behaviors.dm` — the botanist's leaves and subtree declarations.
 - `sp_conversation.dm` — what a crew member makes of what somebody says, standing, and one-line answers.
 - `sp_dialogue.dm` — written dialogue: the files and their checks, memory, threads, reply links, Talk to.
+- `sp_stand_in.dm` — the stand-in player, a debug tool that plays the player's side of a conversation.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
@@ -149,6 +150,18 @@ injury or a drawn weapon cuts it off, being attacked ends it outright, and work 
 Officers talk to people from below their security work, and take nothing up while they have an incident, a
 suspect, a prisoner, a briefing or a kit trip in hand.
 
+**Busy is not the same as ignoring you.** A crew member in the middle of a job still does not stop for a chat,
+but a player who names them gets a word over the shoulder -- "Bit busy, give me a minute" -- at most every 20
+seconds, and the job carries on untouched (`brush_off()`). Before this a chemist on a delivery, greeted by name,
+said nothing at all, and from the player's side busy and broken looked exactly alike.
+
+**One conversation at a time, and only within reach.** A conversation never starts between two people who could
+not keep it going -- five tiles apart and in sight -- so a hello called from across a room is answered with a
+line rather than an introduction that dies on its first word. A newcomer already talking to somebody is
+greeted by others with a line, not a second introduction to answer. And a player mid-conversation who turns
+to somebody else by name is taken up by them; only a line naming nobody is read as a reply to the
+conversation already going. All three were found by the stand-in rather than by reading code.
+
 ## Written dialogue (`sp_dialogue.dm`)
 Conversations are written as data, one json file each in `strings/spacestation_sp/dialogue`. A dialogue is a
 small graph: each node names the role that speaks it and the lines it may use, and weighted edges say where it
@@ -189,6 +202,28 @@ the engine, the doctor who has "buried people who said it's nothing". Rumours re
 (`sp_station_event()`): a fight, an arrest, the lights going out, somebody's graffiti, the clown's latest
 peel, and where. Five dialogues are written for a player: introductions, asking what somebody does, asking for
 a hand, chatting about the shift, and asking whether they have heard anything.
+
+## The stand-in player (`sp_stand_in.dm`)
+Most of this module is proved with unit tests and headless rounds, but the player's side of a conversation
+needs a player, and the stand-in plays one. It is a body with no AI controller (which is what "a player" means
+to the dialogue engine) and a trait for the one place that asks for a connected client, greeting newcomers.
+
+It pays the crew a scripted visit in a live round: it turns up two tiles from somebody idle, is introduced,
+clicks "I'm Jo Standin.", opens Talk to and asks what they do, offers a hand, says thanks, and examines them to
+see whether they like it now. Then it visits somebody else and says nothing, to check that silence is an
+answer, steps up close enough to have its ID read, and asks for the news. Everything it hears is logged as a
+player's-eye transcript, and each check is a `PASS` or `FAIL` line, tallied as `standin.pass` and
+`standin.fail`.
+
+It reads reply links exactly as a client would be sent them (`sp_dialogue_offer_html()`), and clicks them the
+way `/client/Topic()` ends up doing: the link's own parameters, the conversation found from them with
+`locate()`, and its `Topic()` called with `usr` set to the player. What it cannot check is the chat window
+drawing the link and BYOND turning a click into that call, which is how TG's own PDA replies work too.
+
+Config key `SP_DEBUG_STAND_IN` sends one out two minutes into a round; the **SP: Stand-in Player** admin verb
+sends one whenever it is wanted. Its first visit found a real problem the unit tests could not: a busy crew
+member, greeted by name, said nothing at all (see "Busy is not the same as ignoring you" above). Its fifth
+found one still open: idle crew chat takes people away from a player (see Known limitations).
 
 ## The janitor (`ai/sp_janitor_behaviors.dm`)
 MetaStation has no custodial closet, so the mop and the janitorial cart in the janitor's office are the
@@ -1324,6 +1359,14 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
 - `sp_talk_offers_what_fits` — the Talk to list offers what fits the two of you now, and nobody talks to
   themselves.
 - `sp_topics_are_files` — the seven keyword topics are dialogue files.
+- `sp_reply_link_round_trip` — a reply link's own text leads back to its conversation through `locate()`, and a
+  click through `Topic()` only counts from the player it was offered to.
+- `sp_busy_crew_say_so` — a busy doctor named by a player says so, once, without taking anything up or letting
+  go of the patient; a line not aimed at them gets nothing.
+- `sp_no_conversation_out_of_reach` — no conversation starts between two people too far apart to hold it, and a
+  hello from out there is answered with a line.
+- `sp_one_conversation_at_a_time` — nobody starts a second introduction with a player already talking, but a
+  player who turns to somebody by name is theirs.
 - `sp_arrest_is_not_an_attack` — a report by somebody being arrested, naming the arresting officer, is
   dropped; an actual attacker still gets answered.
 - `sp_janitor_leaves_shut_rooms_alone` — a room the janitor cannot get into is set aside as a room, and a
@@ -1458,13 +1501,22 @@ the game server logs nothing at all.
 - Conversation branches and remembers now, but it only talks. Standing is felt in how people speak to you
   and shows at the extremes; it is not yet spent on anything they would do for you -- follow you, open a door
   they have access to, fetch something. Directions are stock answers rather than worked out from where the
-  crew member stands. The reply links and Talk to have been driven by unit tests, not seen by a player.
+  crew member stands. The reply links and Talk to have been driven by the stand-in in live rounds, but not
+  yet by a real client.
+- Idle crew-to-crew chat outranks a player. Talk to refuses anybody already in a conversation, so a crew
+  member who falls into small talk with a colleague the moment yours ends is out of reach until it finishes; the
+  stand-in's fifth visit lost both its Talk to menus this way. A crew member just introduced to you may still
+  add the newcomer line afterwards, and a mime cast in a conversation says nothing, since TG will not let a
+  mime speak.
 - Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
   Hacking, slips and lube are antagonist territory rather than theirs.
 
 ## Next
-- A round with you in it. The reply links, Talk to and being introduced have only been driven by tests: this
-  is the first thing in the project a headless round cannot show.
+- Players before small talk: Talk to, or a line naming somebody, ends their chat with a colleague; an
+  introduction counts as the greeting; mimes stay out of spoken parts. Small, and first, since spending
+  standing needs a crew member who stays with you.
+- Five minutes with a real client, when there is time. The stand-in has played the player's side in live rounds;
+  what it cannot show is the chat window drawing a reply link and a click reaching the server.
 - Spending standing: crew who think well of you doing things for you -- following, opening a door they have
   access to, fetching something. The plan's list of effects names these; none is built.
 - More written dialogue (the plan's M2): bartender and patron, doctor and patient, chef and botanist, the HoP

@@ -6649,6 +6649,7 @@
 #include "code\modules\spacestation_sp\sp_config.dm"
 #include "code\modules\spacestation_sp\sp_curiosity.dm"
 #include "code\modules\spacestation_sp\sp_dialogue.dm"
+#include "code\modules\spacestation_sp\sp_stand_in.dm"
 #include "code\modules\spacestation_sp\sp_crew_spawner.dm"
 #include "code\modules\spacestation_sp\sp_conversation.dm"
 #include "code\modules\spacestation_sp\sp_crime.dm"

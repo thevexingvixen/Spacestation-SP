@@ -137,6 +137,8 @@ SUBSYSTEM_DEF(spacestation_sp)
 		addtimer(CALLBACK(src, PROC_REF(debug_security_alarm)), 2 MINUTES)
 	if(CONFIG_GET(flag/sp_debug_arrest))
 		addtimer(CALLBACK(src, PROC_REF(debug_arrest)), 3 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_stand_in))
+		addtimer(CALLBACK(src, PROC_REF(debug_stand_in)), 2 MINUTES)
 
 /**
  * Debug helper: empties the medics' pockets of treatment supplies, so restocking can be watched without

@@ -107,7 +107,7 @@
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	var/list/greeted = controller.blackboard[BB_SP_GREETED]
 	for(var/mob/living/carbon/human/nearby in oview(4, pawn))
-		if(isnull(nearby.client) || nearby.stat != STABLE)
+		if(!sp_is_playing(nearby) || nearby.stat != STABLE)
 			continue // only players get a hello; crew talk to each other through threads
 		if(LAZYACCESS(greeted, nearby))
 			continue
@@ -115,7 +115,9 @@
 			continue
 		controller.set_blackboard_key_assoc_lazylist(BB_SP_GREETED, nearby, TRUE)
 		pawn.face_atom(nearby)
-		if(!isnull(sp_start_thread(controller, sp_pick_dialogue(pawn, nearby, "newcomer"), pawn, nearby)))
+		// One conversation at a time: a newcomer already talking to somebody gets a line rather than a second
+		// introduction to answer. The stand-in walked into a hallway and three crew introduced themselves at once.
+		if(!sp_in_any_thread(nearby) && !isnull(sp_start_thread(controller, sp_pick_dialogue(pawn, nearby, "newcomer"), pawn, nearby)))
 			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 		var/job_title = pawn.mind?.assigned_role?.title
 		sp_crew_speak(pawn, pick(

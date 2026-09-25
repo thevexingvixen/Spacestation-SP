@@ -204,6 +204,55 @@ being attacked cuts a conversation off outright.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
 
+### 2026-09-23 — A stand-in for the player
+
+With nobody free to sit at the keyboard, the player's side of conversation was tested by a tool that plays it:
+the stand-in (`sp_stand_in.dm`), a body the crew treat as a player, which pays a scripted visit in a live round,
+logs everything it hears as a player's-eye transcript, and clicks reply links through the same `Topic()` call a
+real click ends in. Its third visit passed 13 of 14 checks -- introduced, named, Talk to, a hand offered and
+remembered, "He seems to like you" on examine, the ID read up close, a rumour about a real fight. Two things it
+found that no unit test could: a busy crew member greeted by name said nothing at all (now they say so), and a
+hello heard from further off than a conversation can run started one that died on its first line (now it gets
+a line called back). What only a real client can show is the chat window drawing a link and BYOND delivering
+the click.
+
+Two more visits checked the fixes. The fourth passed 14 of 15: its one failure was the stand-in's own doing (its
+ID was read during the test of silence, so it now puts the ID away for that step), and it showed three crew
+introducing themselves to it at once, which is now one conversation at a time. The fifth passed 7 of 10, and
+all three failures have one cause that a real player would meet too: idle crew-to-crew chat takes people away
+from a player standing beside them. A geneticist finished an introduction and was pulled into a colleague's
+small talk 0.3 seconds later; a mime started two with other crew within eight seconds of being greeted by
+name. Talk to
+refuses anybody already in a conversation, so both menus came up empty, and the third failure (no warmth on
+examine) followed because the offer of a hand never happened. The same visit showed two smaller things: a crew
+member who had just been introduced still added the newcomer line "Didn't see you come in.", because the
+greeting remembers only greetings it made itself; and a mime cast in a conversation says nothing at all, since
+TG will not let a mime speak.
+
+### Next steps (recommended 2026-09-23)
+
+1. **Players before small talk** (small, and first). Talk to, or a line naming somebody, ends that person's
+   crew-to-crew chat and starts the player's; work still comes first, with the brush-off. An introduction,
+   however it started, counts as the newcomer greeting. Mimes stay out of spoken parts until M2 can give them
+   pantomime. Spending standing needs this: a crew member asked to follow you cannot be one the next idle chat
+   takes away. The stand-in's fifth visit is the test.
+2. **Spend standing: crew who do things for you.** Conversations change how people feel about you and nothing
+   else yet. The plan's effects that start a behaviour -- follow you, open a door they have access to, fetch
+   something from their department, call somebody on the radio -- turn standing into something you can use.
+   This closes the loop the dialogue work opened, and the stand-in can test each one.
+3. **M2: dialogue tied to what the crew already do.** Bartender and patron, doctor and patient ("You again?"),
+   chef and botanist, the HoP and the all-access request, security and the assistant seen pranking. Mostly
+   files; station events need to record who as well as where for the last one.
+4. **The warden and the brig.** Prisoners now reach cells; a warden to hold them, release them when the timer
+   runs out and keep the armoury, plus searches and confiscation so a thief stops keeping the loot.
+5. **Five minutes with a real client**, whenever convenient: the only unverified piece of the player side.
+6. **Housekeeping:** an intermittent lavaland runtime in upstream atmospherics gets blamed on whichever long SP
+   test is running (usually `sp_brew`); and the module README has grown past fifteen hundred lines and wants
+   splitting by department.
+
+Later: the Python sidecar, layering generated lines over the static ones the dialogue engine falls back to;
+miners and wider chemistry; antagonists who sabotage, frame and escape.
+
 ### 2026-09-22 — Dialogue as a system
 
 Conversations are data with a closed vocabulary, crew remember people, and a player can finally talk back: by

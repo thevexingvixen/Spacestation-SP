@@ -51,3 +51,7 @@ ADMIN_VERB(sp_behaviour_tally, R_DEBUG, "SP: Behaviour Tally", "Show what the AI
 	for(var/event in sort_list(tally))
 		lines += "[event]: [tally[event]]"
 	to_chat(user, boxed_message(jointext(lines, "<br>")))
+
+ADMIN_VERB(sp_stand_in, R_DEBUG, "SP: Stand-in Player", "Send a scripted stand-in player to talk to the crew, and log what they hear, see and click.", ADMIN_CATEGORY_DEBUG)
+	SSspacestation_sp.debug_stand_in()
+	to_chat(user, span_notice("A stand-in player has set off. Their visit is logged as 'SP: stand-in:' in the game log."))

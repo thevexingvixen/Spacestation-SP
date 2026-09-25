@@ -2506,3 +2506,129 @@
 	var/list/all = sp_all_dialogues()
 	for(var/id in list("shift_talk", "food_talk", "gossip_talk", "engineering_talk", "medical_talk", "security_quiet", "botany_talk"))
 		TEST_ASSERT(!isnull(all[id]), "the [id] topic is a dialogue file")
+
+/**
+ * A reply link leads back to its conversation, and a click only counts from the player it was offered to:
+ * the whole of what happens server-side when a player clicks one, from the link's own text.
+ */
+/datum/unit_test/sp_reply_link_round_trip
+
+/datum/unit_test/sp_reply_link_round_trip/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(!sp_is_playing(player), "a body with no client is nobody's player")
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	TEST_ASSERT(sp_is_playing(player), "until the stand-in takes their place")
+
+	var/datum/sp_dialogue/asked = sp_test_dialogue(with_player = TRUE)
+	asked.nodes = list(
+		"one" = list("speaker" = "a", "lines" = list("Well?"), "next" = list(list("to" = "reply"))),
+		"reply" = list("speaker" = "b", "options" = list(list("text" = "Yes.", "to" = "yes"), list("text" = "No.", "to" = SP_DIALOGUE_END))),
+		"yes" = list("speaker" = "a", "lines" = list("Good."), "next" = list(list("to" = SP_DIALOGUE_END))),
+	)
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(asked, crew, player)
+	thread.advance()
+	thread.advance()
+	var/list/links = sp_stand_in_links(sp_dialogue_offer_html(thread, player))
+	TEST_ASSERT_EQUAL(length(links), 2, "both replies are links")
+	var/list/first = links[1]
+	TEST_ASSERT_EQUAL(first[2], "Yes.", "labelled with what the player will say")
+	var/list/params = params2list(first[1])
+	var/datum/target = locate(params["src"])
+	TEST_ASSERT_EQUAL(target, thread, "a link leads back to the conversation it belongs to")
+	usr = crew
+	target.Topic(first[1], params)
+	TEST_ASSERT_EQUAL(thread.current, "reply", "a click from anybody else is not taken")
+	usr = player
+	target.Topic(first[1], params)
+	TEST_ASSERT_EQUAL(thread.current, "yes", "a click from the player is")
+	qdel(thread)
+	qdel(crew_ai)
+
+/// Somebody busy with work says so when a player names them, and carries on with the job.
+/datum/unit_test/sp_busy_crew_say_so
+
+/datum/unit_test/sp_busy_crew_say_so/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/doctor = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/patient = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	doctor.real_name = "Kaleb Siegrist"
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/medical/doctor_ai = new(doctor)
+	doctor_ai.set_ai_status(AI_STATUS_OFF)
+	doctor_ai.set_blackboard_key(BB_SP_PATIENT, patient)
+
+	doctor_ai.consider_conversation(player, "Kaleb, have you got a minute?")
+	TEST_ASSERT(doctor_ai.blackboard_key_exists(BB_SP_BRUSHED_OFF_AT), "a busy doctor named by a player says so")
+	TEST_ASSERT(!sp_test_owes_answer(doctor_ai), "without taking anything up")
+	TEST_ASSERT_EQUAL(doctor_ai.blackboard[BB_SP_PATIENT], patient, "or letting go of the patient")
+	var/said_at = doctor_ai.blackboard[BB_SP_BRUSHED_OFF_AT]
+	doctor_ai.consider_conversation(player, "Kaleb? Kaleb!")
+	TEST_ASSERT_EQUAL(doctor_ai.blackboard[BB_SP_BRUSHED_OFF_AT], said_at, "and says it once, not to every line")
+
+	// A line not naming them is somebody else's to answer, busy or not.
+	doctor_ai.clear_blackboard_key(BB_SP_BRUSHED_OFF_AT)
+	doctor_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT(!doctor_ai.blackboard_key_exists(BB_SP_BRUSHED_OFF_AT), "a line not aimed at them gets nothing")
+	qdel(doctor_ai)
+
+/**
+ * A conversation does not start between two people too far apart to keep it going, and a player calling out
+ * from over there is answered with a line instead. Found by the stand-in: a hello heard from seven tiles started
+ * an introduction that died on its first line, and the player got silence.
+ */
+/datum/unit_test/sp_no_conversation_out_of_reach
+
+/datum/unit_test/sp_no_conversation_out_of_reach/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, spot)
+	player.forceMove(locate(spot.x + SP_DIALOGUE_RANGE + 2, spot.y, spot.z))
+	crew.real_name = "Nell Ashby"
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(get_dist(crew, player) > SP_DIALOGUE_RANGE, "the test put them out of reach")
+	TEST_ASSERT_NULL(sp_begin_dialogue(sp_all_dialogues()["introductions"], crew, player), "no conversation starts out of reach")
+	crew_ai.consider_conversation(player, "Hello, Nell.")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_THREAD), "so a hello from over there does not start one")
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_CHAT_REPLY_DUE], player, "but it is answered with a line")
+	qdel(crew_ai)
+
+/**
+ * One conversation at a time for a player: nobody starts a second introduction with somebody already talking,
+ * but a player who turns to somebody by name is taken up whatever else is pending.
+ */
+/datum/unit_test/sp_one_conversation_at_a_time
+
+/datum/unit_test/sp_one_conversation_at_a_time/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/first = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/second = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	first.real_name = "Ada Quill"
+	second.real_name = "Bram Tully"
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/first_ai = new(first)
+	first_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/second_ai = new(second)
+	second_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/datum/sp_dialogue_thread/pending = sp_start_thread(first_ai, sp_all_dialogues()["introductions"], first, player)
+	TEST_ASSERT_NOTNULL(pending, "the first crew member introduces themselves")
+	var/datum/bt_node/ai_behavior/sp_greet_newcomer/greet = new
+	greet.perform(1, second_ai)
+	TEST_ASSERT(!second_ai.blackboard_key_exists(BB_SP_THREAD), "the second greets somebody already talking with a line, not another introduction")
+
+	second_ai.consider_conversation(player, "Hello")
+	TEST_ASSERT(!sp_test_owes_answer(second_ai), "a line naming nobody is a reply to the conversation they are in")
+	second_ai.consider_conversation(player, "Hello, Bram.")
+	TEST_ASSERT_EQUAL(sp_test_answering(second_ai), player, "but turning to somebody by name is theirs to take up")
+	qdel(greet)
+	sp_end_dialogue(first_ai, pending)
+	sp_test_hush(second_ai)
+	qdel(first_ai)
+	qdel(second_ai)

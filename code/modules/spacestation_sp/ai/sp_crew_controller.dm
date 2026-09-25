@@ -266,9 +266,14 @@
  * one; anything else gets a line back; our name and nothing more gets a look up.
  */
 /datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
-	if(istype(speaker.ai_controller, /datum/ai_controller/sp_crew) || sp_in_any_thread(speaker))
+	if(istype(speaker.ai_controller, /datum/ai_controller/sp_crew))
+		return
+	// Somebody mid-conversation is answering it, unless they have turned to us by name: a player with an
+	// introduction still pending from one crew member used to be ignored by everybody else until it lapsed.
+	if(sp_in_any_thread(speaker) && !sp_named(sp_words(raw_message), pawn))
 		return
 	if(!free_to_talk(speaker))
+		brush_off(speaker, raw_message)
 		return
 	var/list/words = sp_words(raw_message)
 	sp_notice_id(src, speaker)
@@ -311,6 +316,35 @@
 		return owed == speaker && blackboard[BB_SP_CHAT_ASKED_AT] == world.time
 	var/ready_at = blackboard[BB_SP_GREET_COOLDOWN]
 	return isnull(ready_at) || ready_at <= world.time
+
+/**
+ * Too busy to talk, but not too busy to say so. A crew member mid-job does not stop for a chat -- that rule is
+ * why a medic keeps walking a patient to the table -- but a player met with silence cannot tell busy from
+ * broken. The stand-in found exactly that on its first visit: a chemist on a delivery, greeted by name, and
+ * nothing. So a player who names somebody busy gets a word over the shoulder, once in a while, and the job
+ * carries on untouched.
+ */
+/datum/ai_controller/sp_crew/proc/brush_off(mob/living/speaker, raw_message)
+	var/mob/living/carbon/human/human_pawn = pawn
+	if(!istype(human_pawn) || human_pawn.stat != STABLE || human_pawn.client || !sp_is_playing(speaker))
+		return
+	if(!sp_named(sp_words(raw_message), pawn))
+		return
+	if(!busy_with_work() && !blackboard_key_exists(BB_SP_THREAD) && !blackboard_key_exists(BB_SP_IN_THREAD))
+		return // only between answers, not busy: the next line will be taken up
+	var/said_at = blackboard[BB_SP_BRUSHED_OFF_AT]
+	if(!isnull(said_at) && world.time - said_at < SP_BRUSH_OFF_GAP)
+		return
+	set_blackboard_key(BB_SP_BRUSHED_OFF_AT, world.time)
+	var/their_name = sp_knows_name(src, speaker) ? sp_first_name(speaker) : sp_dialogue_stranger(human_pawn)
+	human_pawn.face_atom(speaker)
+	sp_crew_speak(human_pawn, pick(
+		"Bit busy, [their_name]. Give me a minute.",
+		"Can't stop, sorry.",
+		"In the middle of something, [their_name]. Catch me after?",
+		"One thing at a time, [their_name].",
+	))
+	sp_record("talk.brushed_off")
 
 /// Owes `speaker` a one-line answer to `raw_message`.
 /datum/ai_controller/sp_crew/proc/queue_reply(mob/living/speaker, raw_message)

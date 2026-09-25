@@ -86,3 +86,8 @@
 /// word, so the arrest ladder, the cuffs and the cell can be watched without waiting on the greytide to
 /// misbehave three times in front of a witness. Config key: SP_DEBUG_ARREST
 /datum/config_entry/flag/sp_debug_arrest
+
+/// Debug: two minutes in, send a stand-in player to visit the crew and log what they hear, see and click
+/// (sp_stand_in.dm), so the player's side of conversation can be checked with nobody at the keyboard.
+/// Config key: SP_DEBUG_STAND_IN
+/datum/config_entry/flag/sp_debug_stand_in

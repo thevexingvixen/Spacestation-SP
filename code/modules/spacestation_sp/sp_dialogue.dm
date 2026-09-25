@@ -428,6 +428,10 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 /proc/sp_dialogue_is_player(mob/living/who)
 	return !istype(who?.ai_controller, /datum/ai_controller/sp_crew)
 
+/// Somebody a player is playing: a connected client, or the stand-in that takes one's place in a test.
+/proc/sp_is_playing(mob/living/who)
+	return !isnull(who?.client) || HAS_TRAIT(who, TRAIT_SP_STAND_IN)
+
 /proc/sp_dialogue_role_is_player(datum/sp_dialogue/dialogue, role)
 	var/list/spec = dialogue.roles[role]
 	return islist(spec) && !!spec["player"]
@@ -501,7 +505,10 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	thread.current = dialogue.start
 	thread.next_due = world.time
 	thread.started_at = world.time
-	if(!sp_dialogue_conditions_hold(thread, dialogue.start_if))
+	// Nothing starts between two people who could not keep it going. A player calling out from across a room is
+	// heard further off than a conversation can run, and one begun there died on its first line and left them
+	// with silence; out of reach, they get a line called back instead (consider_conversation()).
+	if(!sp_dialogue_still_talking(thread) || !sp_dialogue_conditions_hold(thread, dialogue.start_if))
 		qdel(thread)
 		return null
 	return thread
@@ -1023,11 +1030,18 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 /datum/sp_dialogue_thread/proc/show_options(mob/living/carbon/human/player)
 	if(QDELETED(player) || isnull(player.client) || !length(pending_options))
 		return
+	to_chat(player, span_notice(sp_dialogue_offer_html(src, player)))
+
+/**
+ * The replies on offer as the links a player's chat shows under the line they answer. Kept apart from sending
+ * them so the stand-in reads exactly what a client would be sent (sp_stand_in.dm).
+ */
+/proc/sp_dialogue_offer_html(datum/sp_dialogue_thread/thread, mob/living/carbon/human/player)
 	var/list/links = list()
-	for(var/i in 1 to length(pending_options))
-		var/list/option = pending_options[i]
-		links += "<a href='byond://?src=[REF(src)];sp_choice=[i]'>&#91;[sp_dialogue_fill(src, option["text"], player)]&#93;</a>"
-	to_chat(player, span_notice("Reply: [jointext(links, " ")]"))
+	for(var/i in 1 to length(thread.pending_options))
+		var/list/option = thread.pending_options[i]
+		links += "<a href='byond://?src=[REF(thread)];sp_choice=[i]'>&#91;[sp_dialogue_fill(thread, option["text"], player)]&#93;</a>"
+	return "Reply: [jointext(links, " ")]"
 
 /datum/sp_dialogue_thread/Topic(href, list/href_list)
 	. = ..()
@@ -1072,6 +1086,20 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 
 // --- Talking to somebody on purpose ----------------------------------------------------------------
 
+/// What a crew member will talk to a player about just now, by title; null when they will not talk at all.
+/proc/sp_talk_offer(mob/living/carbon/human/npc, mob/living/carbon/human/player)
+	var/datum/ai_controller/sp_crew/crew_ai = npc?.ai_controller
+	if(!istype(crew_ai) || !crew_ai.free_to_talk(player) || crew_ai.blackboard_key_exists(BB_SP_THREAD))
+		return null
+	return sp_dialogues_for_talk(npc, player)
+
+/// Starts the conversation a player picked from Talk to, if it is still on offer and they are still close.
+/proc/sp_talk_start(mob/living/carbon/human/npc, mob/living/carbon/human/player, title)
+	var/list/choices = sp_talk_offer(npc, player)
+	if(!length(choices) || !(title in choices) || get_dist(npc, player) > 2)
+		return null
+	return sp_start_thread(npc.ai_controller, choices[title], npc, player)
+
 /**
  * Talking to a crew member on purpose, rather than waiting for them to start. Right-click them, pick what
  * about, and the conversation runs through the same threads as any other, spoken aloud.
@@ -1083,21 +1111,20 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	var/mob/living/carbon/human/player = usr
 	if(!istype(player) || player.stat != STABLE)
 		return
-	var/datum/ai_controller/sp_crew/crew_ai = ai_controller
-	if(!istype(crew_ai))
+	if(!istype(ai_controller, /datum/ai_controller/sp_crew))
 		to_chat(player, span_notice("[src] does not seem to want to talk."))
 		return
-	if(!crew_ai.free_to_talk(player) || crew_ai.blackboard_key_exists(BB_SP_THREAD))
+	var/list/choices = sp_talk_offer(src, player)
+	if(isnull(choices))
 		to_chat(player, span_notice("[src] is busy."))
 		return
-	var/list/choices = sp_dialogues_for_talk(src, player)
 	if(!length(choices))
 		to_chat(player, span_notice("[src] has nothing to say to you just now."))
 		return
 	var/picked = tgui_input_list(player, "What about?", "Talk to [src]", choices)
-	if(isnull(picked) || QDELETED(src) || get_dist(src, player) > 2 || !crew_ai.free_to_talk(player))
+	if(isnull(picked) || QDELETED(src))
 		return
-	sp_start_thread(crew_ai, choices[picked], src, player)
+	sp_talk_start(src, player, picked)
 
 /// How they regard you shows on examine, but only at the extremes: felt the rest of the time.
 /datum/ai_controller/sp_crew/proc/on_examined(datum/source, mob/user, list/examine_list)
