@@ -1,0 +1,1369 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><base href="../../"><link rel="stylesheet" href="dmdoc.css"><title>code/modules/spacestation_sp/README.md - /tg/ Station 13</title></head><body><header><a href="index.html">/tg/ Station 13</a> - <a href="index.html#modules">Modules</a> - <a href="index.html#types">Types</a></header><main><h1>Spacestation SP module <aside>code/modules/spacestation_sp/README.md</aside> <a href="https://github.com/thevexingvixen/Spacestation-SP/blob/3f7b91492fd681c6c59eda48a07ccc87692d91ae/code/modules/spacestation_sp/README.md"><img src="git.png" width="16" height="16" title="code/modules/spacestation_sp/README.md"></a></h1><table class="summary" cellspacing="0"><tr><td colspan="2"><p>Singleplayer additions to /tg/station. Everything SP-specific lives in this folder (plus
+<code>code/__DEFINES/spacestation_sp.dm</code>) so the fork can be rebased onto upstream.</p>
+<h2 id="files">Files</h2>
+<ul>
+<li><code>sp_config.dm</code> — config entries: <code>SP_AUTOPOPULATE &lt;n&gt;</code>, <code>SP_ENGINE_SIMULATED_OUTPUT &lt;kW&gt;</code>,
+<code>SP_ENGINE_REAL_EMITTERS</code> (experimental).</li>
+<li><code>sp_subsystem.dm</code> — <code>SSspacestation_sp</code>: tracks AI crew, hooks round start for auto-populate,
+runs the 10-second engine watchdog (telemetry, anti-vacuum guard, scram, simulated output).</li>
+<li><code>sp_crew_spawner.dm</code> — client-less human crew creation via <code>SSjob.equip_rank</code>, manifest injection,
+AI attach. <code>sp_controller_for_job()</code> picks the controller by department;
+<code>sp_essential_job_types()</code> guarantees, after the heads, one each of engineer, security officer,
+doctor, chemist, botanist, cook, bartender, quartermaster and cargo technician, in that order.</li>
+<li><code>sp_engineering.dm</code> — power monitoring and the scripted engine startup (see below).</li>
+<li><code>sp_breach.dm</code> — hull breach detection and RCD repair (see below).</li>
+<li><code>sp_botany.dm</code> — hydroponics helpers: which tray needs what, seed pool, produce and delivery targets.</li>
+<li><code>sp_admin_verbs.dm</code> — Fun tab: &quot;SP: Populate Station&quot;, &quot;SP: Spawn Crew (Job)&quot;, &quot;SP: Spawn Antagonist
+(Thief)&quot;; Debug tab: &quot;SP: Behaviour Tally&quot;.</li>
+<li><code>ai/sp_crew_controller.dm</code> — <code>/datum/ai_controller/sp_crew</code> and the <code>/medical</code>, <code>/security</code>,
+<code>/engineer</code> subtypes. Hearing hook, incident routing, attacker memory, <code>TRAIT_NOHUNGER</code>.</li>
+<li><code>ai/sp_crew_behaviors.dm</code> — leaves, decorators, targeting strategies and subtree declarations.</li>
+<li><code>ai/sp_botanist_behaviors.dm</code> — the botanist's leaves and subtree declarations.</li>
+<li><code>sp_conversation.dm</code> — what a crew member makes of what somebody says, standing, and one-line answers.</li>
+<li><code>sp_dialogue.dm</code> — written dialogue: the files and their checks, memory, threads, reply links, Talk to.</li>
+<li><code>sp_stand_in.dm</code> — the stand-in player, a debug tool that plays the player's side of a conversation.</li>
+<li><code>sp_cargo.dm</code> — the supply request queue, ordering against the cargo budget, and crate handling.</li>
+<li><code>sp_curiosity.dm</code> — roaming destinations, what a character would pocket, and finding lockers and doors.</li>
+<li><code>sp_crime.dm</code> — who can see a crime and what they do about it, shared by the greytide and antagonists.</li>
+<li><code>sp_antagonist.dm</code> — schemes: an AI crew member's hidden goal and the score-keeping for it.</li>
+<li><code>ai/sp_antagonist_behaviors.dm</code> — the antagonist controller and the leaves that pursue a scheme.</li>
+<li><code>sp_greytide.dm</code> — the assistants' haunts and tastes, the prank menu, the tool-storage trips, and the
+malicious streak that smashes a light.</li>
+<li><code>ai/sp_greytide_behaviors.dm</code> — the greytide's gear-up, mischief, rummage and door-trying leaves.</li>
+<li><code>sp_chemistry.dm</code> — planning a medicine back to what the dispenser pours, brewing it a stage at a time,
+and driving the ChemMaster.</li>
+<li><code>ai/sp_chemist_behaviors.dm</code> — the chemist's brewing, patch-printing and delivery leaves.</li>
+<li><code>sp_role_takeover.dm</code> — keeping a job an AI crew member holds open to a joining player, and taking the
+holder off shift when one arrives.</li>
+<li><code>sp_bar.dm</code> — the drinks menu, the two dispensers, and what counts as a made drink.</li>
+<li><code>sp_kitchen.dm</code> — the prep table and counter, the prep-step table, the mixes, and the recipe scan.</li>
+<li><code>sp_medical.dm</code> — where medbay is, triage, picking a treatment for a limb, and the cryo tubes.</li>
+<li><code>ai/sp_medical_behaviors.dm</code> — the patient's side (hold still, come in for a checkup) and the medic's.</li>
+<li><code>ai/sp_social_behaviors.dm</code> — the leaves that carry a conversation, written or otherwise.</li>
+<li><code>ai/sp_janitor_behaviors.dm</code> — the janitor: a mop, water for it, and the mess.</li>
+<li><code>ai/sp_clown_behaviors.dm</code> — the clown: a horn, a banana, and where a peel may go.</li>
+<li><code>ai/sp_cargo_behaviors.dm</code> — the quartermaster's paperwork and the technicians' hauling.</li>
+<li><code>ai/sp_chef_behaviors.dm</code> — the chef's stocking, prep, mixing, cooking and serving leaves.</li>
+<li><code>ai/sp_curiosity_behaviors.dm</code> — the idle leaves every job shares: roam, rummage, try a door.</li>
+<li><code>ai/sp_bartender_behaviors.dm</code> — the bartender's pouring, serving and glassware leaves.</li>
+</ul>
+<h2 id="behaviour-trees-compiled-into">Behaviour trees (<code>ai/*.bt.json</code>, compiled into <code>build/behavior_trees/</code>)</h2>
+<ul>
+<li><code>sp_crew_core</code> — shared priority ladder: escape captivity &gt; defense &gt; safety &gt; threat &gt; social.</li>
+<li><code>sp_crew_defense</code> — attacked: report over radio (or shout if no headset), then flee; memory expires
+after 20 s.</li>
+<li><code>sp_crew_threat</code> — someone nearby holds a weapon and is not security/command: warn them and keep a
+4-7 tile distance. Driven by the <code>sp_scan_threats</code> leaf running in the tree's parallel branch. A monkey
+only counts once it is fighting or angry (<code>sp_armed_threat()</code>): Pun Pun arms themselves with whatever
+turns up behind the bar, and before that rule the crew in the bar shouted for security about it for
+minutes on end.</li>
+<li><code>sp_crew_patient</code> — first thing in every tree: a medic has asked us to hold still, or we are in a working
+cryo tube or on an operating table, so stay put.</li>
+<li><code>sp_crew_safety</code> — below <code>BB_SP_HURT_THRESHOLD</code>: shout for a medic, walk to medbay, wait to be seen.</li>
+<li><code>sp_crew_checkup</code> — idle and carrying 15+ brute and burn (or a wound) with a medic on duty: walk to
+medbay, say so, wait to be seen.</li>
+<li><code>sp_crew_social</code> — someone said our first name and nothing else: face them and ask what they want.</li>
+<li><code>sp_crew_respond</code> — carry on a conversation under way, a line at a time, or give the one-line answer
+somebody is owed, unless it is 15 s too late. Officers run it below their security work.</li>
+<li><code>sp_crew_chatter</code> — the idle side of talk: introduce yourself to a newcomer, start a conversation with
+somebody nearby, and the odd remark over common. Every crew tree runs it.</li>
+<li><code>sp_department_wander</code> — pick a turf in <code>BB_SP_WANDER_AREAS</code> (or home area) → JPS move → linger.</li>
+<li><code>sp_medical_patient</code> — pick a patient → walk over → scan them → either take them to cryo or treat
+them limb by limb. See &quot;Medbay&quot; below.</li>
+<li><code>sp_medical_cryo_setup</code> — connect the gas, set the freezer, put a beaker in every tube.</li>
+<li><code>sp_medical_surgical_kit</code> — doctors and the CMO fetch the tools their medkit lacks off a theatre tray.</li>
+<li><code>sp_security_respond</code> — suspect: equip baton, close in, attack; once they are down, cuff them;
+once restrained or dead, announce &quot;area secure&quot; and clear. With only a location, walk there and
+look around for 8 s.</li>
+<li><code>sp_engineer_power</code> — power check → say so → walk to the engine room → run the loop setup →
+wait 40 s → bring the engine online.</li>
+<li><code>sp_engineer_repair</code> — find the nearest breach → announce it → put on EVA gear → open internals →
+equip the RCD → walk to a safe tile beside the hole → lay plating over it.</li>
+<li><code>sp_botanist_tend</code> — find the tray that most wants attention → put the right thing in hand → walk
+over → work it. Harvest beats everything else, then clearing dead plants, weeding, watering and
+finally planting an empty tray.</li>
+<li><code>sp_botanist_gather</code> — harvesting drops produce at the botanist's feet, so this picks it up and
+stows it in their bag.</li>
+<li><code>sp_botanist_deliver</code> — once carrying five or more, leave a couple out as samples in hydroponics
+(at most once every four minutes), then carry the rest to a kitchen table and say so on the
+service channel.</li>
+<li><code>sp_botanist_refill</code> — top the watering can up at a water tank when it runs dry.</li>
+<li><code>sp_qm_order</code> — walk to a cargo console and put the outstanding requests on the order list, or a
+standing restock when nobody has asked for anything.</li>
+<li><code>sp_qm_shuttle</code> — send the supply shuttle out with the orders, and call it back with the goods.</li>
+<li><code>sp_cargo_haul</code> — drag a crate off the shuttle, to the department that requested it if it was
+asked for, otherwise into the cargo bay.</li>
+<li><code>sp_chef_stock</code> — carry ingredients out of the fridges, cabinets and off the kitchen floor and pile
+them on one prep table. Also the unload half: an armful in hand always goes down before more is
+fetched.</li>
+<li><code>sp_chef_mix</code> — take a bowl to the sink for water, back to the table for flour, and let the reaction
+make dough. Cheese is the same trip without the sink.</li>
+<li><code>sp_chef_prep</code> — one rung of the cooking tree: cut with a knife, flatten with a rolling pin, or carry
+something to the griddle, the oven or the processor and switch it on.</li>
+<li><code>sp_chef_collect</code> — take what has finished out of the oven and off the griddle, and switch the
+griddle off behind them.</li>
+<li><code>sp_chef_cook</code> — stand at the prep table and craft whatever the pile currently supports.</li>
+<li><code>sp_chef_serve</code> — carry a finished dish to the counter, set it down, and say so on the service channel.</li>
+<li><code>sp_chef_supply</code> — when the kitchen has been picked clean, put a food crate on cargo's list.</li>
+<li><code>sp_janitor_supplies</code> — fetch a mop off the floor, and fill it at a sink, bucket or cart.</li>
+<li><code>sp_janitor_clean</code> — pick up the litter, then mop the nearest mess, maintenance last.</li>
+<li><code>sp_clown_antics</code> — honk at somebody, leave a peel somewhere public, ask botany for more bananas.</li>
+<li><code>sp_crew_rummage</code> — open a locker or crate in sight and pocket anything that takes their fancy.</li>
+<li><code>sp_crew_try_door</code> — walk up to a door they have no access to and try it anyway.</li>
+<li><code>sp_crew_roam</code> — wander off to somewhere else on the station for a while.</li>
+<li><code>sp_greytide_gear_up</code> — an assistant's trip to Primary Tool Storage for gloves and a tool, three at most.</li>
+<li><code>sp_greytide_mischief</code> — pick a prank from whatever is on offer where they are standing, walk to it and
+pull it, unless an officer is in sight.</li>
+<li><code>sp_greytide_rummage</code> / <code>sp_greytide_try_door</code> — the nosier versions of the two curiosity subtrees that
+assistants run in place of the ordinary ones.</li>
+<li><code>sp_medical_restock</code> — a medic who has run low empties a locker or a delivered crate, asks cargo for a
+crate, or asks botany for aloe.</li>
+<li><code>sp_chemist_work</code> — plan a medicine back to the dispenser, brew it a stage at a time at the bench, and
+print the patches.</li>
+<li><code>sp_chemist_deliver</code> — carry the patches to the chemistry fridge and the cryoxadone to the cryo room.</li>
+<li><code>sp_bartender_pour</code> — take a glass to whichever tap holds the next thing the drink needs, and measure
+it in. Most cocktails want something from each of the two dispensers, so this runs twice per glass.</li>
+<li><code>sp_bartender_serve</code> — carry the finished drink to the bar counter and call it out.</li>
+<li><code>sp_bartender_glasses</code> — buy more glasses from the dinnerware vendor when the shelf is bare.</li>
+</ul>
+<h2 id="conversation-and-standing">Conversation and standing (<code>sp_conversation.dm</code>)</h2>
+<p>Crew talk to each other, and to you, through written conversations (next section). This file is what a crew
+member makes of a line somebody says to them, and how they feel about that person.</p>
+<p>What a player says to a crew member in singleplayer is fairly predictable, so it is read in whole words
+(<code>sp_words()</code>) into an intent: a greeting, &quot;who are you&quot;, &quot;where is x&quot;, asking for help, thanks, abuse, &quot;how
+are you&quot;, &quot;follow me&quot;. A crew member takes up a line with their first name in it, and looks up and asks what
+you want when the name is all there is. A line naming nobody is taken by the nearest crew member free to take
+it (<code>sp_first_to_answer()</code>), and a line naming somebody else is left to them. A line that opens a written
+conversation starts one -- a stranger saying hello gets introduced -- and anything else gets a line back,
+dropped if it would come more than 15 seconds late. Crew also introduce themselves to a player they have not
+met as they come near, and make the odd remark to the whole station over common.</p>
+<p>Every exchange moves how that crew member feels about the person, held in <code>BB_SP_REPUTATION</code>, once per line
+answered: deciding whether to answer (<code>sp_speech_intent()</code>) changes nothing. Politeness and conversation raise
+it, an attack drops it sharply, and it colours answers and which way a conversation goes. At the extremes it
+shows on examine -- &quot;seems to like you&quot;, &quot;seems wary of you&quot; -- and the rest of the time it is only felt.</p>
+<p>None of this outranks an emergency: conversation sits in <code>sp_crew_core</code> below every alarm, so a fight, an
+injury or a drawn weapon cuts it off, being attacked ends it outright, and work that turns up ends it too.
+Officers talk to people from below their security work, and take nothing up while they have an incident, a
+suspect, a prisoner, a briefing or a kit trip in hand.</p>
+<p><strong>Busy is not the same as ignoring you.</strong> A crew member in the middle of a job still does not stop for a chat,
+but a player who names them gets a word over the shoulder -- &quot;Bit busy, give me a minute&quot; -- at most every 20
+seconds, and the job carries on untouched (<code>brush_off()</code>). Before this a chemist on a delivery, greeted by name,
+said nothing at all, and from the player's side busy and broken looked exactly alike.</p>
+<p><strong>One conversation at a time, and only within reach.</strong> A conversation never starts between two people who could
+not keep it going -- five tiles apart and in sight -- so a hello called from across a room is answered with a
+line rather than an introduction that dies on its first word. A newcomer already talking to somebody is
+greeted by others with a line, not a second introduction to answer. And a player mid-conversation who turns
+to somebody else by name is taken up by them; only a line naming nobody is read as a reply to the
+conversation already going. All three were found by the stand-in rather than by reading code.</p>
+<h2 id="written-dialogue">Written dialogue (<code>sp_dialogue.dm</code>)</h2>
+<p>Conversations are written as data, one json file each in <code>strings/spacestation_sp/dialogue</code>. A dialogue is a
+small graph: each node names the role that speaks it and the lines it may use, and weighted edges say where it
+goes next. Roles are cast against real people when a conversation starts -- by job, by department, and by
+whether a player or a crew member plays them -- so the janitor's line is the janitor's whichever of the pair
+walked over.</p>
+<p><strong>The vocabulary is closed.</strong> A file may ask about a dice roll, a job, a department, what one role thinks of
+the other, what one remembers of the other, whether they know the other's name, where they are, whether
+somebody is hurt or holding something, how far into the shift it is, and what has happened on the station
+lately. It may move standing, remember or forget a fact, learn a name, record an event, and hand over an item
+-- only one the giver actually carries, since nothing is conjured. All of it is checked as the file loads and
+again in a unit test: every edge and reply leads somewhere, every node can be reached, every placeholder can
+be filled. A dialogue that fails is not loaded at all, and the test names it.</p>
+<p><strong>Memory.</strong> Each crew member keeps a book on people (<code>BB_SP_MEMORY</code>): whether they know the name, how often
+they have talked, the last few conversations had, and facts. A player is filed under their mind, so a new body
+does not make them a stranger. The crew know each other; a player's name they learn by being told -- an &quot;I'm
+Tom&quot; in any line, or the introduction -- or by standing beside you long enough to read your ID
+(<code>sp_notice_id()</code>). Until then you are &quot;mate&quot;, or to security, &quot;citizen&quot;.</p>
+<p><strong>Your side of it.</strong> When it is your turn, your replies appear as links under the line you are answering. A
+click says the reply aloud through your own character, so everybody nearby hears it the ordinary way, and the
+conversation goes where that reply leads. Only you can pick, an offer lapses after 30 seconds, and silence is
+an answer the file decides what to do with. You can also start one: right-click a crew member and use <strong>Talk
+to</strong>, which lists what they will talk to you about just now -- an introduction only to a stranger, a rumour
+only once something has happened.</p>
+<p><strong>Crew among themselves.</strong> One thread speaks for both sides, a line at a time with a gap between, run from the
+respond subtree so it is not left half-finished for a stroll. The other one is marked as in it
+(<code>BB_SP_IN_THREAD</code>) and nobody else starts one with them. A conversation ends when the graph runs out, when the
+pair drift apart, when work or an emergency turns up for either of them, or after two minutes whatever the
+file says. What a pair have had lately is remembered per person, so the same one does not come round twice.</p>
+<p><strong>What they talk about.</strong> The seven keyword topics the crew used to share are files now, in the tones picked
+for them: dry office humour by default, darker where a department suits it -- the engineer who does not trust
+the engine, the doctor who has &quot;buried people who said it's nothing&quot;. Rumours retell what actually happened
+(<code>sp_station_event()</code>): a fight, an arrest, the lights going out, somebody's graffiti, the clown's latest
+peel, and where. Five dialogues are written for a player: introductions, asking what somebody does, asking for
+a hand, chatting about the shift, and asking whether they have heard anything.</p>
+<h2 id="the-stand-in-player">The stand-in player (<code>sp_stand_in.dm</code>)</h2>
+<p>Most of this module is proved with unit tests and headless rounds, but the player's side of a conversation
+needs a player, and the stand-in plays one. It is a body with no AI controller (which is what &quot;a player&quot; means
+to the dialogue engine) and a trait for the one place that asks for a connected client, greeting newcomers.</p>
+<p>It pays the crew a scripted visit in a live round: it turns up two tiles from somebody idle, is introduced,
+clicks &quot;I'm Jo Standin.&quot;, opens Talk to and asks what they do, offers a hand, says thanks, and examines them to
+see whether they like it now. Then it visits somebody else and says nothing, to check that silence is an
+answer, steps up close enough to have its ID read, and asks for the news. Everything it hears is logged as a
+player's-eye transcript, and each check is a <code>PASS</code> or <code>FAIL</code> line, tallied as <code>standin.pass</code> and
+<code>standin.fail</code>.</p>
+<p>It reads reply links exactly as a client would be sent them (<code>sp_dialogue_offer_html()</code>), and clicks them the
+way <code>/client/Topic()</code> ends up doing: the link's own parameters, the conversation found from them with
+<code>locate()</code>, and its <code>Topic()</code> called with <code>usr</code> set to the player. What it cannot check is the chat window
+drawing the link and BYOND turning a click into that call, which is how TG's own PDA replies work too.</p>
+<p>Config key <code>SP_DEBUG_STAND_IN</code> sends one out two minutes into a round; the <strong>SP: Stand-in Player</strong> admin verb
+sends one whenever it is wanted. Its first visit found a real problem the unit tests could not: a busy crew
+member, greeted by name, said nothing at all (see &quot;Busy is not the same as ignoring you&quot; above). Its fifth
+found one still open: idle crew chat takes people away from a player (see Known limitations).</p>
+<h2 id="the-janitor">The janitor (<code>ai/sp_janitor_behaviors.dm</code>)</h2>
+<p>MetaStation has no custodial closet, so the mop and the janitorial cart in the janitor's office are the
+whole kit, and the map's own decals -- some five hundred of them, mostly dirt -- are the work. It never
+runs out, so the order is what matters: litter first, because somebody can slip on that, then the nearest
+stain, with maintenance pushed to the back of the queue because the crew see the hallways.</p>
+<p><strong>Nothing happens until you wait for it.</strong> TG's cleaner component runs the cleaning itself through
+<code>INVOKE_ASYNC</code>, so clicking a floor with a mop returns within the same tick while the mopping goes on behind
+it. The first version checked whether the stain had gone two milliseconds after asking, declared failure, and
+walked off to the next one -- which cancelled the <code>do_after</code> that was still running. Four rounds of a janitor
+losing a unit of water per stain and cleaning none of them came down to that. The leaf now stands still and
+waits for the stain to actually go, up to a deadline. A unit test could not have caught it: the test called
+the cleaning directly and slept, which is exactly what the live crew member was not doing.</p>
+<p><strong>Two ways to starve a janitor</strong>, both found in play and both fixed by remembering a failure rather than
+repeating it. Litter outranks mess, because people slip on it, so one bag of popcorn behind a wall in
+maintenance won that contest every few seconds, failed the walk, and cancelled the walk to the mess each
+time: litter now gets the same give-up list a mess has. And a stain in a room the janitor has no access to is
+every stain in that room, so the whole area is set aside for a few minutes rather than each decal costing its
+own 45-second timeout.</p>
+<p><strong>Water is the catch.</strong> A mop below <code>SP_MOP_DRY</code> cleans nothing and says so in a balloon nobody reads.
+Every mop bucket and the janitorial cart start the round bone dry, the janitor's own cart included, so a
+dry one is skipped rather than walked to; sinks fill themselves at Initialize and are the reliable source.
+Filling from a bucket or cart is the <em>secondary</em> interaction (<code>mop_bucket.dm</code>), so a plain click on one
+does nothing at all, while a sink takes the plain one. Each janitor finds a sink to fall back on once, at
+the start of the shift, rather than searching the station every time the mop runs dry.</p>
+<p>Not built: replacing broken light tubes. The light replacer is in engineering's shared storage on this
+map, not in the janitor's office, and the greytide's smashed tubes are what would make it worth the trip.</p>
+<h2 id="the-clown">The clown (<code>ai/sp_clown_behaviors.dm</code>)</h2>
+<p>Honks at whoever is nearby, and leaves a banana peel where somebody will find it. The horn is harmless by
+TG's own numbers -- no force, no hitsound -- and is used in hand rather than swung at anybody. The peel is
+the banana's own trash type, made directly rather than by eating, because a clown mask is in the way of
+eating and the peel is the point.</p>
+<p><strong>Where a peel may go</strong> is the only line drawn: hallways, the commons and the service end. Never medbay,
+security, engineering or atmospherics, where somebody going over is a ruined shift rather than a joke.</p>
+<p>The clown starts with one banana, so the supply is the loop: out of bananas, they ask botany over the
+radio, in the words botany listens for, and bananas are now something botany can be asked to grow. Clown
+asks, botany plants, clown drops, janitor clears up.</p>
+<h2 id="an-arrest-is-not-an-attack">An arrest is not an attack</h2>
+<p>A person being taken in radios that the officer attacked them, and they are not wrong: the officer did hit
+them. Acting on that report turns one arrest into a brawl. In a live round the suspect called it in, every
+other officer took the arresting officer for an attacker, and four of them fought each other in the aft
+hallway while the suspect wandered off to try the mech bay door — and no arrest in five rounds ever reached
+a cell until this was fixed.</p>
+<p><code>sp_is_arresting()</code> answers the question two ways: the officer's current incident is this person, or the
+person's record says they are wanted. A report naming an officer who is arresting the reporter is dropped,
+and somebody shouting for help while being taken in does not summon the department. A genuine attack on an
+officer still gets answered, which is what <code>sp_arrest_is_not_an_attack</code> pins.</p>
+<h2 id="incident-reporting-chain">Incident reporting chain</h2>
+<ol>
+<li>A crew member is attacked → <code>on_attacked</code> sets <code>BB_SP_ATTACKER</code>.</li>
+<li><code>sp_report_attack</code> speaks the report (radio when the crew member wears a headset, otherwise a
+local shout) and stores a structured record in <code>BB_SP_LAST_INCIDENT</code>.</li>
+<li>Every AI crew member hearing that line reads the reporter's record in <code>on_pre_hear</code>; the security
+controller turns it into <code>BB_SP_INCIDENT_TARGET</code> / <code>BB_SP_INCIDENT_LOCATION</code> and acknowledges over
+the security channel.</li>
+<li>Players get the same effect for free: a call for help sets an incident location for nearby AI security
+(<code>sp_message_is_distress</code>). Words of violence count on their own. &quot;Help&quot; and &quot;security&quot; count only when
+the line sounds urgent (an exclamation mark, capitals, the word leading the line, or nothing but
+pleading), never in a calm request: &quot;can you help&quot; used to send every officer in earshot running.</li>
+</ol>
+<h2 id="engine-startup">Engine startup (<code>sp_engineering.dm</code>)</h2>
+<p><code>sp_run_engine_setup()</code> performs the standard /tg/ cold-loop procedure, restricted to machines inside
+<code>/area/station/engineering/supermatter</code>: connect and open the nitrogen canisters, run the loop pumps
+at max pressure (bypass/mix pumps untouched), turn on filters, drop the freezers to their minimum,
+raise the chamber vents' pressure bound so the chamber actually fills, and set the chamber scrubbers
+to scrub waste gases only. It also maxes every station SMES and sets solar tracking to auto.</p>
+<p>By default the crystal is <strong>not</strong> energized. Once the chamber holds ≥400 moles of ≥90% nitrogen the
+engineer declares the engine online and <code>SSspacestation_sp</code> feeds
+<code>SP_ENGINE_SIMULATED_OUTPUT</code> kW into the engine-room SMES units every watchdog tick. This keeps the
+lights on reliably without depending on a perfectly tuned coolant loop.</p>
+<p>Setting <code>SP_ENGINE_REAL_EMITTERS</code> switches to real emitters: circulation is enabled once the chamber
+is full, and the emitters only fire when it is ≥600 moles, ≥90% nitrogen and below 200 K. This is
+experimental — on MetaStation the waste side of the loop still needs tuning, and the watchdog will
+scram the emitters as the crystal heats.</p>
+<p>The watchdog always runs: it disables circulation if the chamber drops below 250 moles (a vacuum
+around an energized crystal superheats instantly), pauses the emitters for 2 minutes at the first
+temperature warning, and scrams for 10 minutes with a radio call if integrity starts falling.</p>
+<h2 id="hull-breaches">Hull breaches (<code>sp_breach.dm</code>)</h2>
+<p>A breach is a space turf inside a station area that still has a real floor next to it. Solar arrays,
+external maintenance and space catwalks are made of space turfs with no adjacent floor, so they never
+match; <code>GLOB.sp_breach_area_blacklist</code> covers anything else that is open by design.</p>
+<p><code>SSspacestation_sp</code> walks a twelfth of the station's areas every five seconds, so a full sweep is
+spread over about a minute and costs almost nothing per tick. Patched turfs drop out of the cache on
+the next pass.</p>
+<p>Engineers carry an RCD already; SP additionally issues them an EVA softsuit and helmet
+(<code>equip_extra_gear</code> on the engineer controller), because patching a vented room means standing in
+vacuum and TG only gives them a hardhat. Plating over space costs 3 RCD matter and is instant, so one
+RCD is good for roughly 50 tiles.</p>
+<p>Two obstacles had to be cleared for any of this to work, and both are worth knowing about:</p>
+<ul>
+<li><strong>Access.</strong> JPS will not path through a door the pawn cannot open, and breaches happen behind locked
+doors, so AI engineers are granted station-wide access on their ID in <code>equip_extra_gear</code>.</li>
+<li><strong>Firelocks.</strong> A breach slams every firelock around it shut, and a closed firelock is dense, so
+pathfinding refused to route into the damaged room at all. <code>/obj/machinery/door/firedoor/CanAStarPass</code>
+now lets pathfinding through an unwelded firelock, and the crew controller opens one when it bumps
+into it (<code>on_bump</code>), which is what a person does anyway.</li>
+</ul>
+<p>Damage that genuinely cannot be walked to (a room sealed behind blast doors, say) is written off after
+90 seconds and ignored for five minutes, so engineers get back to work instead of looping on it.</p>
+<p><code>SP_DEBUG_BREACH_COUNT &lt;n&gt;</code> punches n holes in a random room a minute after round start, for
+exercising the behaviour in headless tests. Leave it at 0 for real play. Uncomment <code>SP_BREACH_DEBUG</code>
+in <code>code/_compile_options.dm</code> for verbose target/move/failure logging.</p>
+<h2 id="botany">Botany (<code>sp_botany.dm</code>)</h2>
+<p><code>sp_tray_job()</code> decides what a tray needs, in priority order: harvest, clear a dead plant, weed above
+level 2, water below level 30, or plant if it is empty. Every one of those is done through the same
+interaction a player uses, so trays, seeds and produce behave exactly as they normally would.</p>
+<p>TG only gives botanists an apron and a plant analyser; the hoe and watering can are family heirlooms
+most characters never roll. <code>equip_extra_gear</code> hands them a cultivator, a full watering can and two
+packets each of six seed types drawn at random from <code>GLOB.sp_botany_seed_pool</code>. The pool is weighted
+towards things the chef can cook, with a tail of the botanist's own interests, so the garden differs
+every round. Whether any of it is legal is Security's problem, not botany's.</p>
+<h3 id="seeds-buying-and-experiments">Seeds, buying and experiments</h3>
+<p>Three slower errands sit between delivery and tending in the botanist's tree, each on its own cooldown:</p>
+<ul>
+<li><code>sp_botanist_extract</code> — produce whose species they hold no packet of is carried to a seed extractor
+and turned into seeds, which is how a botanist locks in something new. They also fall back to
+seeding whatever they have when down to their last few packets.</li>
+<li><code>sp_botanist_shop</code> — buys a packet of something they have never grown from the MegaSeed Servitor,
+paid for out of their own wages via their ID's bank account.</li>
+<li><code>sp_botanist_experiment</code> — pours a full beaker of unstable mutagen into a growing plant that has
+somewhere to mutate to. They commit to one tray and keep returning to it, because instability only
+pays off near 60 and dosing whatever is nearest would never finish an experiment.</li>
+</ul>
+<p>SP issues four large beakers of mutagen in the starting kit. Chemistry normally supplies this and
+botanists only get it in the mail, so without it they could never deliberately breed anything.</p>
+<h3 id="requests-from-another-department">Requests from another department</h3>
+<p>A line that names botany and a plant they take requests for (&quot;Botany, could you send some aloe up to
+medbay?&quot;) is heard as a request: they say they will look, and it changes three things until it is
+filled. A free tray gets that seed if they have a packet, ahead of the watering, weeding and mutagen
+(<code>sp_find_tray_job()</code>: in one round the packet sat in a bag for ten minutes while all of that came first),
+the trip to the seed vendor buys that packet
+if they do not, and the next load of produce goes to a table in the room that asked rather than to the
+kitchen, where one of the requested plant is enough to be worth the walk on its own.
+<code>GLOB.sp_requestable_plants</code> is the list, and aloe is on it because microwaved aloe is the cream medics
+treat burns with. The tally counts <code>botany.request_delivered</code>.</p>
+<p><strong>Cooked on the way.</strong> A raw leaf handed to a medic is a chore handed over with it, and medbay has no
+microwave. A plant with an entry in <code>GLOB.sp_request_cooked_forms</code> goes to the nearest working
+microwave first (the kitchen's, a wall away from the trays, which a botanist's ID opens), in one leaf at
+a time, and what comes out is the delivery: aloe becomes burn cream (<code>sp_cook_in_microwave()</code>, tally
+<code>botany.cooked</code>). A microwave that cannot be reached or gives nothing back is left alone for two minutes,
+and the raw plant goes over instead.</p>
+<p><strong>Where it goes.</strong> Where the line says, when it says (&quot;up to medbay&quot; is the medbay lobby,
+<code>sp_named_delivery_area()</code>), and otherwise where the asker was standing. Medics notice they are out
+wherever they happen to be, and in the first round with them roaming one asked from the cargo
+warehouse. A table in that room is used when the botanist can reach it, a clear bit of floor when the
+room has no table; otherwise the load is left the way cargo leaves a crate, as far as they can get
+(<code>sp_reachable_drop_spot()</code>), on a table beside that spot or else the floor. Whoever asked is told where
+on the radio, and the delivery is left for them by name (<code>BB_SP_LEFT_FOR_ME</code>), so that medic goes and
+fetches it from wherever it ended up.</p>
+<h2 id="cargo">Cargo (<code>sp_cargo.dm</code>)</h2>
+<p>Requests are the point of the department, so they are first-class here. Any AI crew member can call
+<code>sp_request_supplies(pack_type, requester)</code> and the queue on <code>SSspacestation_sp</code> carries it through
+pending, ordered and delivered. The quartermaster notices pending requests, orders them against the
+cargo budget through a real <code>/datum/supply_order</code>, and answers the requester by name on the supply
+channel. When the crate comes back, a technician matches it to the request and walks it to the
+department that asked rather than dumping it in the bay. The match is on the order number the supply
+shuttle stamps on every crate (&quot; - #<id>&quot;, <code>sp_request_for_crate()</code>), not on the pack's name: a pack and
+its crate are often called different things, and medbay's Medical Supplies Crate arrived as a DeForest
+Medical crate, matched nothing, and was left in the bay as if nobody wanted it.</p>
+<p>A crate is claimed the moment a technician picks it, before the walk over (<code>sp_crate_claimed()</code>).
+Checking only who was already dragging one left a gap the length of that walk, and every abandoned haul
+in every round's log turned out to be two technicians who had picked the same crate and took the pull
+off each other until both gave up. Neither steals a pull any more. And crates are only looked for while
+the shuttle is docked at the station: away at CentCom its deck is another z-level, and the first round
+with the haul's walks logged showed technicians setting off for the mail crate on it at roundstart.</p>
+<p><strong>As far as they can get.</strong> A request is addressed to wherever the asker was standing, and that is
+often behind a door the technician cannot open: a doctor in the operating theatre, a chef in the
+kitchen. Planned with the technician's own ID there is no route at all, so the walk failed on the spot,
+over and over, until the haul timed out in the cargo bay; no crate had ever reached the kitchen.
+<code>sp_reachable_drop_spot()</code> plans the route as if every door opened, follows it to the first door the
+technician's ID does not, and leaves the crate a few tiles short of it on open floor, out of the
+doorway (<code>sp_good_drop_spot()</code>). They tell the requester where it is on the common channel, and the
+request keeps hold of the crate so whoever asked can find it wherever it ended up. The haul's walks
+log when they fail, and the tally counts <code>cargo.delivered</code>.</p>
+<p>With nothing requested, the quartermaster keeps the shuttle earning its keep with a small standing
+restock (<code>GLOB.sp_cargo_standing_order</code>): food, medical supplies, engineering equipment, janitorial
+supplies and hydroponics gear.</p>
+<p>Cargo is staffed as an essential job, because the chef and the rest of the station depend on it.
+<code>SP_DEBUG_SUPPLY_REQUEST</code> has a random crew member raise a request two minutes in, for testing the
+path without waiting for a department to want something.</p>
+<h2 id="the-kitchen">The kitchen (<code>sp_kitchen.dm</code>)</h2>
+<p>/tg/'s cooking is a tech tree, not a list of recipes. Almost nothing worth eating can be assembled
+straight from what a kitchen starts with: raw stock has to be cut, ground, mixed, baked and grilled
+into components first, and only then does the crafting menu have anything to offer. A chef that only
+knew how to craft would stand at a full table and make two things all shift.</p>
+<p>So the chef works the tree from the bottom, using the same interactions a player does.</p>
+<p><strong>The prep table</strong> is the kitchen table with the most cooking machinery beside it, and everything hangs
+off that choice. Crafting only sees one tile around the crafter, so the table the ingredients are piled
+on decides which recipes are possible at all — and on MetaStation the winner is the table wedged
+between the two ovens, which puts them in reach too.</p>
+<p><strong>The counter</strong> is a kitchen table with an open tile on the other side that is not the kitchen. That is
+the serving hatch on any map that has one; on MetaStation it picks out exactly the row of tables the
+bar stools face.</p>
+<p><strong>The rungs</strong> are <code>GLOB.sp_kitchen_prep_steps</code>: an ingredient, an operation, and what comes out. /tg/
+hangs these transformations off elements and components on the ingredients themselves, so they cannot
+be enumerated from an item — poking every ingredient with every tool to find out would be both slow and
+absurd, so the rungs worth climbing are written down. The <code>result</code> is only used to know when to stop.
+Between them they produce cutlets and patties, bread and buns, cheese wedges, boiled eggs and cut
+produce, which is most of what the craftable dishes are actually made of. A slab of monkey meat is
+worth nothing on its own and becomes a burger four rungs later.</p>
+<p><strong>The mixes</strong> (<code>GLOB.sp_kitchen_mixes</code>) are the one part of the tree crafting cannot reach: dough and
+cheese are chemical reactions in a bowl, not recipes. The chef carries a bowl to the sink for water,
+back to the table for the flour, and the reaction fires on its own. Without this there is no dough,
+which means no bread, no buns and no sandwiches.</p>
+<p><strong>The cooking</strong> is not a menu. <code>sp_craftable_recipes()</code> runs /tg/'s own <code>check_contents</code> against
+everything within reach and returns what would actually work, so what comes out depends on what botany
+grew and what cargo delivered. Finished dishes are preferred, but half-made things get crafted too —
+a raw calzone goes back on the pile and the oven rung finishes it.</p>
+<p><strong>Serving</strong> is the point of all of it. A dish counts as finished when it took crafting to make, is not
+itself an ingredient in one of the prep steps, is not flagged <code>RAW</code>, and is not something the oven would
+improve — dough, batter and a raw pizza all fail that last one.</p>
+<p>That last test is <code>sp_bakes_into_something()</code>, and it is not &quot;does it have a bakeable component&quot;. Every
+food in /tg/ has one: <code>/obj/item/food/make_bakeable()</code> gives everything a default bake into a burned
+mess. What separates dough from dinner is whether the bake is a <em>positive</em> one. Testing for the
+component alone classified every sandwich the chef made as an unfinished ingredient, and nothing ever
+reached the counter. Being <em>grillable</em> is deliberately not disqualifying either — a cheese sandwich can
+become a grilled cheese, and an available upgrade does not make something an ingredient.</p>
+<p>Dishes go out on the counter with a line on the service channel, and the chef stops once eight are
+stacked up uneaten.</p>
+<p><code>SP_DEBUG_KITCHEN_STOCK</code> lays a set of ready-made components on the prep table a minute in, so the
+cooking and serving half can be watched without first sitting through the whole cutting, mixing and
+baking chain.</p>
+<p><strong>Running dry</strong> goes through cargo: when the worktop is not stocked, the chef is carrying nothing, and
+there is no fridge, cabinet or pile left in the kitchen with anything in it, the chef
+raises a <code>/datum/supply_pack/organic/food</code> request through <code>sp_request_supplies()</code> and asks cargo for it
+over the supply channel. The quartermaster orders it, a technician walks the crate to the kitchen, and
+the chef takes it apart again. Six minutes between requests, so one slow shuttle run does not turn into
+a queue of crates.</p>
+<p>TG issues a chef an apron, a hat and a moustache. The knife, the rolling pin and the bowls are all
+things a real kitchen already owns or a character rolls as a family heirloom, so <code>equip_extra_gear</code>
+hands them over — bowls in particular are the gate, since a great many recipes want one and the
+dinnerware vendor charges most of a paycheck each.</p>
+<h3 id="two-things-that-cost-a-while-to-find">Two things that cost a while to find</h3>
+<p><strong>Click delay.</strong> <code>ClickOn()</code> silently drops anything that arrives within a decisecond of the last
+click. Every SP behaviour before the chef clicked at most once per tick, so this never came up; the
+chef needs three clicks to bake something (open the oven, put the tray in, shut the door) and only the
+first was landing. <code>sp_chef_click()</code> waits out <code>next_click</code> first, which is why the chef's machine work
+runs in <code>perform_async()</code> — it has to be allowed to sleep.</p>
+<p><strong>The oven clock.</strong> Baking only counts while the door is shut, and the default bake is two minutes. A
+chef who opened the oven every time they had one more thing to add stopped the clock over and over and
+never got bread out. The oven is now loaded in one go and left alone until it is empty again;
+<code>sp_machine_room()</code> is what enforces that, and it is also why the prep steps carry a batch rather than
+a single ingredient.</p>
+<p>Uncomment <code>SP_KITCHEN_DEBUG</code> in <code>code/_compile_options.dm</code> for a running commentary on what the chef
+tried and why it did not work, which is how both of those turned up.</p>
+<h3 id="staffing">Staffing</h3>
+<p>The cook is an essential job, so <code>sp_populate_station()</code> fills the post before filling out the rest of
+the crew. There are seven heads of staff and seven essential jobs, and heads are placed first, so
+<code>SP_AUTOPOPULATE</code> below 14 will leave departments empty — the dev config ships at 16.</p>
+<h2 id="the-bar">The bar (<code>sp_bar.dm</code>)</h2>
+<p>Drinks are much easier than food. A cocktail is a chemical reaction rather than a crafting recipe, and
+the bar's two dispensers between them hold every base spirit and mixer, so there is no tech tree: pick
+a drink, put a glass under the tap, measure the parts in, and the reaction does the rest. What takes
+the walking is that a gin and tonic needs gin from one dispenser and tonic from the other, so most
+drinks are two trips.</p>
+<h3 id="making-anything-not-just-the-house-menu">Making anything, not just the house menu</h3>
+<p><code>GLOB.sp_cocktails</code> is the house menu — what a bartender pours when nobody has asked for anything. The
+rest of the book is worked out at runtime by <code>sp_drink_catalogue()</code>: for every drink reaction in the
+game, walk the ingredients back until they are all things one of the two taps holds. That comes to
+about seventy drinks on MetaStation, and it means anyone — a player or one of the crew — can name a
+drink and get it. The walk recurses, because plenty of drinks are made of other drinks: a cuba libre is
+a rum and coke with lime in it, and the reactions cascade on their own once it is all in the glass.</p>
+<p>Two things keep the catalogue honest, and both were found by pouring the whole book in a unit test:</p>
+<ul>
+<li><strong>Ambiguity.</strong> Everything goes in one glass and the reagent system fires whatever reaction it can, so
+a recipe that happens to contain vodka and orange juice makes a screwdriver on the way past whatever
+it was meant to be making. <code>sp_recipe_is_ambiguous()</code> drops any drink whose ingredients could form
+some <em>other</em> drink — reactions on the intended path excepted, since those are the point. This is what
+removed the Banzai-Tī, which turned into three different cocktails at once.</li>
+<li><strong>Power.</strong> The taps run off a cell, and <code>sp_dispense_into()</code> spends it. Pouring seventy drinks back to
+back runs both machines flat, which in testing looked exactly like broken recipes until the test
+started recharging between rounds of pouring.</li>
+</ul>
+<p>Orders are matched on the drink's own name, longest match first so a vodka martini is not served as a
+martini. Crew who wander into the bar order off the house menu on their own, which is what gives the
+place something to do with no players on.</p>
+<p><code>GLOB.sp_cocktails</code> entries each carry the reagent they <em>become</em> as well as the parts
+that go in. That second field is not decoration: the reaction consumes the gin and the tonic to make
+the gin and tonic, so a glass that has just been made correctly contains neither, and asking &quot;is it
+still short of gin?&quot; answers yes forever. <code>sp_drink_ready()</code> asks the question the right way round.
+Without it the bartender tops the same glass up until the end of the shift and never serves anything.</p>
+<p>The dispenser has no clientless route through its interface, so <code>sp_dispense_into()</code> reproduces what
+pressing the button does — including spending the cell charge, which is what stops a bartender pouring
+out of an unpowered machine. Getting the glass in and out is real clicking: in with the glass in hand,
+out with a right-click.</p>
+<p>TG gives a bartender a bowtie, sunglasses and a box of beanbag shells, and the station has no drinking
+glasses on it anywhere, so <code>equip_extra_gear</code> hands over two boxes and they buy more from the kitchen's
+dinnerware vendor when those run out.</p>
+<h2 id="medbay">Medbay (<code>sp_medical.dm</code>)</h2>
+<p>Medical staff see anybody hurt who has come into medbay, anybody hurt they can see from wherever they
+are, and any player who walks into medbay and has not been scanned in the last ten minutes. Somebody down
+comes first, then the worst hurt, then the nearest. Two AI medics never take the same patient.</p>
+<h3 id="looking-a-patient-over">Looking a patient over</h3>
+<p>The medic walks up and runs a health analyzer over them, which the patient sees happen. Then
+<code>sp_triage()</code> decides:</p>
+<ul>
+<li><strong>Nothing wrong</strong> — &quot;clean bill of health&quot;, and on their way.</li>
+<li><strong>Serious</strong> — in crit, 50+ brute and burn, or 30+ toxin and suffocation (no medkit touches either) — and
+a cryo tube is ready: into the tube.</li>
+<li><strong>Everything else</strong>, including serious cases when no tube is ready: the medkit.</li>
+</ul>
+<p>The medic reads the scan back in plain words (&quot;25 brute, mostly your left arm. Hold still, I'll patch you
+up.&quot;) and asks an AI patient to hold still (<code>sp_hold_still</code>), which puts <code>sp_crew_patient</code> in charge of
+their tree until the medic is done.</p>
+<h3 id="treating-a-limb-at-a-time">Treating, a limb at a time</h3>
+<p><code>sp_pick_treatment()</code> takes the worst limb it can do anything for and the best thing the medic carries for
+it, judged by the stack itself (<code>try_heal_checks</code>): damage it heals, bleeding it stops, a burn it dresses,
+skin it can reach through clothing. Sutures before bruise packs for brute, mesh before ointment for burns.
+Gauze is left out — it dresses wounds and heals nothing. Libital and aiuri patches are the fallback, and
+go on through clothing a suture cannot.</p>
+<p>Two things the old medic got wrong, both found by reading TG's stack code:</p>
+<ul>
+<li><strong>It always aimed at the chest.</strong> A medkit heals wherever the user is aiming (<code>zone_selected</code>), and
+nothing set it for AI crew, so a patient with a cut arm and an unhurt chest got nothing at all. The
+medic now aims at the limb first.</li>
+<li><strong>Mesh comes sealed.</strong> A full stack from a medkit is still in its packet and refuses to heal until it
+is opened. The medic tears it open (clicks it in hand) before using it.</li>
+</ul>
+<p>Sutures and mesh keep going across the body by themselves once started, so one round often does the lot;
+the medic waits for their hands to be free before looking again. A patient nothing will help is left
+alone for three minutes, and so is one the medic has spent ninety seconds failing to reach.</p>
+<h3 id="cryo">Cryo</h3>
+<p>On MetaStation the cryo room starts the shift not working at all:</p>
+<ul>
+<li><strong>The gas loop is empty.</strong> Both anesthetic canisters sit on their connector ports unconnected, and a
+tube with under 5 mol of gas turns off and throws its patient straight back out (&quot;Insufficient Gas&quot;).</li>
+<li><strong>The freezer is off</strong>, set to room temperature. Cryoxadone only heals below 273 K.</li>
+<li><strong>No tube has a beaker.</strong> Four 30u cryoxadone beakers sit on the glass table.</li>
+</ul>
+<p><code>sp_medical_cryo_setup</code> does it the way a doctor would: fetch the medical wrench off the table and wrench
+a canister onto its port, alt-click the freezer until it reads its coldest (alt-click steps room
+temperature → hottest → coldest, so a fresh one takes two), ctrl-click it on, then carry a beaker to each
+tube. It announces on the medical channel once everything is done. A tube only uses about 0.04u of
+cryoxadone every two seconds, so one beaker lasts roughly 25 minutes of treatment.</p>
+<p>Putting somebody in is the ordinary route too: the medic pulls the patient over, alt-clicks the tube open,
+drags them onto its tile and alt-clicks it shut. The tube switches itself on once it has an occupant, lets
+them out when they are mended, and says so on the medical channel. TG's drag-and-drop only works for a
+patient who is incapacitated, so that is used only for somebody out cold who cannot be dragged onto the tile.
+The anesthetic mix puts the occupant to sleep, which doubles cryoxadone's effect.</p>
+<p><code>sp_crew_patient</code> also stops an AI patient climbing back out. TG's <code>escape_captivity</code> subtree treats a
+cryo tube as a box to break out of and an operating table as restraints.</p>
+<h3 id="surgery">Surgery</h3>
+<p>Doctors and the CMO operate; paramedics, chemists and the rest do not. Triage sends a patient to the table
+for a dislocated or broken bone, and for a serious case when no cryo tube is ready — but only when the
+surgeon carries every tool the whole operation needs, so nobody is left cut open halfway.</p>
+<p>This build has TG's reworked surgery: no surgery datum, just one operation per click, with each limb's
+skin, vessels and bones recorded as flags on the limb. That suits an AI well. <code>sp_next_operation()</code> reads
+the patient and returns the one next step, so an operation that is interrupted just carries on:</p>
+<ul>
+<li><strong>Dislocation</strong> — a bonesetter puts it back, no cutting.</li>
+<li><strong>Hairline fracture</strong> — incise, repair (bonesetter, bone gel or surgical tape), close.</li>
+<li><strong>Compound fracture</strong> — the wound has already cut the skin: retract, clamp, reset, repair, close.</li>
+<li><strong>Serious brute and burn</strong> — incise the chest and tend wounds, which loops until that damage is gone.</li>
+<li><strong>Anything left open</strong> is closed with the cautery before the patient is let up, whatever went wrong.</li>
+</ul>
+<p>The patient is strapped to the operating table by the same drag a player uses, which lays them down and
+readies every limb (TG's <code>free_operation</code>), so no drapes are needed. TG only straps down somebody standing
+beside the table, and a patient in tow trails a tile behind the surgeon, so they are stepped up alongside
+it first (<code>sp_bring_alongside</code>). The first live round failed at exactly that point, twice. The unit test
+now starts the patient two tiles from the table.</p>
+<p>A surgeon shown a fracture without a bonesetter on them says so, goes to fetch their tools off a theatre
+tray and comes back. Anyone else in medical leaves a patient whose only problem is a bone to the surgeons. A jumpsuit is rolled down off the
+chest and arms; anything else over the site comes off and goes back on afterwards. Nothing hanging off
+the jumpsuit — ID, belt, pockets — is dropped with it.</p>
+<p>TG picks the operation off a radial menu whenever more than one fits the tool, and a mob with no client
+never gets a menu, so <code>sp_perform_operation()</code> finds the operation it wants among those on offer and
+starts it the way the menu would. A doctor's medkit has the scalpel, hemostat and cautery;
+<code>sp_medical_surgical_kit</code> fetches the retractor, bonesetter and bone gel off a theatre surgery tray.</p>
+<p>The doctor walks to a tile the tray can be reached from (<code>sp_reach_spot</code>), not to &quot;within a tile&quot; of it.
+JPS will not end a walk on a diagonal whose two corners are both blocked, though an arm reaches across a
+table there, and both trays in MetaStation's theatre sit in a corner between a table and the operating
+table. In the second live round a doctor set off for them eight times in fifteen minutes and never arrived,
+while the CMO, using the aft room's tray, operated.</p>
+<p>Medics with a patient, and a chemist with an order in hand, do not stop to answer chatter
+(<code>busy_with_work()</code>). A reply outranks the job subtrees and aborts them. An async job such as a brew or an
+operation keeps running after the abort while the tree starts it over, so it can end up running twice. In
+the third live round the CMO stopped walking a patient to the table to answer a doctor's idle question.</p>
+<h3 id="restocking">Restocking</h3>
+<p>A medic carrying fewer than eight uses of treatment (stack charges plus patches) goes looking for more,
+in the order that costs least:</p>
+<ul>
+<li><strong>A locker or crate in sight</strong> is opened and emptied of stacks, patches and medkits, four things at a
+time. One that has been picked is left for five minutes, whether or not the walk there worked. The
+crate cargo delivers for medbay is found in sight or not: the request keeps hold of it, and it is
+usually left just outside medbay's doors, where a technician's ID stops (<code>sp_delivered_crates()</code>).</li>
+<li><strong>Supplies left for them by name</strong>, botany's burn cream usually, are fetched from wherever the courier
+could put them down, in sight or not (<code>sp_pick_up_left_supplies()</code>).</li>
+<li><strong>Cargo</strong>, at most every ten minutes: a medical supplies crate, through the same request queue the
+rest of the station uses, so the quartermaster orders it and a technician hauls it to medbay. It is
+addressed to the medbay lobby (<code>sp_medbay_delivery_area()</code>) rather than wherever the medic is: the
+first medic to ask with the roaming in place asked from the fitness room, and got the crate there.</li>
+<li><strong>Botany</strong>, at most every ten minutes: aloe, which the botanist microwaves into the burn cream they
+use before bringing it over.</li>
+</ul>
+<p>Nobody asks twice: a medic stays quiet while a medical crate is already on order, or while a botanist is
+already working on medbay's aloe (<code>sp_supplies_on_order()</code>, <code>sp_plant_requested()</code>). In the first
+restocking round both medics ran dry together and both asked cargo, then both asked botany, ten seconds
+apart.</p>
+<p>The tally counts <code>med.restocked</code>, <code>med.restock_asked</code> and <code>med.botany_asked</code>.</p>
+<h3 id="patients">Patients</h3>
+<p><strong>Seen out.</strong> Medics drag the badly hurt through doors only staff can open, into the cryo tubes and onto
+the operating table, and nothing let them out again: a quartermaster who came out of cryo at full health
+stood in the cryo room for the rest of the round, unable to walk back to their console, and cargo placed
+no orders. A patient let go inside medbay is seen out (<code>sp_see_out()</code>): for three minutes their route may
+go through medbay's doors, and a medbay door they walk into opens for them as if the desk had buzzed them
+through (<code>sp_buzz_through()</code>, tally <code>crew.buzzed_through</code>). Only medbay's own doors, never a bolted one.</p>
+<p>Crew with minor injuries and nothing better to do (<code>sp_crew_checkup</code>) walk to medbay when a medic is on
+duty, say so, and wait up to two minutes to be seen. The badly hurt do the same from <code>sp_crew_safety</code>
+straight away. Both now wait until they are treated. The old fixed fifteen-second wait sent a patient back
+to their own department every time the safety subtree's cooldown ran.</p>
+<p>Patients head for the medbay lobby. The rest of medbay is behind doors only medical staff can open, and
+JPS will not path anyone through a door they cannot open. In the first live round, patients picked a spot
+on the treatment floor, failed to path there and went back to work. The cut arm and the burned leg never
+arrived at all. The medic comes to them in the lobby and takes them through.</p>
+<h2 id="chemistry">Chemistry (<code>sp_chemistry.dm</code>)</h2>
+<p>The chemist keeps medbay stocked, starting from the basics:</p>
+<ul>
+<li><strong>Cryoxadone for the tubes</strong> comes first. When the cryo tubes and the cryo room hold under 40u between
+them, the chemist brews a beaker and sets it on the table beside the tubes. The medics' own cryo setup
+loads it when a tube runs dry.</li>
+<li><strong>Libital and aiuri patches</strong>, the brute and burn patches the medics fall back on, are kept at four of
+each in the chemistry fridge, which medbay reaches into through the wall.</li>
+</ul>
+<h3 id="why-a-medicine-is-planned-in-stages">Why a medicine is planned in stages</h3>
+<p>A cocktail pours in one go. A medicine cannot. The reactions here run over time and they compete. Libital
+is phenol, oxygen and nitrogen. Phenol is water, chlorine and oil, and oil is fuel, carbon and hydrogen.
+Pour all of it in together and the hydrogen finds the nitrogen and makes ammonia instead.</p>
+<p><code>sp_plan_brew()</code> walks /tg/'s own recipes back to what the chemistry dispenser pours and lays the medicine
+out as stages. Each stage adds one reaction's ingredients and lets it finish before the next goes in:</p>
+<ul>
+<li><strong>Libital:</strong> oil, then phenol, then libital.</li>
+<li><strong>Aiuri:</strong> ammonia, then aiuri.</li>
+<li><strong>Cryoxadone:</strong> oil, acetone, mutagen, then cryoxadone.</li>
+</ul>
+<p>Two more rules:</p>
+<ul>
+<li><strong>Nothing else may react in the beaker.</strong> Every stage is checked against every reaction in the game, and a
+stage whose contents would also satisfy some other reaction is refused. The dispenser pours the makings
+of smoke powder and thermite, and a plan that could make either is not one to follow.</li>
+<li><strong>Whole units only.</strong> The dispenser pours whole units, so the batch is scaled until every addition is a
+whole number (27u of libital is exactly 1u of carbon at the bottom of the tree), then as far as the
+beaker holds.</li>
+</ul>
+<h3 id="brewing">Brewing</h3>
+<p>The chemist works from a bench tile with the dispenser, a heater and a ChemMaster all in reach.
+MetaStation builds all three of its benches this way, with a chemist spawn on the standing tile. For each
+stage the beaker goes into the dispenser for the additions, then into the heater:</p>
+<ul>
+<li><strong>Temperature.</strong> The heater holds room temperature when the reaction runs well there, or heats it as
+close to its best as it can with a margin under the point where it overheats. Aiuri is at its best at
+300 K and flashes and bangs at 315 K, so the margin matters.</li>
+<li><strong>pH.</strong> The heater's buffers keep the pH in range a unit at a time. Libital sours by six and a half pH as
+it forms, and every step made in the acid comes out less pure than the last.</li>
+</ul>
+<p>The pH is set before the last ingredient goes in, then held during the reaction. Setting it first is what
+counts: aiuri is done in about a second and a half, so a batch that starts at pH 3.6 is over before any
+buffer lands. The first test brew of it came out 38% pure.</p>
+<p>The unit test brews all three through real machines:</p>
+<table><thead><tr><th>Medicine</th><th>Batch</th><th>Purity</th><th>Buffer used</th></tr></thead><tbody>
+<tr><td>Libital</td><td>27u</td><td>98%</td><td>about 7u</td></tr>
+<tr><td>Aiuri</td><td>48u</td><td>100%</td><td>about 3u</td></tr>
+<tr><td>Cryoxadone</td><td>27u</td><td>97%</td><td>about 6u</td></tr>
+</tbody></table>
+<p>The heater holds twenty units of each buffer, so the chemist brews in a standard beaker rather than a large
+one.</p>
+<h3 id="keeping-the-heaters-buffers-up">Keeping the heater's buffers up</h3>
+<p>Every brew spends buffer. When the bench's heater is under twelve units of either kind, the chemist's next
+order is a batch of that buffer (<code>sp_chem_buffer_wanted</code>), brewed from the dispenser like any medicine and
+drawn into the heater's store the way its draw button does it. Whatever is left of the batch goes down the
+ChemMaster. A standard beaker makes 50u of either buffer, basic in two stages (ammonia first) and acidic in
+one, and the heater takes all of it; it keeps up to 100u of each.</p>
+<p>The second live round showed why this is needed. The chemist brewed libital three times running, each
+batch taking about seven units of basic buffer. The aiuri after that had two tenths of a unit left for a
+pre-buffer that needs three, and it came out 43% pure. In the unit test, where each brew gets a fresh
+heater, the same aiuri is 100%.</p>
+<p>A second bug was behind the first. Stock was counted in the fridge only, so patches the chemist was carrying
+did not count, and a delivery run that worked still locked a twenty-second pause before the next. Carried
+medicine now counts as delivered, and the pause only follows a failed delivery.</p>
+<p>Patches come off the ChemMaster, which is driven in code because its print button stops to ask for a name
+through a tgui prompt that a mob with no client never answers. Whatever else was in the beaker goes down the
+ChemMaster's drain. The chemist is given a beaker and a large beaker to brew in; TG hands them only a dropper.</p>
+<h2 id="idle-curiosity">Idle curiosity (<code>sp_curiosity.dm</code>)</h2>
+<p>What a crew member does when they have nothing to do, shared by every job because it is character
+rather than work. It sits below the job subtrees and above the department wander, so it never competes
+with actual work — and above <code>sp_department_wander</code> so it beats pacing the same room.</p>
+<ul>
+<li><strong>Roaming.</strong> Every five minutes or so they take a trip somewhere else on the station — a hallway, the
+bar, the dorms, maintenance — stand about for twenty seconds, and drift back when the department
+wander next picks a turf at home.</li>
+<li><strong>Rummaging.</strong> A shut locker, crate or box in <em>sight</em> (<code>oview</code>, so only what they could actually have
+noticed) that is unlocked or opens to their ID gets opened, looked through, and shut again. Each
+character rolls four tastes from <code>GLOB.sp_interest_pool</code> at spawn, so one has a weakness for hats and
+another walks off with every screwdriver they find, and they are consistent about it all shift. They
+take at most two things and leave the container as they found it. Searched containers are left alone
+for ten minutes. What to take is chosen <em>before</em> the lid comes up: TG's closets tip their whole
+contents onto the floor as they open, and reading the contents afterwards found an empty box, so
+until this was caught the crew opened lockers all shift and took nothing (<code>sp_rummage_container()</code>).
+A locker they had to unlock is locked again behind them (<code>sp_relock()</code>): a research director left
+their own unlocked, and the next scientist to wander past helped themselves to a bio hood.</li>
+<li><strong>Pocketing.</strong> Anything lying on the <em>floor</em> that matches their tastes is picked up in passing, on the
+same cooldown as rummaging, so it is the odd find rather than a sweep. Only the floor: what is on a
+table or a rack was put there by somebody, and the chef's ingredients, the chemist's patches and a
+beaker of cryoxadone waiting for a tube are not finds. Nor is the floor of hydroponics or the kitchen,
+where the botanist's harvest lands before it is gathered and the chef stocks up. Something they have
+decided about is left alone for ten minutes.</li>
+<li><strong>Trying doors.</strong> Every few minutes they walk up to a door they have no access to and try it. The
+door refuses — that is the whole point — and they grumble about it and move on. A door found locked
+is left alone for fifteen minutes.</li>
+</ul>
+<h3 id="groundwork-for-greytide-and-antagonists">Groundwork for greytide and antagonists</h3>
+<p>The three decisions that separate a nosy crew member from a greytider are all overridable on
+<code>/datum/ai_controller/sp_crew</code>:</p>
+<ul>
+<li><code>wants_item(thing)</code> — ordinary crew take what matches their own tastes and nothing on
+<code>GLOB.sp_interest_blacklist</code> (IDs, guns, organs). An antagonist wants rather more.</li>
+<li><code>may_rummage()</code> / <code>may_try_doors()</code> — whether to bother at all.</li>
+<li><code>on_door_denied(door)</code> — base crew complain out loud and walk away. This is where prying, welding or
+hacking goes.</li>
+</ul>
+<p>Ordinary crew also shut lockers behind them, which a greytider will not: a corridor of hanging-open
+lockers is a tell, and skipping that one line is most of the visual difference.</p>
+<h2 id="crime-and-witnesses">Crime and witnesses (<code>sp_crime.dm</code>)</h2>
+<p>The greytide's malicious streak and the antagonists ask the same two questions before they do anything
+dodgy: who can see me, and what happens if they do? One place answers them.</p>
+<ul>
+<li><code>sp_witnesses(culprit)</code> — everyone awake, sighted and on their feet who can see the culprit.</li>
+<li><code>sp_crime_witnesses(culprit)</code> — the ones who would <em>tell</em>: any player, and AI crew whose
+<code>reports_crimes()</code> is true. Assistants never grass, and a crew member running a scheme of their own
+(<code>BB_SP_SCHEME</code> set) keeps their head down.</li>
+<li><code>sp_crime_seen(culprit, crime, description, where)</code> — rolls each would-tell witness; the first to
+notice calls it out (<code>sp_call_out_crime</code>): a shout at the culprit (&quot;Hey! Put that back!&quot;), a hit to
+their standing, and, with a headset, a report to security naming a <strong>suspect and a place</strong> rather than
+an attacker. Crimes are <code>SP_CRIME_THEFT</code>, <code>_VANDALISM</code>, <code>_TRESPASS</code>; the incident record carries
+<code>SP_INCIDENT_SUSPECT</code> and <code>SP_INCIDENT_CRIME</code> so a suspect with no attacker can route to <em>investigate</em>
+rather than <em>baton</em>.</li>
+</ul>
+<p><strong>What security does about it.</strong> A report naming an attacker is unchanged: baton, cuffs, &quot;area secure&quot;. A
+report naming a <em>suspect</em> and no attacker goes to <code>sp_security_confront</code>, which ranks directly below the
+violent response and above everything else an officer does. They walk over and have a word — the line
+chosen by the crime (&quot;That is not yours. Hand it over.&quot;) — think less of them for it, and write it up
+(<code>sp_file_crime_record()</code>, tally <code>sec.confronted</code> and <code>sec.recorded</code>).</p>
+<p>The record is the memory, and the ladder is a word, then a word and a note, then an arrest. This fork has
+no &quot;suspected&quot; status between None and Arrest, and flagging Arrest puts every secbot on the station onto
+somebody over a light tube, so the wanted status is left alone until the record itself shows a pattern.
+Past <code>SP_CRIMES_BEFORE_ARREST</code> prior crimes the officer calls it in, <code>sp_mark_for_arrest()</code> sets
+<code>WANTED_ARREST</code>, and the suspect becomes an ordinary target for the response above (tally
+<code>sec.arrest_ordered</code>). Anyone who swings at the officer escalates themselves: the security controller's
+<code>on_attacked</code> already makes an attacker of them.</p>
+<p>Seen in a round at last: <code>filed Vandalism against Calvin Stern (1 on record)</code> through to <code>(4 on record)</code>,
+then <code>had a word with Calvin Stern about vandalism in Aft Primary Hallway</code>, then <code>called an arrest on Calvin Stern (4 crimes on record)</code> -- <code>sec.confronted=1 sec.recorded=4 sec.arrest_ordered=1</code>. The ladder itself works
+end to end. What happens <em>after</em> the arrest does not yet, and the two shooting guards above are the reason:
+the officer emptied his disabler into a fleeing chef without downing him, so nobody was ever cuffed and the
+cell was never reached.</p>
+<h2 id="command">Command (<code>ai/sp_hos_behaviors.dm</code>)</h2>
+<p>The head of security is the only member of the department who gives orders rather than only taking them, and
+has a controller of their own for it. Everyone else in security -- officers, the warden, the detective --
+shares <code>/datum/ai_controller/sp_crew/security</code>, because <code>sp_controller_for_job()</code> maps by department; the head
+of security is tested before that, the way the chemist is tested before medical.</p>
+<p><strong>Orders ride the same rails as crime reports.</strong> <code>sp_issue_order()</code> writes the order onto the issuer's own
+blackboard (<code>BB_SP_LAST_ORDER</code>) and <em>then</em> says it aloud on the security channel, and <code>on_pre_hear</code> reads it
+off the speaker at the moment it hears them. Nothing is broadcast to a roster, so an officer out of radio
+contact genuinely misses it and a head of security with no headset gives no orders at all. One order per
+utterance, because a second would overwrite the first before anybody had read it.</p>
+<p><strong>The alert ladder has no yellow.</strong> This fork is green, blue, red, delta, so heightened-but-not-lethal is blue.
+Reports naming an attacker are counted (<code>BB_SP_VIOLENCE_SEEN</code>); blue comes after <code>SP_ALERT_BLUE_AFTER</code> and red
+after <code>SP_ALERT_RED_AFTER</code>. Going red is also where lethal force is authorised -- deliberately not at the
+briefing, so two orders are never spoken in one breath.</p>
+<p><strong>Briefings.</strong> <code>sp_hos_call_meeting</code> names a spot and stands on it; whoever heard walks over and waits there
+(<code>sp_security_meeting</code>, ranked below an active attacker and above idling). <code>sp_hos_brief</code> says one thing per
+meeting: arm, under red, or stand down otherwise.</p>
+<p>Seen in a round: <code>Hayden Ann ordered meeting</code>, two officers logging <code>took meeting from Hayden Ann</code>, then
+<code>ordered stand_down</code> -- <code>sec.meeting_called=1 sec.meeting_attended=3 sec.briefed=1 sec.order_heard=4</code>. Three
+attendees because the head of security stands on their own spot; four orders heard because two officers each
+took two. Arming stayed empty, which is what a green shift should look like.</p>
+<p><strong>Arming is bounded by who holds the keys.</strong> The access rules make this ladder, not a designer picking one:</p>
+<ul>
+<li><em>Spawn</em> -- a disabler in the suit slot, handcuffs, a flash. No baton, which is why <code>sp_equip_item/baton</code> had
+been failing since the fork began and officers brawled bare-handed.</li>
+<li><em>Their own locker</em> -- <code>ACCESS_BRIG</code>, which officers carry. It holds <code>/obj/item/storage/belt/security/full</code>,
+and the baton is in that belt. <code>sp_find_arm_locker</code> picks the nearest one it has confirmed holds a belt, and
+clears the order outright if the officer already has a baton anywhere in their contents, which is what makes
+the behaviour stop rather than loop.</li>
+<li><em>The armoury</em> -- <code>ACCESS_ARMORY</code>, on exactly two trims in the game: the head of security and the warden. No
+officer can open it, so nothing sends them there.</li>
+</ul>
+<p><strong>Shooting.</strong> Officers have carried a disabler in their suit slot since the fork began and never fired it,
+because <code>sp_attack_target</code> tests <code>Adjacent()</code> before it swings. That test is the leaf's own, not a limit of
+the interaction layer: <code>ai_interact()</code> only checks both parties exist, then calls <code>ClickOn()</code>, and a gun
+clicked at something across the room fires at it. So <code>sp_shoot_target</code> is a sibling of the melee leaf rather
+than new machinery, and the respond tree now runs secured, then incapacitated, then <em>shoot</em>, then close and
+swing. Shooting until somebody goes down and then cuffing them is how the arrest loop was always meant to
+work. With no gun, no line of sight, or a target out of range, the branch fails and the old baton path runs
+exactly as before.</p>
+<p>Two guards on that leaf were both bought with a round. <strong>It will not fire through anybody</strong>: TG's own ranged
+attack checks this and I skipped it as apparatus I did not need, whereupon a briefing gathered the department
+onto one spot and an officer shot the head of security in the back on his way to a monkey. She batoned him,
+<code>on_attacked</code> made an attacker of her, and he downed and cuffed his own commanding officer -- who then spent
+the round in <code>escape_captivity</code>, which outranks <code>sp_hos_command</code>, so she never reached a single command
+decision and the alert never rose. One missing guard took out the entire escalation path.</p>
+<p><strong>And an empty gun is not a gun.</strong> A disabler holds twenty shots (<code>e_cost = LASER_SHOTS(20, ...)</code>). An officer
+who spent them kept pulling the trigger on nothing -- the leaf went on succeeding, so the selector never fell
+through -- and then beat a fleeing chef across four rooms with the dead weapon, because <code>sp_equip_item/baton</code>
+had no baton to find. <code>can_shoot()</code> now fails the leaf instead, which hands the problem to the melee branch;
+that branch is only any good once the officer has fetched their belt, which today needs an arming order.</p>
+<p><code>sp_take_arm_kit</code> equips nothing: the belt goes in the pack, and <code>sp_equip_item</code> finds the baton inside it
+because <code>get_all_contents_type()</code> walks into containers.</p>
+<h3 id="fetching-kit-rather-than-being-handed-it">Fetching kit rather than being handed it</h3>
+<p><code>kit_wanted()</code> on the controller says what a job ought to be carrying and was not handed at spawn, best
+first. <code>TryPossessPawn</code> raises the same blackboard key an arming order does when that list is non-empty, so
+one subtree serves both a roundstart kit and a red alert, and the pick leaf ends it once there is nothing
+left worth fetching. Security is the first through: officers go to their own locker for the belt, which is
+where the baton lives.</p>
+<p>It is three mechanisms, not one, and which a department gets is decided by where its kit actually is:</p>
+<ul>
+<li><strong>A locker</strong> -- security (<code>ACCESS_BRIG</code>, eleven on MetaStation), botany (<code>ACCESS_HYDROPONICS</code>, three),
+chemistry (the medicine closet, <code>ACCESS_MEDICAL</code>, three).</li>
+<li><strong>A vendor</strong> -- the kitchen. The knife and rolling pin are stocked by the dinnerware vendor and exist in no
+locker at all. Different code, though SP already drives that vendor for the bartender.</li>
+<li><strong>Keep handing it over</strong> -- the botanist's watering can exists in no locker, no vendor and no outfit; it is
+a Family Heirloom quirk and a mail reward, neither of which a clientless crew member will ever see.
+Engineering keeps everything, because what it is handed is not kit but station-wide ID access, without
+which JPS will not path an engineer through an airlock to a breach.</li>
+</ul>
+<p><strong>Check before removing a handout.</strong> Four times while working this out a search returned nothing and I read
+it as &quot;the item does not exist&quot;: the rolling pin (vendor stock is declared <code>typepath = count</code>, which a search
+for <code>new /obj/item/...</code> cannot match), the map (map files place <em>containers</em>; contents appear at runtime from
+<code>PopulateContents</code>), beakers (they come in boxes), and the watering can (found in a list that turned out to be
+quirk heirlooms). Three of those were wrong. Removing a handout on the strength of one is how a department
+stops working for good -- a botanist sent after a watering can that no locker holds simply never waters
+anything again.</p>
+<p><strong>A closed closet is empty.</strong> <code>PopulateContents()</code> runs from <code>dump_contents()</code> the first time a closet is
+opened, not at <code>Initialize</code> -- only <code>populate_contents_immediate()</code> puts anything inside before that. So
+<code>get_all_contents_type()</code> on an unopened locker returns nothing, and the check meant to stop officers walking
+to a locker with no belt in it rejected all six correct belt lockers on MetaStation instead, and sent nobody
+anywhere. <code>sp_find_arm_locker</code> now only trusts the contents of a closet somebody has already opened
+(<code>contents_initialized</code>); an unopened one is worth the walk, and the take leaf fails harmlessly if it turns
+out to be bare.</p>
+<p><strong>And opening one empties it onto the floor.</strong> <code>dump_contents()</code> populates the closet and then moves every
+item to <code>drop_location()</code>, so a moment after an officer opens their locker the belt is on the turf beside
+them rather than inside the thing they just opened. A leaf that opens a container and then searches <em>it</em> will
+find nothing, every time; <code>sp_reachable_item()</code> looks at what the pawn carries and then at <code>range(1, pawn)</code>,
+which is why the antagonist's theft leaf uses it and why the kit leaf now does too.</p>
+<p><strong>Which is why <code>kit_wanted()</code> names a locker type, not just an item.</strong> Because an unopened closet cannot be
+searched, a finder that accepts any unopened closet has no notion of where a thing lives, and the first round
+with fetching working showed what that costs: an officer spent five minutes walking to a <em>pajama wardrobe in
+the Dormitories</em> to look for a security belt, opened it, found nothing, and would have gone on to the next
+wrong closet. The rule now is that an unopened closet is taken on its type and an opened one on its contents
+-- which also, neatly, is what lets an officer draw an energy gun from an armoury the head of security has
+just unlocked, since that closet's contents are known by then.</p>
+<p><strong>And the trip has to be sticky.</strong> With the right lockers finally being chosen, only one officer in three came
+back with anything. None of them failed at a locker -- <code>opened ... but found no ...</code> never appeared once --
+they simply never arrived. The pick leaf re-runs whenever the sequence restarts, which a briefing or an
+incident causes constantly, and it chose the <em>nearest</em> locker each time: so an officer pulled away mid-journey
+retargeted from wherever he now stood. One walked between three security posts in five minutes and reached
+none of them. The officer who succeeded was simply the one nobody interrupted. Keeping the existing target
+while it is still a plausible source fixes it without reordering the tree, which is right -- a briefing should
+outrank fetching a belt; losing the journey every time you are called away should not.</p>
+<p><strong>And the pairing has to name the exact subtype.</strong> MetaStation carries <code>secure_closet/security</code> and its
+<code>/cargo</code>, <code>/engine</code>, <code>/med</code> and <code>/science</code> variants at the departmental posts, plus six <code>/sec</code> in the locker
+room -- and only <code>/sec</code> adds <code>/obj/item/storage/belt/security/full</code>. The rest inherit the parent's vest,
+helmet, HUD and seclite and no belt at all. Pairing the item with the <em>family</em> meant <code>istype()</code> matched every
+one of them, so an officer walked to Security Post - Medbay, opened the locker, and found nothing he wanted:
+<code>opened security officer's locker but found no /obj/item/storage/belt/security to take</code>. A type pairing is
+only as good as its narrowest correct type.</p>
+<p><strong>And then the answer was that they were simply walking.</strong> With the trip sticky and the right subtype named,
+a progress line every thirty seconds finally showed what three rounds of silence had hidden: <code>still 16 tiles from security officer's locker</code>, and fourteen seconds later, <code>drew security belt</code>. One officer set off at
+06:49:02 and arrived at 06:54:50 -- nearly six minutes for a single locker trip across MetaStation, with
+briefings and incidents interrupting throughout. Nothing was broken by then; the rounds had been ending
+first. Three officers, three belts, once the round was long enough to contain the walk. Worth remembering
+before reading a low count as a fault: check the denominator, and check the clock.</p>
+<p><strong>The armoury rung was aimed at furniture this map has not got.</strong> <code>sp_hos_find_armoury</code> looked for
+<code>armory1</code>, <code>armory2</code>, <code>armory3</code> and <code>tac</code> closets; MetaStation has none of them. It has an armoury <em>room</em>
+(31 tiles of <code>/area/station/security/armory</code>) but the weapons are elsewhere: parsing the map's key blocks
+puts all four <code>/obj/item/gun/energy/laser</code> either on the same tile as <code>secure_closet/warden</code> -- and so inside
+it, since a closed closet swallows what sits on its turf -- or on a rack in <code>/area/station/security/range</code>.
+So the search correctly found nothing for seven rounds, and every explanation offered for that silence
+(timing, thrashing, the rung never being reached) was wrong about an assumption nobody had checked.</p>
+<p>The warden's locker is now in the target list: <code>ACCESS_ARMORY</code>, holding a laser, a full security belt,
+zipties and flashbangs. Once the head of security opens it its contents are known, which the kit finder's
+&quot;opened closet&quot; branch already handles, so the rung needed a corrected target rather than new machinery.</p>
+<p><strong>And there is no energy gun on this map at all</strong>, which matters twice over. The red-alert extension asked
+for an <code>e_gun</code> and could never have got one; it now asks for a laser. And <code>sp_set_fire_mode</code> is inert here:
+a disabler and a laser each carry one casing type, so there is no mode to switch between. It earns its place
+only on a map or a round where an actual energy gun turns up, and is kept for that rather than deleted.</p>
+<p>The armoury finder had the same thrashing fault and it went unnoticed for six rounds, because the rung that
+depends on it had never once fired. What exposed it was the <em>officer</em> side working: with red alert up and an
+arming order given, an officer reported <code>no locker they can open holds /obj/item/gun/energy/e_gun</code> -- exactly
+right, since the armoury was still locked and the head of security had never walked over to open it. A stage
+that reports itself accurately turned out to be the thing that found the bug in a different stage entirely.</p>
+<h2 id="the-cell-the-jail-branch-of">The cell (<code>sp_crime.dm</code>, the jail branch of <code>sp_security_respond</code>)</h2>
+<p>Cuffing somebody used to be the end of it: the officer said &quot;area secure&quot; and walked off. A cuffed prisoner
+with something on their record now gets walked to a cell.</p>
+<p><strong>The sentence is read off the record.</strong> <code>sp_sentence_time()</code> gives two minutes for each crime already written
+down, capped at ten. Somebody with no record serves nothing, which is not a special case: the ladder in
+<code>sp_confront_suspect()</code> is what puts crimes on a record at all, so anyone who has reached an arrest already
+has something to measure. The cap earns its keep -- the brig timer's own <code>set_timer()</code> clamps at <code>MAX_TIMER</code>
+(15 minutes) without a word, and a sentence the machine quietly shortened would read as a bug in the ladder
+rather than in the cap. <code>sp_sentence_escalates</code> pins that relationship so neither number can drift into it.</p>
+<p><strong>Finding a cell is the awkward half.</strong> A <code>door_timer</code> is wall-mounted and collects its doors, flashers and
+closets by a shared <code>id</code> anywhere within <code>urange(20)</code>, which says nothing at all about which side of a door is
+inside; areas are no help either, since several cells share <code>/area/station/security/brig</code>. The door and the
+locker between them do. A brig windoor blocks the edge its <code>dir</code> faces, so its own tile and the tile past that
+edge are the two sides, and the cell is the side the linked brig locker stands on (<code>sp_cell_doorway()</code>). The
+first version sent prisoners onto the locker's own tile, which a closed locker makes solid, and jailed nobody.
+<code>sp_free_cell()</code> skips a cell without a clear doorway. All three MetaStation cells have one: checked against
+the map file, each door sits on the corridor tile facing south, with the cell tile beyond it.</p>
+<p><strong>The walk.</strong> <code>sp_find_cell</code> takes hold of the prisoner -- <code>start_pulling</code>, and <code>sp_hold_still()</code>, which has
+purchase only on AI crew, so a player walks off and the escort copes instead of assuming compliance. It refuses
+a corpse or anybody out of reach, and keeps the prisoner in <code>BB_SP_PRISONER</code>, not in the incident key a fresh
+report would overwrite. The officer walks onto the inside tile, which leaves the prisoner they are pulling on
+the outside one, and steps back out. TG lets a puller swap places with whoever they are pulling
+(<code>can_mobswap_with()</code>), but not shove a restrained person past the one pulling them, and that shove is what
+the first version tried. The swap leaves the officer outside and the prisoner in, <code>timer_start()</code> shuts the
+door between them, and the record reads Incarcerated. Every way the escort can fail lets go of the prisoner
+(<code>sp_abandon_escort()</code>), and the incident is closed only if it is still about this prisoner.</p>
+<p>Three things the first cut of this could not do, now handled: a prisoner lying down is not dense, so there is
+nobody to swap with, and they are dragged the last step instead (<code>sp_swap_into_cell()</code>); a cell door that would
+shut itself mid-swap is held open until the handover is done (<code>sp_open_cell_doors()</code>, with <code>timer_start()</code>
+closing them for good afterwards); and a report arriving mid-walk no longer pulls the officer away, because the
+branch is held by the prisoner rather than by the incident key. None of it has been seen in a live round yet.</p>
+<h2 id="antagonists">Antagonists (<code>sp_antagonist.dm</code>, <code>ai/sp_antagonist_behaviors.dm</code>)</h2>
+<p>An antagonist is an ordinary AI crew member carrying a <strong>scheme</strong> (<code>/datum/sp_scheme</code> on the blackboard
+at <code>BB_SP_SCHEME</code>): a goal at odds with the station, and the score-keeping for it. The behaviour tree is
+how it is pursued. This is deliberately not TG's <code>/datum/objective</code> — those assume a client (an
+assassinate objective against a clientless NPC completes on the spot, because no-client reads as AFK) and
+the round-end report prints a blank key for a keyless mob.</p>
+<ul>
+<li><code>/datum/sp_scheme/steal</code> — get hold of one item and keep it. The target comes from TG's own steal
+catalogue (<code>/datum/objective_item</code>, e.g. the CMO's hypospray), so it is a thing the game already knows
+is on the map, without the objective/uplink machinery. <code>sp_pick_steal_target()</code> chooses one that
+exists and this crew member does not already own; <code>sp_make_thief()</code> attaches the scheme.</li>
+<li><code>/datum/ai_controller/sp_crew/antagonist</code> (tree <code>sp_crew_antagonist.bt.json</code>) wants the scheme's target
+even though it is on no interest list, and stays on task through chatter (<code>busy_with_work()</code>).</li>
+<li><code>sp_crew_scheme.bt.json</code> ranks below self-preservation and above idle wandering: find the goal (the
+item, or the locker it is in), walk to it, take it (a <code>do_after</code>, witnessed as theft), then lie low.
+Completing a scheme is logged and tallied (<code>antag.scheme_done</code>, <code>antag.stole</code>), never announced.</li>
+</ul>
+<p>Bridging to TG's own antagonist system — so the round counts them, shares codewords and prints a
+round-end line — is possible with a silent, uplink-less traitor datum, but it is <strong>off by default</strong>
+(<code>SP_ANTAG_TG_DATUM</code>): with no client the round-end report shows a blank key and codewords reach a crew
+of NPCs. The scheme drives behaviour either way. <code>SP_DEBUG_ANTAGONIST</code> turns one crew member into a
+thief ninety seconds in; the admin verb <strong>SP: Spawn Antagonist (Thief)</strong> does it on demand.</p>
+<h2 id="greytide-assistants">Greytide: assistants (<code>sp_greytide.dm</code>)</h2>
+<p>One to three assistants join at roundstart on top of <code>SP_AUTOPOPULATE</code> (<code>SP_ASSISTANTS_MIN</code> and
+<code>SP_ASSISTANTS_MAX</code>, 1 and 3 by default). They have no department and no work, and they get everything the
+rest of the crew do (patients, drinks, chatter, curiosity), tuned a notch towards mischief:</p>
+<ul>
+<li><strong>Tool storage first.</strong> Early in the shift they walk to Primary Tool Storage, put on insulated gloves
+(MetaStation only has the budget sort lying about) and pocket a tool. Three trips at most.</li>
+<li><strong>Nosier.</strong> They rummage twice as often, take up to three things, and leave the locker hanging open. They
+try doors twice as often too, and grumble cheekier when the door says no.</li>
+<li><strong>Tastes.</strong> Gloves, masks, toys and one tool, on top of the four anyone rolls.</li>
+<li><strong>Their own kit.</strong> A crayon each, and a bike horn or a rubber duck for about half of them.</li>
+<li><strong>Somewhere to start.</strong> An assistant who spawns outside their haunts starts in one of them instead
+(<code>sp_send_to_post()</code>). One of MetaStation's assistant spawn points is inside the cargo delivery office,
+behind shipping-access doors and delivery flaps, and the assistant who spawned there in the second
+greytide round never got out.</li>
+</ul>
+<p>Every three to six minutes an assistant in the mood (60%) looks round for a prank and pulls one of whatever
+is on offer where they are standing:</p>
+<table><thead><tr><th>Prank</th><th>What happens</th><th>Tally</th></tr></thead><tbody>
+<tr><td>Graffiti</td><td>a star, a corgi, a heart... in crayon on a hallway, maintenance or commons floor</td><td><code>tide.graffiti</code></td></tr>
+<tr><td>Lights out</td><td>the switch in a room with people in it, &quot;Boo!&quot;, six seconds of dark, lights back on</td><td><code>tide.lights</code></td></tr>
+<tr><td>Knock</td><td>two or three knocks on a window into command, security or the AI's rooms, &quot;Let me in!&quot;</td><td><code>tide.knock</code></td></tr>
+<tr><td>Bell</td><td>a desk bell rung a few times from the public side of the counter, &quot;Service!&quot;</td><td><code>tide.bell</code></td></tr>
+<tr><td>Honk</td><td>the horn or the duck, at whoever is nearby</td><td><code>tide.honk</code></td></tr>
+<tr><td>Vandalism</td><td>a lit tube in a public room smashed dark until somebody replaces it — troublemakers only</td><td><code>tide.vandalism</code></td></tr>
+</tbody></table>
+<p>The rules keep it fun. Nobody gets hurt, and nothing gets through a door. Most of the menu breaks nothing
+either; the one thing with an edge, a smashed light tube, is off the harmless list. Only some assistants
+have that streak (<code>BB_SP_TROUBLEMAKER</code>, rolled at spawn, ~45%), it is gated by <code>SP_GREYTIDE_MALICE</code> (on by
+default), it happens only in the same public rooms the lights-out prank uses, and a witness calls it out
+(<code>sp_crime_seen</code>, <code>SP_CRIME_VANDALISM</code>) like any other crime. Nobody pulls a prank
+with an officer in sight (they look again a minute later, when security has walked on), and one turning up
+on the way calls it off. Each decision is logged (&quot;is up to something&quot;, &quot;not in the mood&quot;, &quot;thinks better
+of it, with security about&quot;, &quot;found nothing to get up to&quot;). The lights always come back on: by
+the switch, or, if the assistant has been pulled away, by the prank putting them back itself. The crayon
+designs are the friendly end of the menu, with no chalk outlines, runes or slogans, and they are left for a
+janitor to clean once there is one. A prank under way is not interrupted by a chat (<code>busy_with_work()</code>).
+Tool storage trips count as <code>tide.geared</code>.</p>
+<h2 id="taking-over-a-role">Taking over a role (<code>sp_role_takeover.dm</code>)</h2>
+<p>The AI crew fill the station's jobs at roundstart, and TG counts them exactly like players: a job they hold
+is full, and the join screen greys it out. In a singleplayer game that locked the one real player out of
+every head of staff, the bar and the chemistry lab. Now a job held by AI crew is never locked:</p>
+<ul>
+<li><strong>The join screen</strong> shows it as open, counting only players against it. <code>IsJobUnavailable</code> still runs
+every check TG makes (bans, playtime, the latejoin special cases); it just stops treating AI crew as full.</li>
+<li><strong>Picking it</strong> frees a place just before TG assigns the job, after every check that could still turn
+the player away. The first AI holder goes: a dead one first (their body stays, it just stops counting),
+then one who is idle, and only then one in the middle of a job. A medic going off shift unstraps their
+patient and lets them go.</li>
+<li><strong>Going off shift</strong> means a line to whoever is nearby (&quot;Looks like my relief is here&quot;), off the manifest
+and the locked records, bank account closed, and gone from the round two seconds later. TG has no way to
+free a job slot at all (no cryo, and nothing decrements <code>current_positions</code>), so the clean-up is ours,
+along the lines of the admin &quot;retcon&quot; smite. The tally counts it as <code>crew.relieved</code>.</li>
+</ul>
+<p>At roundstart none of this comes up: TG gives readied players their jobs before the station is populated,
+and the AI crew fill what is left.</p>
+<h2 id="getting-to-work">Getting to work</h2>
+<p>Two things make sure a crew member is where their job is.</p>
+<p><code>sp_send_to_post()</code> runs at spawn. <code>SSticker.PostSetup()</code> deletes the roundstart landmarks the moment
+the populate callback yields, and that race is not reliably won — when it is lost, <em>every</em> job falls
+back to the arrival shuttle. That is worse than untidy: the shuttle then leaves, taking the whole crew
+to a z-level their department is not on, where every job subtree quietly finds nothing to do. So a
+crew member who lands at arrivals is put where they were assigned instead.</p>
+<p><code>sp_crew_commute</code> is the safety net for everything else. Any crew member standing outside their own
+department walks back to it. Every job subtree looks for its work near where it is standing, so without
+this a displaced crew member does nothing at all and looks fine doing it.</p>
+<h2 id="movement">Movement</h2>
+<p>SP crew use <code>/datum/ai_movement/jps/sp_crew</code>, which raises the path limit from TG's
+<code>AI_MAX_PATH_LENGTH</code> (30 tiles, tuned for animals that lose interest after 14) to 220. Without it no
+crew member can walk to medbay, the engine room, or an incident on the far side of the station.</p>
+<p>Plastic flaps tell the pathfinder that anyone may walk through them, then stop anyone standing up. A crew
+member with the access for what lies behind a set of flaps gets routed into them and stands there until the
+walk gives up. In the second live round the Head of Personnel did this all shift with a cut arm: their way
+to medbay ran through the maintenance flaps in front of the bridge's delivery windoor, so they never
+arrived. The module overrides <code>/obj/structure/plasticflaps/CanAStarPass</code> so standing mobs are not planned
+through flaps.</p>
+<p>Animals are the other thing the pathfinder does not see: it ignores mobs, and TG will not swap places with
+one in combat mode, which every basic mob is. The Head of Security's giant spider sits in the one gap
+between the desk and the security consoles, and in the third live round the HoS spent the whole shift
+bumping into their own pet. Crew now step round an animal that will not budge and is not after anybody
+(<code>sp_step_past()</code>, from the bump handler); the tally counts it as <code>crew.stepped_past</code>.</p>
+<p>Both of those were invisible at first, because a walk that fails inside a cooldown logs nothing and looks
+like somebody who set off and changed their mind. The walks to medbay, to a surgery tray and to the
+chemist's bench and drop-off now use <code>move_to_target/sp_reported</code>, which logs
+<code>X could not walk to Y at ... from ...</code> when the walk fails.</p>
+<h2 id="launching">Launching (<code>RUN_SP.cmd</code>)</h2>
+<p>Use the launcher rather than double-clicking <code>tgstation.dmb</code>. It gets two things right:</p>
+<ul>
+<li><strong>Trusted security.</strong> Dream Daemon defaults to <em>Safe</em> on a fresh install, and at Safe BYOND raises a
+&quot;Safety check: allow access to ...&quot; dialog for every file the game reads — hundreds of them at
+startup, because each AI crew member loads several compiled behaviour trees. rust_g and dreamluau
+cannot load at all. <code>/tg/station</code> requires Trusted (<code>RUNNING_A_SERVER.md</code>, <code>.tgs.yml</code>), so the
+launcher passes <code>-trusted</code>. The GUI's Security dropdown is the equivalent for a manual launch;
+<code>cfg/daemon.txt</code> does <em>not</em> govern command-line launches.</li>
+<li><strong>Port 7777.</strong> See the note at the bottom of this file.</li>
+</ul>
+<p><code>RUN_SP.cmd [port]</code> finds BYOND through the registry and starts the server; connect Dream Seeker to
+<code>byond://127.0.0.1:7777</code>.</p>
+<h2 id="local-dev-config">Local dev config</h2>
+<p><code>config/dev_overrides.txt</code> (gitignored; copy from <code>../../docs/dev_overrides.example.txt</code>) enables
+AUTOADMIN, a 10 s lobby, <code>RESUME_AFTER_INITIALIZATIONS</code> for headless tests, <code>SP_AUTOPOPULATE</code>, and
+the engine settings.</p>
+<h2 id="testing">Testing</h2>
+<p>There are two loops, and the first one is the one to reach for.</p>
+<h3 id="unit-tests-fast-deterministic-gives-a-verdict">Unit tests (fast, deterministic, gives a verdict)</h3>
+<p><code>code/modules/unit_tests/spacestation_sp.dm</code>. Emergent crew are miserable to check by playing: you
+start a round, wait, grep the log for a hopeful string, and silence tells you nothing — a behaviour
+that is broken and a behaviour that has not come up yet look identical. Every bug that has actually
+bitten this module has lived in ordinary deterministic logic, so that is what these assert:</p>
+<ul>
+<li><code>sp_finished_dish</code> — a cheese sandwich is dinner, dough is not, a bread slice is a component, raw
+meat is raw. This is the exact rule that once classified every sandwich as an ingredient and left the
+counter empty for a whole session.</li>
+<li><code>sp_prep_steps</code> / <code>sp_kitchen_mixes</code> / <code>sp_cocktails</code> — the data tables are real typepaths, the tools
+named are actually tools, and every drink on the bar menu comes out of a tap the bar actually has.</li>
+<li><code>sp_pour_a_drink</code> — pours a gin and tonic out of both dispensers and asserts the reaction fired.</li>
+<li><code>sp_cook_a_dish</code> — stands a chef beside bread and cheese, asserts a cheese sandwich is craftable,
+crafts it, and asserts the result is servable. The whole pipeline, in milliseconds.</li>
+<li><code>sp_curiosity</code> — tastes are respected, IDs are never pocketed, interests roll without duplicates.</li>
+<li><code>sp_triage</code> — unhurt goes home, a cut arm gets the medkit, seventy damage goes to cryo only when a tube
+is ready.</li>
+<li><code>sp_pick_treatment</code> — the medic aims at the hurt limb (not the chest) and picks sealed mesh for a burn.</li>
+<li><code>sp_treat_a_patient</code> — a real round through the medic's own clicks: mesh torn open, twenty burn gone.</li>
+<li><code>sp_cryo_loading</code> / <code>sp_cryo_freezer</code> — a beaker goes in, a conscious patient is dragged onto the open
+tube and shut in, and the freezer ends up on and at its coldest.</li>
+<li><code>sp_brew_plans</code> — libital, aiuri and cryoxadone plan down to the dispenser in whole units, in 3, 2 and 4
+stages, and the basic and acidic buffers in 2 and 1, all within a 50u beaker.</li>
+<li><code>sp_brew</code> — all three brewed for real through a dispenser and heater, each checked for amount and purity.</li>
+<li><code>sp_chem_print</code> — 27u of libital prints three 9u patches, the rest is drained and the patches picked up.</li>
+<li><code>sp_chem_buffer</code> — an empty heater's first order is basic buffer; both buffers are brewed and drawn into
+the heater, and a topped-up heater wants no more.</li>
+<li><code>sp_surgery_plan</code> — a hairline fracture reads as incise, repair, close, then nothing.</li>
+<li><code>sp_surgery_hairline</code> — the whole operation on a patient in a jumpsuit: strapped down, jumpsuit rolled,
+three operations, bone mended, skin closed, jumpsuit back up, patient let up.</li>
+<li><code>sp_surgery_tray_reach</code> — a tray boxed in by tables is reached from the open diagonal, and that is where
+the doctor is sent to stand.</li>
+<li><code>sp_flaps_pathing</code> — the pathfinder does not plan a standing human through plastic flaps.</li>
+<li><code>sp_busy_ignores_chatter</code> — a doctor with a patient and a chemist with an order do not queue a reply to
+chatter; a doctor with nobody to see still takes it up when spoken to by name.</li>
+<li><code>sp_trees_talk</code> — every crew controller's tree can answer, look up at a name and start a chat, and greeting
+a newcomer is not behind the chat cooldown.</li>
+<li><code>sp_speech_whole_words</code> — &quot;they&quot; is not &quot;hey&quot;, &quot;tomorrow&quot; is not &quot;Tom&quot;, a bare &quot;hi&quot; is a greeting, and the
+most specific request in a line wins.</li>
+<li><code>sp_distress_needs_urgency</code> — a list of calls for help that must count and calm requests that must not.</li>
+<li><code>sp_answer_once</code> — being thanked moves standing once, as the answer is given; a name alone gets a look up;
+an answer 15 s late is dropped without moving anything.</li>
+<li><code>sp_crew_exchange</code> — two crew hold a written conversation end to end: it starts, the other one is marked as
+in it and free for nobody else, and when it ends neither of them is left holding anything.</li>
+<li><code>sp_one_answer_per_line</code> — a hello gets one answer, from the nearer crew member whichever hears it first; a
+hello naming the other one is theirs; a crew member already owing an answer passes it on.</li>
+<li><code>sp_security_answers</code> — an officer mid-arrest does not stop to chat, and a free one answers.</li>
+<li><code>sp_role_takeover</code> — a CMO slot filled by two AI crew: the dead one's place is freed with the body left
+where it is, then the living one goes off shift, off the manifest and the locked records, bank account
+closed, and out of the round.</li>
+<li><code>sp_greytide_graffiti</code> — an assistant draws one of the friendly designs on the floor with their crayon.</li>
+<li><code>sp_greytide_bell</code> — a desk bell rung more than once.</li>
+<li><code>sp_greytide_lights</code> — lights out in a room with somebody else in it, and back on afterwards.</li>
+<li><code>sp_greytide_gear</code> — assistants get their own controller, leave lockers open and take more from them;
+budget insulated gloves go on, a crowbar goes in the bag, and then there is nothing left to want.</li>
+<li><code>sp_pocket_from_floor</code> — a crayon on the floor is picked up; one set out on a table is left alone.</li>
+<li><code>sp_medic_restock</code> — a medic with nothing counts as low, empties the medical crate beside them, and
+does not count as low afterwards.</li>
+<li><code>sp_botany_request</code> — &quot;Botany, send some aloe to medbay&quot; reads as a request, a passing mention of
+aloe does not, and the aloe they carry is what was asked for.</li>
+<li><code>sp_rummage_takes</code> — something a crew member fancies comes out of a locker and onto them, and the
+locker is shut again.</li>
+<li><code>sp_rummage_relocks</code> — a locker they had to unlock is shut and locked again.</li>
+<li><code>sp_restock_asks_once</code> — a medical crate on order, or aloe a botanist is already after, counts as
+asked for; a delivered crate no longer does.</li>
+<li><code>sp_crate_matches_order</code> — a crate is matched to its request by the order number on it: not by a
+number that only ends the same way, and not by the pack's name.</li>
+<li><code>sp_crate_claims</code> — a crate another technician is heading for is left to them.</li>
+<li><code>sp_drop_spot_short_of_door</code> — a delivery behind a door the courier cannot open is left on their
+side of it and out of the doorway; with the access, it goes all the way.</li>
+<li><code>sp_medic_finds_delivery</code> — a crate cargo delivered for medbay is found out of sight; one nobody
+delivered is not.</li>
+<li><code>sp_botany_cooks_request</code> — aloe medbay asked for goes through a real microwave and comes out as the
+burn cream that is then the delivery.</li>
+<li><code>sp_medic_takes_left_supplies</code> — cream left for a medic by name is found out of sight, picked up, and
+crossed off.</li>
+<li><code>sp_request_names_destination</code> — &quot;send some aloe up to medbay&quot; goes to medbay, a request naming
+nowhere goes where the asker stands, and medbay's own asks are addressed to medbay.</li>
+<li><code>sp_patient_shown_out</code> — a patient let go in medbay may route through, and open, medbay's doors for
+a while; not anybody else's, and not before they have been seen.</li>
+<li><code>sp_requested_seed_first</code> — a requested seed goes into an empty tray ahead of a nearer tray that
+wants water, a tray picked too recently is passed over, and once the plant is growing the request
+stops jumping the queue.</li>
+<li><code>sp_scheme_steal</code> — a steal scheme reads incomplete until the pawn carries the target, complete once
+they do, and a schemer does not report crimes.</li>
+<li><code>sp_crime_witnesses</code> — who would tell (not assistants, not schemers); a callout drops standing and, with
+a headset, files a suspect incident with no attacker.</li>
+<li><code>sp_break_light</code> — the malicious greytide's one built behaviour leaves a lit tube dark.</li>
+<li><code>sp_steal_target_liftable</code> — a scheme's target has to be liftable: on the floor or in a closet counts, sealed
+in a box or carried by somebody does not.</li>
+<li><code>sp_steal_target_reachable</code> — and it has to be somewhere this thief can actually walk to: wall the room off
+and the same liftable item stops being a target.</li>
+<li><code>sp_security_confronts_suspect</code> — a report naming a suspect and no attacker sends an officer to have a
+word; one naming an attacker still sets the baton target.</li>
+<li><code>sp_crime_record_escalates</code> — crimes accumulate on the record, somebody with no record is left alone, and
+only a pattern turns the next word into an arrest.</li>
+<li><code>sp_order_relay</code> — an order from the head of security reaches whoever hears it and changes only what it
+names: arming is not permission to kill, standing down puts the lethal weapon away but lets a kit trip
+finish, and nobody takes orders from themselves.</li>
+<li><code>sp_arming_finds_nested_baton</code> — an officer starts with no baton, and one carried belt is enough to put one
+in their hand without unpacking anything. This is the claim the whole arming rung rests on: if the search
+ever stopped walking into containers, fetching a belt would still log and still tally, and the officer would
+still be empty-handed.</li>
+<li><code>sp_sentence_escalates</code> — a cell sentence is measured off the record, two minutes a crime, and a long rap
+sheet is capped rather than unbounded. The last assertion is the one that matters: the cap must stay under
+the brig timer's <code>MAX_TIMER</code>, because <code>set_timer()</code> clamps without saying so, and a sentence the machine
+quietly shortened would read as a bug in the ladder rather than in the cap.</li>
+<li><code>sp_cell_doorway_faces_the_locker</code> — a timer with nothing linked has no doorway; the cell is the side of
+the door's edge the locker stands on, including a locker level with the door, where plain distance ties;
+and a doorway with something solid in it is no doorway.</li>
+<li><code>sp_cell_swap_puts_them_in</code> — standing, the officer and the prisoner swap places, leaving the prisoner
+inside and the officer out; lying down, where there is nothing to swap with, they are dragged the last step.
+An escort under way also keeps its branch when a fresh report names somebody else.</li>
+<li><code>sp_baton_switched_on</code> — a baton drawn from the belt comes out switched on, so an arrest is a stun rather
+than a beating that runs until the suspect reaches crit.</li>
+<li><code>sp_petty_arrest_stays_nonlethal</code> — under standing lethal orders the gun is set to kill, but not at somebody
+being arrested for petty crime.</li>
+<li><code>sp_arm_locker_usable</code> — a locked locker nobody here has the ID for, and a welded one, are not somewhere to
+draw a kit from.</li>
+<li><code>sp_order_acted_on_once</code> — an order is acted on once per listener, and the next thing the head of security
+says is not that order again.</li>
+<li><code>sp_closed_closet_is_empty</code> — a freshly built locker reports nothing inside it, and opening it produces the
+belt that was there all along. This pins an assumption about upstream rather than about our own code: the
+locker search may only trust the contents of a closet somebody has opened. If TG ever populates closets at
+Initialize instead, this test fails loudly, where otherwise the symptom would be another silent round in
+which nobody fetches anything and nothing says why.</li>
+<li><code>sp_janitor_finds_a_mop</code> — a mop on the floor is picked up; one in somebody else's hands is not, and a
+janitor holding one does not want another.</li>
+<li><code>sp_janitor_keeps_the_mop_wet</code> — a bucket starts empty and is not worth the walk; filled, it is, and the
+mop comes away wet.</li>
+<li><code>sp_janitor_leaves_maintenance_for_last</code> — the nearest mess wins until it is in maintenance, and then the
+hallway one does.</li>
+<li><code>sp_janitor_mops_it_up</code> — mopping actually removes the decal, through TG's own cleaning.</li>
+<li><code>sp_janitor_picks_up_a_peel</code> — a banana peel is picked up rather than mopped, so nobody slips on it.</li>
+<li><code>sp_clown_peels_in_public</code> — a hallway is somewhere to leave a peel; medbay is not.</li>
+<li><code>sp_clown_drops_a_peel</code> — the banana becomes a peel on the floor, and the banana is gone.</li>
+<li><code>sp_clown_honks_at_people</code> — honking wants an audience, and takes the horn out of the clown's pocket.</li>
+<li><code>sp_clown_asks_botany</code> — a clown with no bananas asks for some, in words botany takes as a request; one
+who has a banana does not ask again.</li>
+<li><code>sp_dialogue_files_are_sound</code> — every dialogue we ship loads and hangs together, and one that leads
+nowhere is refused with a reason rather than half-run.</li>
+<li><code>sp_dialogue_casts_by_job</code> — the janitor's dialogue needs a janitor, and casts them as the janitor
+whichever of the two walked over.</li>
+<li><code>sp_dialogue_thread_runs</code> — a thread runs line by line to an end, moves standing on the way, is
+remembered by both, and is not picked again straight afterwards.</li>
+<li><code>sp_dialogue_memory</code> — crew know each other and learn a player's name; facts are kept and let go; a player
+in a new body is still somebody they know.</li>
+<li><code>sp_dialogue_conditions</code> — every condition a file can ask about answers both ways.</li>
+<li><code>sp_dialogue_effects</code> — every effect does what it says, and a gift is only ever something the giver carries.</li>
+<li><code>sp_dialogue_validation</code> — the loader refuses a node nothing leads to, a player's turn with no replies, a
+condition or placeholder it does not know, and a player dialogue with no title to offer it by.</li>
+<li><code>sp_player_replies</code> — replies are offered, nobody else can pick them, a lapsed offer is refused, and
+silence goes where the file says.</li>
+<li><code>sp_player_speech_opens_dialogue</code> — a stranger saying hello is introduced; &quot;I'm Tom&quot; teaches the name;
+somebody known just gets a hello back.</li>
+<li><code>sp_id_read_up_close</code> — a name is read off a worn ID from beside somebody, and not from across a room.</li>
+<li><code>sp_standing_on_examine</code> — how a crew member regards you shows on examine at the extremes, not between.</li>
+<li><code>sp_talk_offers_what_fits</code> — the Talk to list offers what fits the two of you now, and nobody talks to
+themselves.</li>
+<li><code>sp_topics_are_files</code> — the seven keyword topics are dialogue files.</li>
+<li><code>sp_reply_link_round_trip</code> — a reply link's own text leads back to its conversation through <code>locate()</code>, and a
+click through <code>Topic()</code> only counts from the player it was offered to.</li>
+<li><code>sp_busy_crew_say_so</code> — a busy doctor named by a player says so, once, without taking anything up or letting
+go of the patient; a line not aimed at them gets nothing.</li>
+<li><code>sp_no_conversation_out_of_reach</code> — no conversation starts between two people too far apart to hold it, and a
+hello from out there is answered with a line.</li>
+<li><code>sp_one_conversation_at_a_time</code> — nobody starts a second introduction with a player already talking, but a
+player who turns to somebody by name is theirs.</li>
+<li><code>sp_arrest_is_not_an_attack</code> — a report by somebody being arrested, naming the arresting officer, is
+dropped; an actual attacker still gets answered.</li>
+<li><code>sp_janitor_leaves_shut_rooms_alone</code> — a room the janitor cannot get into is set aside as a room, and a
+mess in a room they can walk into is still taken.</li>
+<li><code>sp_behaviour_trees</code> — every SP controller points at a tree that was actually compiled.</li>
+</ul>
+<pre><code>tools\build\build.bat build --define=UNIT_TESTS
+&lt;BYOND&gt;\bin\dd.exe tgstation.dmb -close -trusted -verbose -params log-directory=ci &gt; tests.out
+</code></pre>
+<p>Use <code>UNIT_TESTS</code>, not <code>CIBUILDING</code>: the CI build splits the tests across maps and silently skips these.
+<code>PASS</code>/<code>FAIL</code> lines go to stdout, so capture it; <code>data/logs/ci/clean_run.lk</code> says <code>Success!</code> when the
+whole suite passed. The full suite takes a while, so while working on a few tests, put
+<code>TEST_FOCUS(/datum/unit_test/...)</code> lines at the bottom of the test file to run just those, and take them
+out again afterwards. The station is not populated in a unit-test build. The tests run with a round going,
+and seventeen AI crew getting on with their shift in the background made TG's own tests
+nondeterministic. SP's tests build whatever they need themselves. Stop any running server first — a live <code>dd.exe</code> holds <code>tgstation.rsc</code> open and the
+compile fails with a confusing &quot;cannot find file&quot; on an unrelated resource.</p>
+<h3 id="live-rounds-for-what-only-emerges-in-play">Live rounds (for what only emerges in play)</h3>
+<p>Some things genuinely only show up with a station running — pathing, whether a chef can reach the
+coldroom, whether anybody ever walks past a locker. For those, <code>SSspacestation_sp</code> keeps a tally of
+everything the crew actually manage and prints it every two minutes:</p>
+<pre><code>SP: tally: bar.served=2 chef.cooked=7 chef.served=3 crew.door_refused=11 crew.pocketed=1
+</code></pre>
+<p>That is the difference between &quot;nothing happened&quot; and an answer. <code>crew.door_refused=11</code> with
+<code>crew.pocketed=0</code> says door-trying works and rummaging does not, which is a bug report rather than a
+shrug. The same counts are on the Debug tab as <strong>SP: Behaviour Tally</strong>, and in <code>stat_entry</code>.</p>
+<p>Medbay adds <code>med.scanned</code>, <code>med.treated</code>, <code>med.cryo_setup</code>, <code>med.cryo_loaded</code>, <code>med.cryo_discharged</code> (and
+<code>med.cryo_lost</code>), <code>med.surgical_kit</code>, <code>med.surgery</code> and <code>med.operations</code>, plus <code>crew.checkup</code> and
+<code>crew.seen_to</code> from the patients' side. <code>SP_DEBUG_MEDICAL_PATIENTS</code> hurts four crew ninety seconds in, so
+all of medbay can be watched in one round:</p>
+<ul>
+<li>a cut arm and a burned leg, for the medkit</li>
+<li>a serious case, for cryo</li>
+<li>a broken arm, for the table</li>
+</ul>
+<p>The chemist adds <code>chem.brewed</code> (batches), <code>chem.patches</code> (printed), <code>chem.stocked</code> (put in the fridge),
+<code>chem.cryoxadone</code> (beakers left in cryo) and <code>chem.buffer</code> (units drawn into the heater).</p>
+<p><strong>A headless run ends in a segfault, and it means nothing.</strong> <code>dd.exe</code> reports every test, prints
+<code>Shutdown complete</code> with each subsystem closing in order, and then the process dies on final teardown. The
+results above it are complete and trustworthy -- there are no runtimes and no hard-deletion warnings before
+it. Worth knowing before you go looking for a crash in your own code, as I did.</p>
+<h2 id="headless-test-loop">Headless test loop</h2>
+<pre><code>tools\build\build.bat build
+&lt;BYOND&gt;\bin\dd.exe tgstation.dmb 7777 -trusted -close -logself -params log-directory=sp_test
+</code></pre>
+<p>Then read <code>data/logs/sp_test/{game,runtime}.log</code>; SP lines are prefixed <code>SP:</code>. Kill <code>dd.exe</code> before
+recompiling, and touch a changed file if the build says &quot;Skipping 'dm' (up to date)&quot;.</p>
+<p>Use port 7777, not 1337: Razer Synapse's RzSDKServer listens on <code>127.0.0.1:1337</code>, and a loopback-bound
+socket beats Dream Daemon's wildcard bind, so clients reach Razer and fail the BYOND handshake while
+the game server logs nothing at all.</p>
+<h2 id="upstream-touch-points-keep-this-list-short">Upstream touch points (keep this list short)</h2>
+<ul>
+<li><code>code/controllers/master.dm</code> — do not sleep the world after init when
+<code>RESUME_AFTER_INITIALIZATIONS</code> is set.</li>
+<li><code>code/game/machinery/doors/firedoor.dm</code> — <code>CanAStarPass</code> so AI can path through unwelded firelocks.</li>
+<li><code>code/datums/station_traits/{neutral,positive}_traits.dm</code> — null-guard the client argument, which
+AI crew do not have (two traits were throwing a runtime per spawned crew member).</li>
+<li><code>code/_compile_options.dm</code> — the optional <code>SP_BREACH_DEBUG</code> and <code>SP_KITCHEN_DEBUG</code> flags.</li>
+<li><code>tgstation.dme</code> — include lines for this module.</li>
+<li>Overridden from inside the module rather than edited in place: <code>/obj/structure/plasticflaps/CanAStarPass</code>
+(<code>ai/sp_crew_behaviors.dm</code>), so JPS stops planning standing mobs through flaps they cannot cross; and
+<code>/mob/dead/new_player/IsJobUnavailable</code>, <code>/datum/controller/subsystem/job/assign_role</code> and
+<code>/datum/latejoin_menu/ui_data</code> (<code>sp_role_takeover.dm</code>), so jobs held by AI crew stay open to players.</li>
+</ul>
+<h2 id="known-limitations">Known limitations</h2>
+<ul>
+<li>Crew wander randomly inside their areas; no schedules or work objects yet.</li>
+<li>Breach repair patches floors only. Broken walls, windows and airlocks are left alone, and nobody
+re-pressurises the room afterwards.</li>
+<li>Threat detection is line-of-sight and weapon-in-hand only; concealed weapons do not scare anyone.</li>
+<li>Cargo never sells anything, works the mining or materials markets, or handles the express console;
+there are no miners yet. Crates are dragged, so a technician moves one at a time, and a haul that
+has not finished within two minutes is abandoned where it stands rather than blocking the
+quartermaster's paperwork behind it. Nobody goes back for an abandoned crate.</li>
+<li>Machine lookups here deliberately avoid <code>oview()</code>. It is sight-limited, so a console one room away
+behind a wall is invisible and the quartermaster would never find their own desk.</li>
+<li>Botanists do not compost, fight pests, or use grafts and the DNA manipulator.</li>
+<li>An antagonist completed a theft in a live round for the first time on 2026-09-21 (<code>antag.stole</code>), on a
+station of 32 crew. It is one sighting, not a pattern: with 17 crew the same scheme still finds nothing
+liftable it can reach, for the access reasons written up in <code>docs/02-antagonist-plan.md</code>.</li>
+<li>Schemes can only steal, and only from TG's own steal catalogue filtered down to things actually
+liftable (out on a turf, or in a closet this thief can open). Most of that catalogue is deliberately
+locked away, so the choice is narrow. Sabotage, framing and escape-with-the-loot are not written.</li>
+<li>The cell was used in a live round on 2026-09-21: <em>&quot;put Isabelle Leach in Cell 1 for 8 minutes&quot;</em>, 49
+seconds from the arrest being called, through the chase, the cuffing, the walk and the swap through the
+door. It took five rounds to see, and four of those failed for reasons that had nothing to do with the
+escort: the only officer was in surgery, the suspect was in atmospherics, the suspect was in the Head of
+Personnel's office, and then the arrest turned into a brawl (see below).</li>
+<li>None of the escalation above red has been seen in a round yet. The alert ladder, the armoury, the arming
+order and the fire-mode switch are built and tested, but a quiet shift never reaches red, so what has
+actually been watched end to end is a briefing and a stand down. <code>SP_DEBUG_SECURITY_ALARM</code> exists to force
+the rest; until a round runs with it, treat the red-alert path as compiled rather than proven.</li>
+<li>The lawyer takes no orders at all, being in <code>/datum/job_department/service</code> rather than security, and so
+running the ordinary crew controller with no security behaviour on it.</li>
+<li>Antagonist theft still does not fire on a fresh station, but the reason is now measured rather than
+guessed. The funnel logs where it closed -- <code>52 catalogued, 15 on the map, 12 with a copy somewhere, 1 liftable, none of those reachable</code> -- and then retries that one at a budget nobody could exceed and again
+with every door open: <code>ablative trenchcoat in Armory, 13 tiles off, budget 220: 21 steps with every door open, so it is access</code>. Not the catalogue, not the lift rule, not the path budget, all of which were
+theorised and all of which were wrong. TG's steal list is a challenge built for a player traitor with an
+emag; a crew member who can open only what their own ID opens will correctly find nothing on it.</li>
+<li>Security's answer to a petty crime stops at a word and a note. An officer confronts a witnessed thief,
+files it, and a pattern on the record becomes an arrest — but they will not demand the stolen item back,
+search anybody, or do anything with the brig, so a thief who keeps walking keeps the loot.</li>
+<li>The greytide's malicious streak is one behaviour (a smashed light tube). Emptying a locker and stashing
+the loot, prying a door, and slips in the hallway are planned, not built.</li>
+<li>Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
+full species change needs it sustained above 60, which competes with the plant stabilising between
+doses, so new species are occasional rather than routine.</li>
+<li>No hunger/sleep handling (trait-suppressed).</li>
+<li>Without a chemist on the station nobody refills cryoxadone, so the cryo tubes run on whatever beakers the
+round started with.</li>
+<li>Surgery covers bones and tending serious damage. No organ repair, prosthetics or reattached limbs, no
+defibrillation or blood transfusions, and no anesthetic: TG does not penalise operating on somebody
+awake, so patients simply feel it.</li>
+<li>Only brute, burn and bleeding are treated with the medkit. Toxin and suffocation go to cryo or nowhere.</li>
+<li>The chemist makes the basics only: libital and aiuri patches and cryoxadone. No multiver, epinephrine or
+pills, and nothing needing the grinder, cold recipes or catalysts.</li>
+<li>The chemist only tops up the heater at the bench they are brewing at, and only once it runs low. The
+other two benches keep the twenty units each that they started with.</li>
+<li>Medics do not yet collect patches from the chemistry fridge. They treat with what they carry, and players
+can take from the fridge.</li>
+<li>Conversation branches and remembers now, but it only talks. Standing is felt in how people speak to you
+and shows at the extremes; it is not yet spent on anything they would do for you -- follow you, open a door
+they have access to, fetch something. Directions are stock answers rather than worked out from where the
+crew member stands. The reply links and Talk to have been driven by the stand-in in live rounds, but not
+yet by a real client.</li>
+<li>Idle crew-to-crew chat outranks a player. Talk to refuses anybody already in a conversation, so a crew
+member who falls into small talk with a colleague the moment yours ends is out of reach until it finishes; the
+stand-in's fifth visit lost both its Talk to menus this way. A crew member just introduced to you may still
+add the newcomer line afterwards, and a mime cast in a conversation says nothing, since TG will not let a
+mime speak.</li>
+<li>Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
+Hacking, slips and lube are antagonist territory rather than theirs.</li>
+</ul>
+<h2 id="next">Next</h2>
+<ul>
+<li>Players before small talk: Talk to, or a line naming somebody, ends their chat with a colleague; an
+introduction counts as the greeting; mimes stay out of spoken parts. Small, and first, since spending
+standing needs a crew member who stays with you.</li>
+<li>Five minutes with a real client, when there is time. The stand-in has played the player's side in live rounds;
+what it cannot show is the chat window drawing a reply link and a click reaching the server.</li>
+<li>Spending standing: crew who think well of you doing things for you -- following, opening a door they have
+access to, fetching something. The plan's list of effects names these; none is built.</li>
+<li>More written dialogue (the plan's M2): bartender and patron, doctor and patient, chef and botanist, the HoP
+and the all-access request, security and the assistant who was seen pranking.</li>
+<li>The warden's side of the brig, then searches and confiscation.</li>
+</ul></td></tr></table></main><footer>tgstation.dme <a href="https://github.com/thevexingvixen/Spacestation-SP/tree/3f7b91492fd681c6c59eda48a07ccc87692d91ae">3f7b914</a> (spacestation-sp) — <a href="https://github.com/SpaceManiac/SpacemanDMM/blob/master/crates/dmdoc/README.md">dmdoc 1.11.0</a></footer></body></html>
