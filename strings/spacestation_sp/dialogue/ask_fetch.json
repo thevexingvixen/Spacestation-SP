@@ -1,0 +1,176 @@
+{
+	"id": "ask_fetch",
+	"title": "Ask them to fetch something",
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"can_favour": {
+			"crew->player": "fetch"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "crew",
+			"lines": [
+				"Fetch what?",
+				"What are you after?"
+			],
+			"next": [
+				{
+					"to": "yes",
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						}
+					}
+				},
+				{
+					"to": "yes_medical",
+					"weight": 3,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						},
+						"department": {
+							"crew": [
+								"Medical"
+							]
+						}
+					}
+				},
+				{
+					"to": "yes_clown",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						},
+						"job": {
+							"crew": [
+								"Clown"
+							]
+						}
+					}
+				},
+				{
+					"to": "not_yet",
+					"if": {
+						"standing": {
+							"crew->player": "<4"
+						}
+					}
+				},
+				{
+					"to": "no",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": "<=-4"
+						}
+					}
+				}
+			]
+		},
+		"yes": {
+			"speaker": "crew",
+			"lines": [
+				"I can get you %FETCH%. Wait there.",
+				"I know where there's %FETCH%. Back in a minute."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "fetch"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"yes_medical": {
+			"speaker": "crew",
+			"lines": [
+				"I'll get you %FETCH%. Try not to bleed on anything while I'm gone.",
+				"There's %FETCH% in storage with your name on it. Stay put."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "fetch"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"yes_clown": {
+			"speaker": "crew",
+			"lines": [
+				"For you? Only the finest. Mind the peel.",
+				"Have %FETCH%, on the house. The house is very slippery."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "fetch"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"not_yet": {
+			"speaker": "crew",
+			"lines": [
+				"I'm not a delivery service.",
+				"Get it yourself, I've got work."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"no": {
+			"speaker": "crew",
+			"lines": [
+				"Fetch it yourself."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

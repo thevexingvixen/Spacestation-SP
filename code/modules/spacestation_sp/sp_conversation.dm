@@ -18,14 +18,29 @@
 	var/list/parts = splittext(who.real_name, " ")
 	return length(parts) ? parts[1] : who.real_name
 
+/**
+ * What a crew member calls somebody to their face: their first name if they know it, whatever they call a stranger
+ * if they do not (sp_dialogue_stranger()), and a thing by its name.
+ */
+/proc/sp_what_we_call(datum/ai_controller/controller, atom/target)
+	if(!isliving(target))
+		return target?.name
+	var/datum/ai_controller/sp_crew/crew_ai = controller
+	if(istype(crew_ai) && !sp_knows_name(crew_ai, target))
+		return sp_dialogue_stranger(crew_ai.pawn)
+	return sp_first_name(target)
+
 /// Another AI crew member nearby who is free to talk.
 /proc/sp_find_chat_partner(mob/living/carbon/human/speaker, range = 5)
 	for(var/mob/living/carbon/human/candidate in oview(range, speaker))
 		var/datum/ai_controller/sp_crew/their_ai = candidate.ai_controller
 		if(!istype(their_ai) || !their_ai.free_to_talk(speaker))
 			continue
-		// Don't interrupt someone already mid-conversation or dealing with something.
+		// Don't interrupt someone already mid-conversation or dealing with something, or take somebody away from a
+		// player they have just been talking to. A mime has nothing to say back.
 		if(their_ai.blackboard_key_exists(BB_SP_CHAT_PARTNER) || their_ai.blackboard_key_exists(BB_SP_ATTACKER))
+			continue
+		if(their_ai.engaged_with_player() || !candidate.can_speak())
 			continue
 		if(!can_see(speaker, candidate, range))
 			continue
@@ -94,6 +109,12 @@
 	for(var/phrase in list("follow me", "come with", "come along"))
 		if(sp_said(words, phrase))
 			return SP_INTENT_FOLLOW
+	for(var/phrase in list("the door", "this door", "that door", "let me in", "let me through", "open up"))
+		if(sp_said(words, phrase))
+			return SP_INTENT_DOOR
+	for(var/phrase in list("a doctor", "the doctor", "a medic", "call medbay", "need medbay", "i m hurt", "i am hurt", "i m bleeding"))
+		if(sp_said(words, phrase))
+			return SP_INTENT_DOCTOR
 	for(var/phrase in list("what do you do", "your job", "who are you"))
 		if(sp_said(words, phrase))
 			return SP_INTENT_WHO
@@ -168,7 +189,8 @@
 	if(isnull(intent))
 		return null
 	var/standing = sp_reputation(controller, asker)
-	var/their_name = sp_first_name(asker)
+	// Only a name they know. A second round of favours had a passer-by thank the stand-in by a name nobody had told them.
+	var/their_name = sp_knows_name(controller, asker) ? sp_first_name(asker) : sp_dialogue_stranger(pawn)
 	switch(intent)
 		if(SP_INTENT_INSULT)
 			sp_adjust_reputation(controller, asker, -3, "insulted us")
@@ -176,11 +198,17 @@
 		if(SP_INTENT_THANKS)
 			sp_adjust_reputation(controller, asker, 2, "was polite")
 			return pick("Any time.", "No trouble at all.", "Don't mention it, [their_name].")
+		// Asking for a favour is a written conversation (ask_follow, ask_door, ask_doctor), which decides who says
+		// yes and does it. One lands here only when that conversation cannot be had: nothing to open, no medic about,
+		// a favour already in hand.
 		if(SP_INTENT_FOLLOW)
-			// The standing system is what will eventually decide this properly.
-			if(standing >= SP_REP_FRIENDLY)
-				return "Alright, [their_name], lead on."
-			return pick("I've got work to do.", "Maybe later, I'm in the middle of something.")
+			return pick("Not just now, [their_name].", "I'm in the middle of something.")
+		if(SP_INTENT_DOOR)
+			return pick("Not one I can help you with.", "Can't help you there, sorry.")
+		if(SP_INTENT_DOCTOR)
+			if(sp_dialogue_hurt(asker))
+				return pick("Get yourself to medbay, [their_name].", "Medbay. Now. Go.")
+			return pick("You look fine to me.", "Medbay's that way, if you're worried.")
 		if(SP_INTENT_WHO)
 			var/job_title = pawn.mind?.assigned_role?.title || "crew"
 			return "I'm [pawn.real_name], [job_title]."

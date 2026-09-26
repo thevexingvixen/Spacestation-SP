@@ -1,0 +1,69 @@
+{
+	"id": "doctor_patient_again",
+	"triggers": [
+		"treated"
+	],
+	"weight": 1,
+	"roles": {
+		"doctor": {
+			"department": [
+				"Medical"
+			]
+		},
+		"patient": {}
+	},
+	"if": {
+		"memory": {
+			"doctor->patient": "treated"
+		}
+	},
+	"start": "again",
+	"nodes": {
+		"again": {
+			"speaker": "doctor",
+			"lines": [
+				"You again?",
+				"Back so soon, %PATIENT_FIRST%? I'm starting a file on you.",
+				"I've buried people who were in here less often than you."
+			],
+			"next": [
+				{
+					"to": "excuse"
+				}
+			]
+		},
+		"excuse": {
+			"speaker": "patient",
+			"lines": [
+				"It wasn't my fault this time.",
+				"I missed you, doc.",
+				"The station started it."
+			],
+			"next": [
+				{
+					"to": "verdict"
+				}
+			]
+		},
+		"verdict": {
+			"speaker": "doctor",
+			"lines": [
+				"It never is. Out you go.",
+				"Stay out of trouble. Or at least out of my ward.",
+				"Next time bring a note from whatever hit you."
+			],
+			"effects": [
+				{
+					"standing": {
+						"doctor->patient": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,82 @@
+{
+	"id": "engineer_handover",
+	"weight": 2,
+	"roles": {
+		"first": {
+			"department": [
+				"Engineering"
+			]
+		},
+		"second": {
+			"department": [
+				"Engineering"
+			]
+		}
+	},
+	"if": {
+		"time_into_shift": ">=5"
+	},
+	"start": "report",
+	"nodes": {
+		"report": {
+			"speaker": "first",
+			"lines": [
+				"Engine's up. I've set the SMES.",
+				"I've done the rounds. Nothing's on fire.",
+				"Power's holding. Don't ask me for how long."
+			],
+			"next": [
+				{
+					"to": "ask"
+				}
+			]
+		},
+		"ask": {
+			"speaker": "second",
+			"lines": [
+				"Anything I should know?",
+				"Good. What's the catch?",
+				"For now, you mean."
+			],
+			"next": [
+				{
+					"to": "catch"
+				}
+			]
+		},
+		"catch": {
+			"speaker": "first",
+			"lines": [
+				"Don't touch the emitters. Just don't.",
+				"Somebody's been at the pipes again. I can smell it.",
+				"The crystal's humming a new note. Probably fine.",
+				"An assistant asked me for insuls twice. I said no twice."
+			],
+			"next": [
+				{
+					"to": "resigned"
+				}
+			]
+		},
+		"resigned": {
+			"speaker": "second",
+			"lines": [
+				"Noted. I'll pretend I didn't hear that.",
+				"It's always probably fine. Until it isn't.",
+				"If it goes, it goes. I'll be in the break room."
+			],
+			"effects": [
+				{
+					"standing": {
+						"second->first": 1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

@@ -354,6 +354,9 @@ GLOBAL_LIST_INIT(sp_patch_chems, list(
  * Who to see next: anybody hurt who has come into medbay, anybody hurt within sight of wherever we are, and
  * any player standing in medbay we have not scanned lately, so a player walking in gets looked at like
  * anyone else. Somebody down comes before everybody standing; then the worst hurt; then the nearest.
+ *
+ * Somebody we have been called to on the radio (a crew member's favour, on_heard_call()) is seen wherever they
+ * are, hurt or not, and near the top of the list, until we have looked them over or SP_HOUSE_CALL_TIME passes.
  */
 /proc/sp_find_patient(mob/living/carbon/human/doctor, datum/ai_controller/controller)
 	var/turf/here = get_turf(doctor)
@@ -365,6 +368,12 @@ GLOBAL_LIST_INIT(sp_patch_chems, list(
 	for(var/mob/living/carbon/human/person as anything in GLOB.human_list)
 		if(person.z == here.z && sp_in_medbay(person))
 			candidates |= person
+	var/mob/living/carbon/human/called = controller.blackboard[BB_SP_HOUSE_CALL]
+	if(!isnull(called) && world.time - controller.blackboard[BB_SP_HOUSE_CALL_AT] > SP_HOUSE_CALL_TIME)
+		sp_house_call_over(controller, "nobody reached them in time")
+		called = null
+	if(istype(called) && called.z == here.z)
+		candidates |= called
 	var/list/ignored = controller.blackboard[BB_SP_PATIENT_IGNORE]
 	var/list/scanned = controller.blackboard[BB_SP_SCANNED]
 	var/mob/living/carbon/human/best
@@ -382,18 +391,31 @@ GLOBAL_LIST_INIT(sp_patch_chems, list(
 			score = 100 + sp_patch_damage(person) + person.get_tox_loss() + person.get_oxy_loss()
 			if(person.stat != STABLE)
 				score += 400
-		else if(person.client && sp_in_medbay(person) && world.time > (LAZYACCESS(scanned, person) || -SP_RESCAN_TIME) + SP_RESCAN_TIME)
+		else if(person == called || (person.client && sp_in_medbay(person) && world.time > (LAZYACCESS(scanned, person) || -SP_RESCAN_TIME) + SP_RESCAN_TIME))
 			score = 0
 		else
 			continue
+		if(person == called)
+			score += SP_HOUSE_CALL_PRIORITY
 		score -= get_dist(doctor, person)
 		if(score > best_score)
 			best = person
 			best_score = score
 	return best
 
+/// A call to come and see somebody is over: they have been looked at, or it has gone stale.
+/proc/sp_house_call_over(datum/ai_controller/controller, reason)
+	var/mob/living/called = controller.blackboard[BB_SP_HOUSE_CALL]
+	if(isnull(called))
+		return
+	controller.clear_blackboard_key(BB_SP_HOUSE_CALL)
+	controller.clear_blackboard_key(BB_SP_HOUSE_CALL_AT)
+	log_sp("[controller.pawn] is done with the call to [called.real_name]: [reason]")
+
 /// Stops working on a patient for a while: we could not get to them, or nothing we had would help.
 /proc/sp_give_up_on_patient(datum/ai_controller/controller, mob/living/patient, reason, duration = SP_PATIENT_IGNORE_TIME)
+	if(controller.blackboard[BB_SP_HOUSE_CALL] == patient)
+		sp_house_call_over(controller, reason)
 	controller.set_blackboard_key_assoc_lazylist(BB_SP_PATIENT_IGNORE, patient, world.time + duration)
 	controller.clear_blackboard_key(BB_SP_PATIENT)
 	controller.clear_blackboard_key(BB_SP_PATIENT_ATTEMPT)

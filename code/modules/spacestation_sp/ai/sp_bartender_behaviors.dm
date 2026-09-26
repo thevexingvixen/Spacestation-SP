@@ -182,11 +182,13 @@
 	var/obj/item/glass = controller.blackboard[BB_SP_GLASS]
 	var/obj/structure/table/counter = controller.blackboard[BB_SP_BAR_COUNTER]
 	var/ordered_by = controller.blackboard[BB_SP_ORDER_FOR]
+	var/mob/living/carbon/human/patron = controller.blackboard[BB_SP_ORDER_FROM]
 	controller.clear_blackboard_key(BB_SP_GLASS)
 	controller.clear_blackboard_key(BB_SP_BAR_COUNTER)
 	controller.clear_blackboard_key(BB_SP_DRINK)
 	controller.clear_blackboard_key(BB_SP_DRINK_ORDER)
 	controller.clear_blackboard_key(BB_SP_ORDER_FOR)
+	controller.clear_blackboard_key(BB_SP_ORDER_FROM)
 	if(!istype(pawn) || QDELETED(glass) || QDELETED(counter) || !counter.Adjacent(pawn))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.face_atom(counter)
@@ -197,6 +199,9 @@
 	log_sp("[pawn.real_name] put [drink_name] on the bar in [get_area_name(counter)][ordered_by ? " for [ordered_by]" : ""]")
 	if(ordered_by)
 		sp_record("bar.order_filled")
+		// Whoever ordered it gets a word over it, if they are still at the bar: order, comment, tip or tab.
+		if(!isnull(sp_talk_about(pawn, patron, "served")))
+			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 		sp_crew_speak(pawn, pick(
 			"[ordered_by], your [drink_name] is up.",
 			"One [drink_name] for [ordered_by], on the bar.",

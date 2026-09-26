@@ -1,6 +1,7 @@
 # Spacestation SP — Plan: branching dialogue, NPC↔NPC and NPC↔player
 
-Date: 2026-09-11. Status: plan only, no dialogue code written yet.
+Date: 2026-09-11, updated 2026-09-24. Status: M0 to M3 built, M2 and M4's favours built 2026-09-24 (see §4);
+still to do are rumours spreading between crew and M5, the sidecar. Sections 1 to 3 are the plan as written.
 
 This builds on the conversation system in `code/modules/spacestation_sp/sp_conversation.dm`,
 `ai/sp_social_behaviors.dm` and the hearing path in `ai/sp_crew_controller.dm`. The first section is an
@@ -308,8 +309,20 @@ A node can say `"generate": {"style": "grumpy engineer", "max_words": 18}` in pl
 |---|---|---|
 | M0 | Fix the bugs in §1 (**done 2026-09-16**) | Unit tests cover `sp_answer_for` (word boundaries), a full AI exchange with no stuck keys, and base crew chatting; security answers |
 | M1 | Engine (**done 2026-09-22**) | JSON loader and validator, thread runtime for NPC↔NPC, the seven topics ported; a unit test runs a thread between two AI crew line by line |
-| M2 | NPC↔NPC content | 10–15 dialogues from §3.3 with standing and memory effects; live tally `talk.threads`, `talk.finished`, `talk.abandoned` |
-| M3 | NPC↔player (**built 2026-09-22; seen only in tests so far**) | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
+| M2 | NPC↔NPC content (**done 2026-09-24**) | 10–15 dialogues from §3.3 with standing and memory effects; live tally `talk.threads`, `talk.finished`, `talk.abandoned` |
+| M3 | NPC↔player (**built 2026-09-22, played by the stand-in 2026-09-23**) | Intents, clickable replies, the Talk verb, player memory, 5–8 player dialogues (introductions, directions, help, follow requests) |
+| M4 | Consequences (**favours built 2026-09-24**) | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
+| M5 | Sidecar | `generate` nodes behind a budget, off by default |
+
+**Done 2026-09-24:** M2 and most of M4. Conversations started by what the crew do -- the bartender and whoever ordered
+(`served`), a medic and the patient they just patched (`treated`, and "You again?" the second time), botany and the
+cook over a delivery (`delivered`, where the cook's ask for tomatoes becomes a real request) -- plus the Head of
+Personnel and the all-access request, two engineers handing over, and security having a word with the assistant who
+pulled a prank, which needed station events to remember who as well as where. Players get their own versions at
+the bar, in medbay and at the HoP's desk. M4's favours are effects that start a behaviour: follow, open a door we
+have access to, fetch something from our department, and call medbay on the radio, each gated by standing in its
+dialogue file and costing a point of it. Rumours spreading between crew is the part of M4 not built. A player also
+comes before small talk now: Talk to or naming somebody breaks off a chat with a colleague.
 
 **Done 2026-09-20:** the first slice of M1, plus the janitor and the clown it was written alongside.
 Dialogues are json files under `strings/spacestation_sp/dialogue`, read and checked at load and in a unit
@@ -321,11 +334,9 @@ into files. Player choices remain M3.
 **Done 2026-09-22:** the rest of M1 -- memory, the whole condition and effect vocabulary, reachability checks,
 and the seven keyword topics as files -- and M3: reply links under the NPC's line, the Talk to verb, player
 dialogues (introductions, what they do, asking for a hand, the shift, rumours), names learned by introduction
-or from an ID read up close, and standing shown on examine at the extremes. Not built from the plan: effects
-that start a behaviour (follow, go to, open a door, call on the radio), directions worked out from where the
-crew member stands, and a debug verb that dumps memory.
-| M4 | Consequences | Favours and follow behaviour; standing-gated help (doors, fetching a doctor); rumours spreading |
-| M5 | Sidecar | `generate` nodes behind a budget, off by default |
+or from an ID read up close, and standing shown on examine at the extremes. Not built from the plan then: effects
+that start a behaviour (follow, go to, open a door, call on the radio) -- built 2026-09-24 as favours, all but
+"go to" -- directions worked out from where the crew member stands, and a debug verb that dumps memory.
 
 ---
 

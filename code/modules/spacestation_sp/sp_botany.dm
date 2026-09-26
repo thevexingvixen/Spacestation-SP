@@ -153,6 +153,8 @@ GLOBAL_LIST_INIT(sp_botany_seed_pool, list(
 GLOBAL_LIST_INIT(sp_requestable_plants, list(
 	"aloe" = /obj/item/food/grown/aloe,
 	"banana" = /obj/item/food/grown/banana,
+	// The cook asks for these when botany drops off a load (chef_botanist.json); botany starts the shift with the seeds.
+	"tomato" = /obj/item/food/grown/tomato,
 ))
 
 /**

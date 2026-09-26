@@ -1,0 +1,110 @@
+{
+	"id": "hop_all_access_player",
+	"title": "Ask for all access",
+	"weight": 1,
+	"roles": {
+		"hop": {
+			"job": [
+				"Head of Personnel"
+			]
+		},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"memory": {
+			"hop->player": "!asked_for_aa"
+		}
+	},
+	"start": "guess",
+	"nodes": {
+		"guess": {
+			"speaker": "hop",
+			"lines": [
+				"Let me guess. All access.",
+				"If this is about all access, the answer's no. If it isn't, go on."
+			],
+			"next": [
+				{
+					"to": "ask"
+				}
+			]
+		},
+		"ask": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "All access, please.",
+					"to": "refuse"
+				},
+				{
+					"text": "Just maintenance, then?",
+					"to": "maintenance"
+				},
+				{
+					"text": "Never mind.",
+					"to": "relieved"
+				}
+			],
+			"timeout_to": "relieved"
+		},
+		"refuse": {
+			"speaker": "hop",
+			"lines": [
+				"No.",
+				"Not a chance. Next."
+			],
+			"effects": [
+				{
+					"remember": {
+						"hop->player": "asked_for_aa"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"maintenance": {
+			"speaker": "hop",
+			"lines": [
+				"So you can crawl about in the dark stealing insulated gloves? No.",
+				"Maintenance is where assistants go to become a problem. No."
+			],
+			"effects": [
+				{
+					"remember": {
+						"hop->player": "asked_for_aa"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"relieved": {
+			"speaker": "hop",
+			"lines": [
+				"Good. Best conversation I've had all shift.",
+				"Wise."
+			],
+			"effects": [
+				{
+					"standing": {
+						"hop->player": 1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

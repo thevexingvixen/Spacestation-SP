@@ -119,8 +119,8 @@
 		return
 	sp_record("antag.stole")
 	log_sp("[pawn.real_name] stole [what] from [where]")
-	// Somebody may have seen that.
-	sp_crime_seen(pawn, SP_CRIME_THEFT, "take [what]", get_turf(pawn))
+	// Somebody may have seen that, and a witness who did knows what to tell security was taken.
+	sp_crime_seen(pawn, SP_CRIME_THEFT, "take [what]", get_turf(pawn), taken = prize)
 	scheme.check_progress(controller)
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
 

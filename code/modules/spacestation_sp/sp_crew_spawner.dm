@@ -108,6 +108,9 @@
 	// of their own. Tested before the department, the way the chemist is tested before medical.
 	if(istype(job, /datum/job/head_of_security))
 		return /datum/ai_controller/sp_crew/security/hos
+	// The warden keeps the brig rather than patrolling, and holds the armoury keys.
+	if(istype(job, /datum/job/warden))
+		return /datum/ai_controller/sp_crew/security/warden
 	if(/datum/job_department/security in job.departments_list)
 		return /datum/ai_controller/sp_crew/security
 	if(/datum/job_department/engineering in job.departments_list)
@@ -138,6 +141,8 @@
 	var/static/list/essential = list(
 		/datum/job/station_engineer,
 		/datum/job/security_officer,
+		// Somebody to let prisoners out again, and to take what officers confiscate off their hands.
+		/datum/job/warden,
 		/datum/job/doctor,
 		/datum/job/chemist,
 		/datum/job/botanist,

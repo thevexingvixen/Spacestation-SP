@@ -1,0 +1,91 @@
+{
+	"id": "doctor_patient",
+	"triggers": [
+		"treated"
+	],
+	"weight": 1,
+	"roles": {
+		"doctor": {
+			"department": [
+				"Medical"
+			]
+		},
+		"patient": {}
+	},
+	"if": {
+		"memory": {
+			"doctor->patient": "!treated"
+		}
+	},
+	"start": "advice",
+	"nodes": {
+		"advice": {
+			"speaker": "doctor",
+			"lines": [
+				"All done. Keep it clean and come back if it goes green.",
+				"You'll live. Probably. Drink some water.",
+				"That's you patched. Try to stay in one piece, %PATIENT_FIRST%."
+			],
+			"effects": [
+				{
+					"remember": {
+						"doctor->patient": "treated"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "scar",
+					"weight": 2
+				},
+				{
+					"to": "thanks",
+					"weight": 3
+				}
+			]
+		},
+		"scar": {
+			"speaker": "patient",
+			"lines": [
+				"Will it scar?",
+				"Is it meant to itch like that?"
+			],
+			"next": [
+				{
+					"to": "scar_answer"
+				}
+			]
+		},
+		"scar_answer": {
+			"speaker": "doctor",
+			"lines": [
+				"Everything scars. Most of it only on the inside.",
+				"Itching means it's healing. Or infected. One of the two."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"thanks": {
+			"speaker": "patient",
+			"lines": [
+				"Thanks, doc.",
+				"Cheers. I owe you one."
+			],
+			"effects": [
+				{
+					"standing": {
+						"doctor->patient": 1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

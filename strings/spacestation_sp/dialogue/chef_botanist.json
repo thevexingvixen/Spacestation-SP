@@ -1,0 +1,124 @@
+{
+	"id": "chef_botanist",
+	"triggers": [
+		"delivered"
+	],
+	"weight": 1,
+	"roles": {
+		"botanist": {
+			"job": [
+				"Botanist"
+			]
+		},
+		"cook": {
+			"job": [
+				"Cook",
+				"Chef"
+			]
+		}
+	},
+	"start": "drop",
+	"nodes": {
+		"drop": {
+			"speaker": "botanist",
+			"lines": [
+				"Fresh from the trays, %COOK_FIRST%.",
+				"Special delivery. It's still got dirt on, mind.",
+				"Produce. Try not to burn this lot."
+			],
+			"next": [
+				{
+					"to": "grumble"
+				},
+				{
+					"to": "pleased"
+				}
+			]
+		},
+		"grumble": {
+			"speaker": "cook",
+			"lines": [
+				"Is this it?",
+				"About time. I've been cooking air.",
+				"Half of this is still alive."
+			],
+			"next": [
+				{
+					"to": "ask",
+					"weight": 2
+				},
+				{
+					"to": "shrug"
+				}
+			]
+		},
+		"pleased": {
+			"speaker": "cook",
+			"lines": [
+				"Lovely. I can work with this.",
+				"Now that's a tray worth growing.",
+				"Cheers, %BOTANIST_FIRST%. The crew thank you. Well, they don't, but I do."
+			],
+			"effects": [
+				{
+					"standing": {
+						"cook->botanist": 1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "ask",
+					"weight": 1
+				},
+				{
+					"to": "end",
+					"weight": 2
+				}
+			]
+		},
+		"ask": {
+			"speaker": "cook",
+			"lines": [
+				"Any tomatoes going, botany? I'm out.",
+				"While you're here, botany: tomatoes. I need tomatoes."
+			],
+			"next": [
+				{
+					"to": "promise"
+				}
+			]
+		},
+		"promise": {
+			"speaker": "botanist",
+			"lines": [
+				"Tomatoes. Right. I'll see what the trays can do.",
+				"Put it on my list. It's a long list."
+			],
+			"effects": [
+				{
+					"remember": {
+						"cook->botanist": "asked_for_tomatoes"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"shrug": {
+			"speaker": "botanist",
+			"lines": [
+				"Plants grow at the speed plants grow.",
+				"Take it up with the sun. Oh, wait."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

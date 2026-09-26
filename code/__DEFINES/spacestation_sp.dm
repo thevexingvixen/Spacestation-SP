@@ -428,6 +428,8 @@
 /// A drink somebody has asked for by name, and who asked.
 #define BB_SP_DRINK_ORDER "sp_drink_order"
 #define BB_SP_ORDER_FOR "sp_order_for"
+/// Who ordered it, the person rather than the name, so the bartender can have a word with them over it.
+#define BB_SP_ORDER_FROM "sp_order_from"
 /// Cooldown on a patron asking for something.
 #define BB_SP_ORDER_COOLDOWN_PATRON "sp_order_cooldown_patron"
 
@@ -666,7 +668,12 @@
 #define BB_SP_CELL_SPOT "sp_cell_spot"
 /// How long a prisoner being walked to a cell stays put for the officer holding them. AI crew only:
 /// sp_hold_still() has no purchase on a player, who is free to walk off mid-escort.
-#define SP_ESCORT_TIME (60 SECONDS)
+#define SP_ESCORT_TIME (3 MINUTES)
+/// How many times the escort has taken hold of the prisoner, and how many lost holds are put up with.
+#define BB_SP_ESCORT_RETAKES "sp_escort_retakes"
+#define SP_ESCORT_MAX_RETAKES 6
+/// Where the escort's walk is going just now: the cell, or back to a prisoner who has been lost on the way.
+#define BB_SP_ESCORT_GOAL "sp_escort_goal"
 
 /// Rate limit on the progress line for a kit trip, so a long walk says so without filling the log.
 #define BB_SP_ARM_REPORT "sp_arm_report"
@@ -783,6 +790,8 @@
 #define SP_EVENT_TAG "tag"
 #define SP_EVENT_AREA_NAME "area"
 #define SP_EVENT_TIME "time"
+/// Who did it, by name, where anybody is to blame: the assistant who smashed the light.
+#define SP_EVENT_WHO "who"
 /// How long something that happened stays worth talking about.
 #define SP_EVENT_MEMORY (15 MINUTES)
 
@@ -797,6 +806,86 @@
 #define SP_DIALOGUE_MAX_LINES 12
 /// How far apart two people can drift before the conversation is over.
 #define SP_DIALOGUE_RANGE 5
+
+/// A player we have just been talking to, and until when they keep our attention. While they are still about we
+/// neither start small talk with a colleague nor get drawn into one (engaged_with_player()).
+#define BB_SP_ENGAGED_WITH "sp_engaged_with"
+#define BB_SP_ENGAGED_UNTIL "sp_engaged_until"
+#define SP_ENGAGED_TIME (20 SECONDS)
+
+// What else a player may ask a crew member for by speaking (sp_speech_intent()).
+#define SP_INTENT_DOOR "door"
+#define SP_INTENT_DOCTOR "doctor"
+
+// --- Favours: standing spent on things the crew do for you (ai/sp_favour_behaviors.dm) ------------------
+
+#define SP_FAVOUR_FOLLOW "follow"
+#define SP_FAVOUR_DOOR "door"
+#define SP_FAVOUR_FETCH "fetch"
+#define SP_FAVOUR_DOCTOR "doctor"
+/// The favour in hand: which one, for whom, until when, what it concerns (a door, a thing), and how far along.
+#define BB_SP_FAVOUR "sp_favour"
+#define BB_SP_FAVOUR_FOR "sp_favour_for"
+#define BB_SP_FAVOUR_UNTIL "sp_favour_until"
+#define BB_SP_FAVOUR_TARGET "sp_favour_target"
+#define BB_SP_FAVOUR_STAGE "sp_favour_stage"
+/// The closest a favour's walk has come, and when it last got closer: one that stops closing in is given up.
+#define BB_SP_FAVOUR_BEST_DIST "sp_favour_best_dist"
+#define BB_SP_FAVOUR_PROGRESS_AT "sp_favour_progress_at"
+#define SP_FAVOUR_STUCK (20 SECONDS)
+/// How long each favour is given.
+#define SP_FAVOUR_FOLLOW_TIME (3 MINUTES)
+#define SP_FAVOUR_DOOR_TIME (45 SECONDS)
+#define SP_FAVOUR_FETCH_TIME (150 SECONDS)
+/// How near the person asking a door has to be, to be "this door".
+#define SP_FAVOUR_DOOR_RANGE 3
+/// Further off than this, the person a favour is for has gone elsewhere.
+#define SP_FAVOUR_LOST_RANGE 12
+
+// --- Searches, confiscation and the warden (sp_search.dm, ai/sp_warden_behaviors.dm) ------------------
+
+/// What a witness saw taken, when the crime was a theft: the item itself, so an officer can ask for it back by name.
+#define SP_INCIDENT_ITEM "item"
+/// The item a suspect was reported taking, kept alongside BB_SP_SUSPECT.
+#define BB_SP_SUSPECT_ITEM "sp_suspect_item"
+/// Somebody we have already patted down this arrest.
+#define BB_SP_SEARCHED "sp_searched"
+/// How long a pat-down takes, and how long a thief is given to hand something over before it is taken.
+#define SP_SEARCH_TIME (3 SECONDS)
+#define SP_LOOT_DEMAND_TIME (4 SECONDS)
+/// Things confiscated and not yet filed, where they are going, and how many walks there have come to nothing.
+#define BB_SP_EVIDENCE "sp_evidence"
+#define BB_SP_EVIDENCE_HOME "sp_evidence_home"
+#define BB_SP_EVIDENCE_TRIES "sp_evidence_tries"
+/// After this many walks to whoever keeps evidence that came to nothing, a security locker will do.
+#define SP_EVIDENCE_MAX_TRIES 4
+
+/// A prisoner's entry in SSspacestation_sp.prisoners: who, which cell, until when, and who put them there.
+#define SP_PRISONER_WHO "who"
+#define SP_PRISONER_CELL "cell"
+#define SP_PRISONER_UNTIL "until"
+#define SP_PRISONER_OFFICER "officer"
+/// The cell the warden is walking to, what for, and where to stand.
+#define BB_SP_CELL_DUTY "sp_cell_duty"
+#define BB_SP_CELL_DUTY_KIND "sp_cell_duty_kind"
+#define BB_SP_CELL_DUTY_SPOT "sp_cell_duty_spot"
+#define SP_CELL_DUTY_RELEASE "release"
+#define SP_CELL_DUTY_RESET "reset"
+/// How far from a cell's inside tile still counts as in the cell.
+#define SP_CELL_REACH 3
+
+/// A call on the radio for another department's help, read off the caller as incidents are (on_pre_hear()).
+#define BB_SP_LAST_CALL "sp_last_call"
+#define BB_SP_LAST_CALL_HEARD "sp_last_call_heard"
+#define SP_CALL_KIND "kind"
+#define SP_CALL_WHO "who"
+#define SP_CALL_TIME "time"
+/// Somebody a medic has been called to, wherever they are, and when (sp_find_patient()).
+#define BB_SP_HOUSE_CALL "sp_house_call"
+#define BB_SP_HOUSE_CALL_AT "sp_house_call_at"
+#define SP_HOUSE_CALL_TIME (3 MINUTES)
+/// How far up a medic's list somebody they were called to goes: above anybody merely hurt, below anybody down.
+#define SP_HOUSE_CALL_PRIORITY 150
 
 // --- The stand-in player (sp_stand_in.dm) ------------------------------------------------------------
 

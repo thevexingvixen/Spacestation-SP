@@ -50,6 +50,8 @@
 	/// A player's turn: the replies on offer, in order, and when the offer lapses.
 	var/list/pending_options
 	var/options_expire = 0
+	/// The door or the thing a favour is about, when one was found to offer it (the can_favour condition).
+	var/datum/weakref/favour_target
 
 /datum/sp_dialogue_thread/Destroy(force)
 	GLOB.sp_active_threads -= src
@@ -57,6 +59,7 @@
 	dialogue = null
 	pending_options = null
 	event = null
+	favour_target = null
 	return ..()
 
 /datum/controller/subsystem/spacestation_sp
@@ -75,10 +78,13 @@ GLOBAL_LIST_EMPTY(sp_active_threads)
 	return FALSE
 
 /// What a file may ask about, and what it may change. Both are deliberately closed.
-GLOBAL_LIST_INIT(sp_dialogue_conditions, list("random", "standing", "job", "department", "memory", "knows_name", "place", "hurt", "holding", "time_into_shift", "recent_event"))
-GLOBAL_LIST_INIT(sp_dialogue_effects, list("standing", "remember", "forget", "learn_name", "event", "give"))
-/// What can start a dialogue besides the Talk to verb.
-GLOBAL_LIST_INIT(sp_dialogue_triggers, list("newcomer", SP_INTENT_GREETING, SP_INTENT_WHO, SP_INTENT_HELP, SP_INTENT_WELLBEING, SP_INTENT_THANKS, SP_INTENT_INSULT, SP_INTENT_WHERE, SP_INTENT_WHERE_WORK, SP_INTENT_FOLLOW))
+GLOBAL_LIST_INIT(sp_dialogue_conditions, list("random", "standing", "job", "department", "memory", "knows_name", "place", "hurt", "holding", "time_into_shift", "recent_event", "did_recently", "can_favour"))
+GLOBAL_LIST_INIT(sp_dialogue_effects, list("standing", "remember", "forget", "learn_name", "event", "give", "favour"))
+/**
+ * What can start a dialogue besides the Talk to verb and idle chat: a player's intent, a newcomer, or something the
+ * crew have just done together -- a drink served, a patient seen to, produce dropped off in the kitchen (sp_talk_about()).
+ */
+GLOBAL_LIST_INIT(sp_dialogue_triggers, list("newcomer", SP_INTENT_GREETING, SP_INTENT_WHO, SP_INTENT_HELP, SP_INTENT_WELLBEING, SP_INTENT_THANKS, SP_INTENT_INSULT, SP_INTENT_WHERE, SP_INTENT_WHERE_WORK, SP_INTENT_FOLLOW, SP_INTENT_DOOR, SP_INTENT_DOCTOR, "served", "treated", "delivered"))
 /// Departments by the name a file uses.
 GLOBAL_LIST_INIT(sp_dialogue_departments, list(
 	"Command" = /datum/job_department/command,
@@ -172,8 +178,10 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 				problems += "role [role] wants the [department] department, which is not one"
 	if(players > 1)
 		problems += "it has two players in it, and there is only ever one"
-	if(players && !istext(dialogue.title))
-		problems += "it has a player in it but no title to offer it to them by"
+	// A player picks a conversation from Talk to by its title; one only ever started by something happening -- a
+	// drink served, a patient seen to -- needs no title, and is not on the menu.
+	if(players && !istext(dialogue.title) && !length(dialogue.triggers))
+		problems += "it has a player in it but no title to offer it to them by, and nothing that starts it"
 	for(var/trigger in dialogue.triggers)
 		if(!(trigger in GLOB.sp_dialogue_triggers))
 			problems += "it starts on [trigger], which is not something that happens"
@@ -298,6 +306,32 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 			if("recent_event")
 				if(!istext(value) && !islist(value))
 					problems += "[where] asks after an event without naming one"
+			if("did_recently")
+				if(!islist(value))
+					problems += "[where] asks what somebody did without saying who"
+					continue
+				for(var/role in value)
+					if(!(role in dialogue.roles))
+						problems += "[where] asks what [role] did, which is not one of its roles"
+					else if(!istext(value[role]) && !length(value[role]))
+						problems += "[where] asks what [role] did without naming anything"
+			if("can_favour")
+				if(!islist(value))
+					problems += "[where] asks about a favour without saying whose"
+					continue
+				for(var/pair in value)
+					sp_dialogue_check_favour(dialogue, pair, value[pair], where, problems)
+
+/// A favour names two roles -- a crew member doing it, for somebody -- and one of the favours there are.
+/proc/sp_dialogue_check_favour(datum/sp_dialogue/dialogue, pair, kind, where, list/problems)
+	if(!sp_dialogue_pair_ok(dialogue, pair))
+		problems += "[where] names [pair] for a favour, which is not two of its roles"
+		return
+	var/list/sides = splittext(pair, "->")
+	if(sp_dialogue_role_is_player(dialogue, sides[1]))
+		problems += "[where] has the player doing a favour, and only crew do them"
+	if(!(kind in GLOB.sp_favours))
+		problems += "[where] asks for a [kind] favour, which is not one"
 
 /proc/sp_dialogue_check_effects(datum/sp_dialogue/dialogue, list/effects, where, list/problems)
 	if(isnull(effects))
@@ -328,6 +362,12 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 				if("give")
 					if(!islist(value) || !(value["from"] in dialogue.roles) || !(value["to"] in dialogue.roles) || !ispath(text2path(value["item"]), /obj/item))
 						problems += "[where] gives something, but not from one role to another, or not an item"
+				if("favour")
+					if(!islist(value))
+						problems += "[where] does a favour without saying whose"
+						continue
+					for(var/pair in value)
+						sp_dialogue_check_favour(dialogue, pair, value[pair], where, problems)
 
 /// Nodes nothing leads to. A node nobody can reach is a line nobody will ever hear.
 /proc/sp_dialogue_unreachable(datum/sp_dialogue/dialogue)
@@ -379,7 +419,7 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 
 /// The area, the event a rumour is about, and each role's first name, full name or job.
 /proc/sp_dialogue_placeholder_known(placeholder, datum/sp_dialogue/dialogue)
-	if(placeholder == "AREA" || placeholder == "EVENT" || placeholder == "EVENT_AREA")
+	if(placeholder == "AREA" || placeholder == "EVENT" || placeholder == "EVENT_AREA" || placeholder == "FETCH")
 		return TRUE
 	for(var/role in dialogue.roles)
 		var/upper = uppertext(role)
@@ -461,6 +501,10 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	if(!islist(spec))
 		spec = list()
 	if(!!spec["player"] != sp_dialogue_is_player(who))
+		return FALSE
+	// Every part has lines in it. A mime cast in one says nothing at all -- TG will not let a mime speak -- and
+	// the stand-in sat through a whole introduction from one without hearing a word.
+	if(!spec["player"] && !who.can_speak())
 		return FALSE
 	var/list/jobs = spec["job"]
 	if(length(jobs) && !(who.mind?.assigned_role?.title in jobs))
@@ -566,15 +610,38 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	var/datum/ai_controller/sp_crew/their_ai = partner.ai_controller
 	if(istype(their_ai))
 		their_ai.set_blackboard_key(BB_SP_IN_THREAD, thread)
+	sp_dialogue_engage(thread)
 	sp_record("talk.thread")
 	log_sp("[starter.real_name] started [dialogue.id] with [partner.real_name]")
 	return thread
+
+/// The crew in a conversation with a player give them their attention (engage()), from the first line to a while after the last.
+/proc/sp_dialogue_engage(datum/sp_dialogue_thread/thread)
+	var/player_role = sp_dialogue_player_role(thread)
+	var/mob/living/player = player_role ? thread.cast[player_role] : null
+	if(QDELETED(player))
+		return
+	for(var/role in thread.cast)
+		var/mob/living/who = thread.cast[role]
+		var/datum/ai_controller/sp_crew/their_ai = who?.ai_controller
+		if(istype(their_ai))
+			their_ai.engage(player)
+
+/// Whoever is running a thread: the one who started it, and holds it on their blackboard.
+/proc/sp_dialogue_runner(datum/sp_dialogue_thread/thread)
+	for(var/role in thread.cast)
+		var/mob/living/who = thread.cast[role]
+		var/datum/ai_controller/sp_crew/their_ai = who?.ai_controller
+		if(istype(their_ai) && their_ai.blackboard[BB_SP_THREAD] == thread)
+			return their_ai
+	return null
 
 /// Ends a thread, whatever brought it to an end, and lets everybody in it go.
 /proc/sp_end_dialogue(datum/ai_controller/sp_crew/controller, datum/sp_dialogue_thread/thread)
 	if(QDELETED(thread))
 		return
 	sp_dialogue_remember(thread)
+	sp_dialogue_engage(thread)
 	for(var/role in thread.cast)
 		var/mob/living/who = thread.cast[role]
 		var/datum/ai_controller/sp_crew/their_ai = who?.ai_controller
@@ -698,8 +765,11 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 
 // --- Station events ----------------------------------------------------------------------------------
 
-/// Something that happened, for the station to talk about afterwards. Forgotten after SP_EVENT_MEMORY.
-/proc/sp_station_event(tag, atom/where)
+/**
+ * Something that happened, for the station to talk about afterwards, and who did it where anybody did: security
+ * have a word with the assistant who smashed the light. Forgotten after SP_EVENT_MEMORY.
+ */
+/proc/sp_station_event(tag, atom/where, mob/living/who)
 	if(!istext(tag))
 		return
 	var/area/place = get_area(where)
@@ -708,6 +778,8 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	event[SP_EVENT_TAG] = tag
 	event[SP_EVENT_AREA_NAME] = place ? place.name : "somewhere"
 	event[SP_EVENT_TIME] = world.time
+	if(!QDELETED(who))
+		event[SP_EVENT_WHO] = who.real_name
 	events += list(event)
 	while(length(events))
 		var/list/oldest = events[1]
@@ -725,6 +797,31 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 		if(findtext(event[SP_EVENT_TAG], tag) == 1)
 			return event
 	return null
+
+/// The newest thing `who` did, of these kinds, that the station still remembers; or null.
+/proc/sp_recent_event_by(mob/living/who, list/tags)
+	var/list/events = SSspacestation_sp.station_events
+	for(var/i in length(events) to 1 step -1)
+		var/list/event = events[i]
+		if(world.time - event[SP_EVENT_TIME] > SP_EVENT_MEMORY)
+			break
+		if(event[SP_EVENT_WHO] == who.real_name && (event[SP_EVENT_TAG] in tags))
+			return event
+	return null
+
+/**
+ * A conversation that something the crew just did calls for -- a drink served, a patient seen to, produce dropped
+ * off in the kitchen -- if both of them are free to have it. Returns the thread, or null when nothing is written for
+ * the two of them or either has something better to do.
+ */
+/proc/sp_talk_about(mob/living/carbon/human/starter, mob/living/carbon/human/partner, trigger)
+	var/datum/ai_controller/sp_crew/starter_ai = starter?.ai_controller
+	if(!istype(starter_ai) || QDELETED(partner) || sp_in_any_thread(starter) || sp_in_any_thread(partner))
+		return null
+	var/datum/ai_controller/sp_crew/partner_ai = partner.ai_controller
+	if(istype(partner_ai) && (partner_ai.busy_with_work() || partner_ai.blackboard_key_exists(BB_SP_FAVOUR)))
+		return null
+	return sp_start_thread(starter_ai, sp_pick_dialogue(starter, partner, trigger), starter, partner)
 
 // --- Conditions and effects --------------------------------------------------------------------------
 
@@ -833,6 +930,25 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 				if(isnull(found))
 					return FALSE
 				thread.event = found
+			if("did_recently")
+				for(var/role in value)
+					var/mob/living/who = thread.cast[role]
+					var/list/tags = istext(value[role]) ? list(value[role]) : value[role]
+					var/list/found = QDELETED(who) ? null : sp_recent_event_by(who, tags)
+					if(isnull(found))
+						return FALSE
+					thread.event = found
+			if("can_favour")
+				for(var/pair in value)
+					var/list/sides = sp_dialogue_pair(thread, pair)
+					if(isnull(sides))
+						return FALSE
+					var/mob/living/doer = sides[1]
+					var/list/found = list()
+					if(!sp_favour_possible(doer.ai_controller, sides[2], value[pair], found))
+						return FALSE
+					if(found["target"])
+						thread.favour_target = WEAKREF(found["target"])
 			else
 				return FALSE
 	return TRUE
@@ -870,6 +986,29 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 				sp_station_event(value, anchor)
 			if("give")
 				sp_dialogue_give(thread, value)
+			if("favour")
+				for(var/pair in value)
+					sp_dialogue_favour(thread, pair, value[pair])
+
+/**
+ * A crew member takes on a favour for the other: comes with them, opens a door, fetches something, calls medbay
+ * (ai/sp_favour_behaviors.dm). A door or a thing found when the favour was offered is the one they go for.
+ */
+/proc/sp_dialogue_favour(datum/sp_dialogue_thread/thread, pair, favour_kind)
+	var/list/sides = sp_dialogue_pair(thread, pair)
+	if(isnull(sides))
+		return FALSE
+	var/mob/living/doer = sides[1]
+	var/datum/ai_controller/sp_crew/doer_ai = doer.ai_controller
+	if(!istype(doer_ai))
+		return FALSE
+	var/atom/target = thread.favour_target?.resolve()
+	if(isnull(target) && (favour_kind == SP_FAVOUR_DOOR || favour_kind == SP_FAVOUR_FETCH))
+		var/list/found = list()
+		if(!sp_favour_possible(doer_ai, sides[2], favour_kind, found))
+			return FALSE
+		target = found["target"]
+	return sp_start_favour(doer_ai, favour_kind, sides[2], target)
 
 /// Hands over something the giver actually carries. Nothing is conjured: no item, no gift, just the line.
 /proc/sp_dialogue_give(datum/sp_dialogue_thread/thread, list/details)
@@ -916,6 +1055,8 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	line = replacetext(line, "%AREA%", here ? here.name : "the station")
 	line = replacetext(line, "%EVENT_AREA%", thread.event ? thread.event[SP_EVENT_AREA_NAME] : "somewhere")
 	line = replacetext(line, "%EVENT%", sp_dialogue_event_phrase(thread.event))
+	var/atom/favour_thing = thread.favour_target?.resolve()
+	line = replacetext(line, "%FETCH%", favour_thing ? "\a [favour_thing]" : "something")
 	var/datum/ai_controller/sp_crew/speaker_ai = speaker?.ai_controller
 	for(var/role in thread.cast)
 		var/mob/living/carbon/human/who = thread.cast[role]
@@ -1086,10 +1227,17 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 
 // --- Talking to somebody on purpose ----------------------------------------------------------------
 
-/// What a crew member will talk to a player about just now, by title; null when they will not talk at all.
+/**
+ * What a crew member will talk to a player about just now, by title; null when they will not talk at all. A chat
+ * with a colleague does not stop them -- a player outranks small talk, and it is broken off when they pick
+ * (sp_talk_start()) -- but work does.
+ */
 /proc/sp_talk_offer(mob/living/carbon/human/npc, mob/living/carbon/human/player)
 	var/datum/ai_controller/sp_crew/crew_ai = npc?.ai_controller
-	if(!istype(crew_ai) || !crew_ai.free_to_talk(player) || crew_ai.blackboard_key_exists(BB_SP_THREAD))
+	if(!istype(crew_ai) || !crew_ai.free_to_talk(player, ignore_small_talk = TRUE))
+		return null
+	var/datum/sp_dialogue_thread/running = crew_ai.blackboard[BB_SP_THREAD]
+	if(!isnull(running) && running != crew_ai.small_talk())
 		return null
 	return sp_dialogues_for_talk(npc, player)
 
@@ -1098,7 +1246,9 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 	var/list/choices = sp_talk_offer(npc, player)
 	if(!length(choices) || !(title in choices) || get_dist(npc, player) > 2)
 		return null
-	return sp_start_thread(npc.ai_controller, choices[title], npc, player)
+	var/datum/ai_controller/sp_crew/crew_ai = npc.ai_controller
+	crew_ai.drop_small_talk(player)
+	return sp_start_thread(crew_ai, choices[title], npc, player)
 
 /**
  * Talking to a crew member on purpose, rather than waiting for them to start. Right-click them, pick what
@@ -1113,6 +1263,9 @@ GLOBAL_LIST_INIT(sp_place_tags, list(
 		return
 	if(!istype(ai_controller, /datum/ai_controller/sp_crew))
 		to_chat(player, span_notice("[src] does not seem to want to talk."))
+		return
+	if(!can_speak())
+		to_chat(player, span_notice("[src] presses a finger to [p_their()] lips."))
 		return
 	var/list/choices = sp_talk_offer(src, player)
 	if(isnull(choices))

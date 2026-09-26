@@ -1,0 +1,101 @@
+{
+	"id": "bar_patron_regular",
+	"triggers": [
+		"served"
+	],
+	"weight": 1,
+	"roles": {
+		"bartender": {
+			"job": [
+				"Bartender"
+			]
+		},
+		"patron": {}
+	},
+	"if": {
+		"memory": {
+			"bartender->patron": "regular"
+		}
+	},
+	"start": "again",
+	"nodes": {
+		"again": {
+			"speaker": "bartender",
+			"lines": [
+				"You again, %PATRON_FIRST%? The usual, then.",
+				"Back already. I'm starting to think you live here.",
+				"Your usual. I had it half poured when you walked in."
+			],
+			"next": [
+				{
+					"to": "tab_joke",
+					"weight": 3,
+					"if": {
+						"memory": {
+							"bartender->patron": "on_tab"
+						}
+					}
+				},
+				{
+					"to": "regular_reply"
+				}
+			]
+		},
+		"tab_joke": {
+			"speaker": "bartender",
+			"lines": [
+				"Your tab's getting long, by the way. Longer than the shift.",
+				"I've started a second page of your tab."
+			],
+			"next": [
+				{
+					"to": "tab_reply"
+				}
+			]
+		},
+		"tab_reply": {
+			"speaker": "patron",
+			"lines": [
+				"Put it on the other tab.",
+				"I'll settle up when they pay us."
+			],
+			"effects": [
+				{
+					"standing": {
+						"bartender->patron": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"regular_reply": {
+			"speaker": "patron",
+			"lines": [
+				"Best seat on the station.",
+				"Where else would I be?",
+				"You know me too well."
+			],
+			"effects": [
+				{
+					"standing": {
+						"bartender->patron": 1
+					}
+				},
+				{
+					"forget": {
+						"bartender->patron": "on_tab"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

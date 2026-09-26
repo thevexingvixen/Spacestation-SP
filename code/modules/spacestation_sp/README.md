@@ -10,8 +10,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
   runs the 10-second engine watchdog (telemetry, anti-vacuum guard, scram, simulated output).
 - `sp_crew_spawner.dm` — client-less human crew creation via `SSjob.equip_rank`, manifest injection,
   AI attach. `sp_controller_for_job()` picks the controller by department;
-  `sp_essential_job_types()` guarantees, after the heads, one each of engineer, security officer,
-  doctor, chemist, botanist, cook, bartender, quartermaster and cargo technician, in that order.
+  `sp_essential_job_types()` guarantees, after the heads, one each of engineer, security officer, warden,
+  doctor, chemist, botanist, cook, bartender, quartermaster, cargo technician and janitor, in that order.
 - `sp_engineering.dm` — power monitoring and the scripted engine startup (see below).
 - `sp_breach.dm` — hull breach detection and RCD repair (see below).
 - `sp_botany.dm` — hydroponics helpers: which tray needs what, seed pool, produce and delivery targets.
@@ -24,6 +24,10 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_conversation.dm` — what a crew member makes of what somebody says, standing, and one-line answers.
 - `sp_dialogue.dm` — written dialogue: the files and their checks, memory, threads, reply links, Talk to.
 - `sp_stand_in.dm` — the stand-in player, a debug tool that plays the player's side of a conversation.
+- `ai/sp_favour_behaviors.dm` — favours: what each job will do for somebody it likes, and doing it.
+- `sp_search.dm` — searches and confiscation: what security take off somebody, and where it goes.
+- `ai/sp_search_behaviors.dm` — the pat-down after an arrest, and filing what it found as evidence.
+- `ai/sp_warden_behaviors.dm` — the warden: cells let out and shut again, escapes called in, the armoury kept.
 - `sp_cargo.dm` — the supply request queue, ordering against the cargo budget, and crate handling.
 - `sp_curiosity.dm` — roaming destinations, what a character would pocket, and finding lockers and doors.
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
@@ -66,6 +70,7 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crew_social` — someone said our first name and nothing else: face them and ask what they want.
 - `sp_crew_respond` — carry on a conversation under way, a line at a time, or give the one-line answer
   somebody is owed, unless it is 15 s too late. Officers run it below their security work.
+- `sp_crew_favour` — a favour somebody agreed to: come along, open a door, fetch something, call medbay.
 - `sp_crew_chatter` — the idle side of talk: introduce yourself to a newcomer, start a conversation with
   somebody nearby, and the odd remark over common. Every crew tree runs it.
 - `sp_department_wander` — pick a turf in `BB_SP_WANDER_AREAS` (or home area) → JPS move → linger.
@@ -74,8 +79,12 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_medical_cryo_setup` — connect the gas, set the freezer, put a beaker in every tube.
 - `sp_medical_surgical_kit` — doctors and the CMO fetch the tools their medkit lacks off a theatre tray.
 - `sp_security_respond` — suspect: equip baton, close in, attack; once they are down, cuff them;
-  once restrained or dead, announce "area secure" and clear. With only a location, walk there and
-  look around for 8 s.
+  once restrained, pat them down and walk them to a cell; failing that, announce "area secure" and clear.
+  With only a location, walk there and look around for 8 s.
+- `sp_security_evidence` — carrying something confiscated: take it to the evidence closet, or to whoever can
+  open it, or to a security locker.
+- `sp_warden_duty` — the warden's rounds: let a prisoner out when their time is up, shut an empty cell again,
+  call an escape in, open the armoury at red and lock it again on a quiet shift.
 - `sp_engineer_power` — power check → say so → walk to the engine room → run the loop setup →
   wait 40 s → bring the engine online.
 - `sp_engineer_repair` — find the nearest breach → announce it → put on EVA gear → open internals →
@@ -162,6 +171,23 @@ greeted by others with a line, not a second introduction to answer. And a player
 to somebody else by name is taken up by them; only a line naming nobody is read as a reply to the
 conversation already going. All three were found by the stand-in rather than by reading code.
 
+**A player comes before small talk.** A crew member chatting with a colleague is not busy: Talk to still offers
+what they would talk to you about, and picking something -- or naming them -- breaks the chat off
+(`drop_small_talk()`); work still comes first, with the brush-off. Somebody you have just been talking to keeps
+you in mind for twenty seconds while you are still about (`engage()`): they start no small talk of their own,
+nobody draws them into any, and they stay put rather than wandering off (`sp_linger_with_player`, the last thing
+in the chatter subtree, so only idling waits). Any conversation with you counts as having greeted you, however it
+started, so an introduction is not followed by "Didn't see you come in." The stand-in found all of it: a
+geneticist drawn into a colleague's chat 0.3 seconds after being introduced, a mime who wandered into two, and an
+atmospheric technician who walked straight back to Engineering after saying hello.
+
+**Names.** Nobody calls you by a name they were never told: one-line answers and the look-up when you say
+somebody's name use your first name only if they know it, and "mate" -- or "citizen" -- if not
+(`sp_what_we_call()`). A passer-by used to thank the stand-in by a name it had given somebody else.
+
+**Mimes.** TG will not let a mime speak, so a mime is cast in no spoken part: they wave at a newcomer, answer a
+line with the right gesture (`sp_mime_answer()`), and press a finger to their lips when you try Talk to.
+
 ## Written dialogue (`sp_dialogue.dm`)
 Conversations are written as data, one json file each in `strings/spacestation_sp/dialogue`. A dialogue is a
 small graph: each node names the role that speaks it and the lines it may use, and weighted edges say where it
@@ -203,15 +229,55 @@ the engine, the doctor who has "buried people who said it's nothing". Rumours re
 peel, and where. Five dialogues are written for a player: introductions, asking what somebody does, asking for
 a hand, chatting about the shift, and asking whether they have heard anything.
 
+**Talk the work starts.** Some conversations are started by what the crew do rather than by idling
+(`sp_talk_about()`, triggers `served`, `treated`, `delivered`): the bartender has a word with whoever ordered the
+drink -- a tip, a tab, and "your usual" for a regular -- and a medic who has patched somebody up gives advice, or
+"You again?" to a face they have seen before. Botany dropping produce in the kitchen gets a word from the cook,
+who sometimes asks for tomatoes; that line names botany and the plant, so the botanist standing there takes it as
+a real request. Others need only the right two people together: an assistant asking the Head of Personnel for all
+access (refused, remembered, and less patiently the second time), two engineers handing over, and security having
+a word with the assistant who pulled a prank -- station events now remember who as well as where
+(`sp_station_event(tag, where, who)`, the `did_recently` condition), and the officer keeps an eye on them after.
+A player gets their own versions at the bar, in medbay, and at the HoP's desk ("Ask for all access").
+Conversations only something happening can start need no Talk to title, and are not on its menu.
+
+## Favours: standing spent (`ai/sp_favour_behaviors.dm`)
+How somebody feels about you used to colour what they said and nothing else. Now a crew member who thinks well
+enough of you (standing 4 or better) does things for you, asked for from Talk to or by saying so:
+
+- **Come with you** ("Ask them to come with you", or "follow me"): they keep a step behind wherever you go, until
+  you say thanks or that's all, lose them, or three minutes pass.
+- **Open a door** ("Ask them to open a door", or "can you get this door?"): a shut door near you that their own ID
+  opens and yours does not. They walk to it, open it with their card, and hold it -- opening it again if it shuts
+  on you -- until you are through. Nothing to security, command, the vault, the AI, EVA or the engine is opened
+  for anybody, and no airlock out into space (`GLOB.sp_never_opened_for_others`).
+- **Fetch something** ("Ask them to fetch something"): something from their own department, lying about on a floor
+  or a table -- a medkit from medbay storage, insulated gloves from engineering, a dish off the kitchen counter, a
+  drink off the bar, produce from hydroponics -- walked back and put in your hands. The clown has a banana on them.
+- **Call a doctor** ("Ask them to call a doctor", or "I need a doctor", when you are hurt): a word on common, read
+  by the medics the way security read an incident (`on_heard_call()`). One medic takes it, says so, and comes to
+  you wherever you are (`BB_SP_HOUSE_CALL` in `sp_find_patient()`).
+
+Each is a written dialogue (`ask_follow`, `ask_door`, `ask_fetch`, `ask_doctor`), offered only when it can be done
+(the `can_favour` condition) and doing it through the `favour` effect. The dialogue decides who says yes: a friend
+does, a stranger is told they are not known well enough yet, and somebody who dislikes you is told no. A favour
+costs a point of standing when it is granted, and a thank you earns two back; calling a doctor costs nothing.
+A favour sits above the job but below emergencies and conversation (`sp_crew_favour`, in `sp_crew_core`): work that
+turns up ends it with a word, and a walk that stops getting any closer for twenty seconds is given up. Security do
+not do favours. One at a time.
+
 ## The stand-in player (`sp_stand_in.dm`)
 Most of this module is proved with unit tests and headless rounds, but the player's side of a conversation
 needs a player, and the stand-in plays one. It is a body with no AI controller (which is what "a player" means
 to the dialogue engine) and a trait for the one place that asks for a connected client, greeting newcomers.
 
-It pays the crew a scripted visit in a live round: it turns up two tiles from somebody idle, is introduced,
-clicks "I'm Jo Standin.", opens Talk to and asks what they do, offers a hand, says thanks, and examines them to
-see whether they like it now. Then it visits somebody else and says nothing, to check that silence is an
-answer, steps up close enough to have its ID read, and asks for the news. Everything it hears is logged as a
+It pays the crew a scripted visit in a live round: it turns up two tiles from somebody idle -- somebody whose job
+has something to fetch, where it can -- is introduced, clicks "I'm Jo Standin.", draws them into small talk with a
+colleague if one is about and opens Talk to anyway, asks what they do, offers a hand, says thanks, and examines
+them to see whether they like it now. Then it spends that standing: asks them to come along to a door their ID
+opens, to open it, to fetch it something, and -- having taken a knock -- to call it a doctor, and checks each in
+the world (they kept up, the door opened, the thing arrived, a medic came). Then it visits somebody else and says
+nothing, to check that silence is an answer, steps up close enough to have its ID read, and asks for the news. Everything it hears is logged as a
 player's-eye transcript, and each check is a `PASS` or `FAIL` line, tallied as `standin.pass` and
 `standin.fail`.
 
@@ -377,7 +443,14 @@ the trip to the seed vendor buys that packet
 if they do not, and the next load of produce goes to a table in the room that asked rather than to the
 kitchen, where one of the requested plant is enough to be worth the walk on its own.
 `GLOB.sp_requestable_plants` is the list, and aloe is on it because microwaved aloe is the cream medics
-treat burns with. The tally counts `botany.request_delivered`.
+treat burns with; bananas are for the clown, and tomatoes for the cook, who asks when botany drops off a
+load -- and whose idle grumble, "If botany would send more tomatoes I'd send more food", now counts as asking.
+The tally counts `botany.request_delivered`.
+
+**One at a time, medicine first.** A botanist already growing something for somebody takes no second request
+(`takes_request()`): the newest ask used to win outright, and with the clown asking for bananas every few
+minutes, medbay could have been kept waiting for ever. The exception is medicine -- a plant with a cooked form,
+which is aloe -- which takes over from anything that is not.
 
 **Cooked on the way.** A raw leaf handed to a medic is a chore handed over with it, and medbay has no
 microwave. A plant with an entry in `GLOB.sp_request_cooked_forms` goes to the nearest working
@@ -896,7 +969,8 @@ took two. Arming stayed empty, which is what a green shift should look like.
   clears the order outright if the officer already has a baton anywhere in their contents, which is what makes
   the behaviour stop rather than loop.
 - *The armoury* -- `ACCESS_ARMORY`, on exactly two trims in the game: the head of security and the warden. No
-  officer can open it, so nothing sends them there.
+  officer can open it, so nothing sends them there. The warden keeps it (see "The warden" below): open at
+  red, and locked again while the shift is quiet.
 
 **Shooting.** Officers have carried a disabler in their suit slot since the fork began and never fired it,
 because `sp_attack_target` tests `Adjacent()` before it swings. That test is the leaf's own, not a limit of
@@ -1040,10 +1114,20 @@ first version sent prisoners onto the locker's own tile, which a closed locker m
 `sp_free_cell()` skips a cell without a clear doorway. All three MetaStation cells have one: checked against
 the map file, each door sits on the corridor tile facing south, with the cell tile beyond it.
 
-**The walk.** `sp_find_cell` takes hold of the prisoner -- `start_pulling`, and `sp_hold_still()`, which has
-purchase only on AI crew, so a player walks off and the escort copes instead of assuming compliance. It refuses
-a corpse or anybody out of reach, and keeps the prisoner in `BB_SP_PRISONER`, not in the incident key a fresh
-report would overwrite. The officer walks onto the inside tile, which leaves the prisoner they are pulling on
+**The walk.** `sp_find_cell` picks the cell (and keeps the one already picked, since it re-runs whenever the
+escort starts over) and keeps the prisoner in `BB_SP_PRISONER`, not in the incident key a fresh report would
+overwrite; it refuses a corpse. `sp_take_hold` then takes hold of them beside them -- `start_pulling`, and
+`sp_hold_still()`, which has purchase only on AI crew, so a player walks off and the escort copes instead of
+assuming compliance. TG breaks a pull whenever the one pulled cannot follow, and the escort used to walk on to the
+cell alone and give up there: the first warden round read "no longer had hold of Rylie Powell, 9 tiles off". The
+walk to the cell (`move_to_target/sp_reported/sp_escort`) now turns round the moment the hold is lost, goes back
+for the prisoner, takes hold again and carries on -- inside the one leaf, because a walk that simply failed fell
+through to "Situation handled" instead. The walk takes no diagonal steps either
+(`/datum/ai_movement/jps/sp_crew/escort`): a pulled prisoner is moved into the tile the officer just left, and
+past a wall corner that is a diagonal move, which TG refuses when a corner is dense, so the pull broke at every
+corner -- four times in thirty seconds along the brig's front corridor in one round. A hold lost and taken again
+on the spot costs nothing; somebody who had to be gone back for `SP_ESCORT_MAX_RETAKES` times is let go of, wanted
+still (`sec.retook_hold`). The officer walks onto the inside tile, which leaves the prisoner they are pulling on
 the outside one, and steps back out. TG lets a puller swap places with whoever they are pulling
 (`can_mobswap_with()`), but not shove a restrained person past the one pulling them, and that shove is what
 the first version tried. The swap leaves the officer outside and the prisoner in, `timer_start()` shuts the
@@ -1054,7 +1138,67 @@ Three things the first cut of this could not do, now handled: a prisoner lying d
 nobody to swap with, and they are dragged the last step instead (`sp_swap_into_cell()`); a cell door that would
 shut itself mid-swap is held open until the handover is done (`sp_open_cell_doors()`, with `timer_start()`
 closing them for good afterwards); and a report arriving mid-walk no longer pulls the officer away, because the
-branch is held by the prisoner rather than by the incident key. None of it has been seen in a live round yet.
+branch is held by the prisoner rather than by the incident key. The escort was seen through to the cell on
+2026-09-21 (see Known limitations); an escort that gives up now says why in the log, at the cell and before
+it, because one that stops with "Situation handled" and nothing else took a whole round to read.
+
+## Searches and confiscation (`sp_search.dm`, `ai/sp_search_behaviors.dm`)
+An arrest used to leave the thief with the loot: the officer cuffed them, walked them to a cell, and whatever
+they had taken sat in their bag for the sentence and walked out with them. Now they are searched, and a thief is
+asked for it before it ever gets that far.
+
+**What is taken** (`sp_is_loot()`): the thing a witness saw them take -- a theft report now carries the item
+itself (`SP_INCIDENT_ITEM`), so the officer can ask for it back by name; anything TG counts as contraband
+(`is_contraband()`); a gun or a baton on somebody who is neither security nor command; and anything off TG's
+steal catalogue that is another job's to carry -- the captain keeps their medal, and a cook found with it has
+some explaining to do (`sp_is_somebody_elses()`, by the catalogue's `item_owner` and `excludefromjob`). Never
+the ID on their chest, never the headset, never what they cannot take off.
+
+**Asked first.** At the word stage, a thief still carrying what they were reported taking is told to hand it over
+(`sp_confront_suspect`, async now for the wait). Crew with nothing to hide do, grumbling; a schemer never does
+(`sp_hands_over()`), and a player who has not given it back in four seconds is treated the same way: "Have it your
+way," and it is taken. The search itself (`sp_search_person()`) is a three-second pat-down that moves everything on
+the list into the officer's bag. Somebody who walks off mid-demand keeps it for now, and the record has the crime.
+
+**At the arrest** everybody is patted down once, between the cuffs and the walk (`sp_search_prisoner`, first in
+the escort sequence; `BB_SP_SEARCHED` stops it happening twice). It always succeeds: there being nothing to take is
+no reason to leave anybody on the floor.
+
+**Where it goes.** What is taken is evidence (`BB_SP_EVIDENCE`), and evidence goes to the brig's evidence closet
+(`ACCESS_ARMORY` or `ACCESS_DETECTIVE`). On this TG the officer's own trim carries `ACCESS_DETECTIVE`, so in
+practice every officer files it themselves, and did in all six rounds. `sp_evidence_home()` still covers whoever
+cannot: they hand it to the warden -- or, without one, the head of security -- and only once that walk has come
+to nothing `SP_EVIDENCE_MAX_TRIES` times, or with nobody to hand it to, lock it in a security locker instead. Filing (`sp_file_evidence`) unlocks, opens, drops the items on the closet's tile, shuts it
+(a closet sweeps its tile in as it shuts) and locks it again; a handover puts the items in the keeper's bag and the
+same key on their blackboard, so the warden files them in turn. Carrying evidence counts as duty. The tally counts
+`sec.searched`, `sec.confiscated`, `sec.handed_over`, `sec.evidence_handed` and `sec.evidence_filed`, and
+`SP_DEBUG_ARREST` now slips a baton into the culprit's bag so a debug arrest has something to find.
+
+## The warden (`ai/sp_warden_behaviors.dm`)
+The one member of security who does not patrol. The warden's wander areas are the brig, their office, the holding
+cell, the evidence room and the security office, and a report from anywhere else on the station is left to the
+officers (`on_heard_incident()` and `on_heard_distress()` answer only to `/area/station/security`). Their belt comes
+out of their own locker (`kit_wanted()`), which on MetaStation is also the armoury.
+
+**The cells.** `sp_jail_target()` now notes who went into which cell and until when
+(`SSspacestation_sp.prisoners`), and the warden looks the list over every few seconds (`sp_warden_check_cells`).
+A timer that has run out with the record still reading Incarcerated is a walk to the cell door, a word -- "Time's
+up. Out you go, and stay out of trouble." -- and the record cleared (`warden.released`). TG's own timer opens the
+door and unlocks the brig locker; what nobody did before was clear the record, or shut the cell again -- a cell
+door does not shut itself, so a used cell stood open for the rest of the shift. An open, empty cell is a second
+walk over to shut it (`warden.cell_reset`). A prisoner out of their cell with time left is an escape: put straight back
+on the arrest list, called in on the security channel, and the cell freed for the next one (`warden.escape`).
+Whether somebody is in a cell is read off the doorway the escort already works out (`sp_in_cell()`: past the
+door on the inside, and near it).
+
+**The armoury.** The warden holds the same keys as the head of security and runs the same leaves: at red they
+unlock it for the officers to draw from. On any shift short of red, an armoury locker left unlocked -- their own,
+after the belt comes out of it -- is shut and locked again (`sp_warden_find_open_armoury`,
+`sp_warden_secure_locker`, `warden.armoury_locked`). The alert only ever goes up, so once a shift is red it stays
+open.
+
+**Evidence** handed to them is filed through the same subtree the officers run. The warden is one of the
+essential jobs now, so an auto-populated station always has one.
 
 ## Antagonists (`sp_antagonist.dm`, `ai/sp_antagonist_behaviors.dm`)
 An antagonist is an ordinary AI crew member carrying a **scheme** (`/datum/sp_scheme` on the blackboard
@@ -1349,7 +1493,8 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
 - `sp_dialogue_conditions` — every condition a file can ask about answers both ways.
 - `sp_dialogue_effects` — every effect does what it says, and a gift is only ever something the giver carries.
 - `sp_dialogue_validation` — the loader refuses a node nothing leads to, a player's turn with no replies, a
-  condition or placeholder it does not know, and a player dialogue with no title to offer it by.
+  condition or placeholder it does not know, and a player dialogue with neither a title to offer it by nor
+  anything that starts it.
 - `sp_player_replies` — replies are offered, nobody else can pick them, a lapsed offer is refused, and
   silence goes where the file says.
 - `sp_player_speech_opens_dialogue` — a stranger saying hello is introduced; "I'm Tom" teaches the name;
@@ -1367,6 +1512,46 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   hello from out there is answered with a line.
 - `sp_one_conversation_at_a_time` — nobody starts a second introduction with a player already talking, but a
   player who turns to somebody by name is theirs.
+- `sp_player_outranks_small_talk` — Talk to still offers what fits while somebody chats with a colleague, and
+  picking from it, or naming them, breaks the chat off and lets the colleague go.
+- `sp_no_small_talk_while_engaged` — somebody a player has just talked to starts no small talk and is drawn into
+  none while the player is still about, and is free again once they have gone.
+- `sp_introduction_counts_as_greeting` — after an introduction started by a hello, nobody is left to greet.
+- `sp_mimes_keep_quiet` — a mime fits no spoken part, is picked for no small talk, and waves at a newcomer.
+- `sp_favours_are_earned` — a favour is offered only where it can be done, refused to a stranger, granted to a
+  friend, and costs a point of standing.
+- `sp_favour_follow` — somebody who agreed to come along sets off after you, stops when thanked, and stops when
+  the time is up.
+- `sp_favour_door` — the door chosen is one their card opens and yours does not, never the armoury; they open it
+  and let go once you are through; nobody opens a door for somebody who could open it themselves.
+- `sp_favour_fetch` — a botanist finds the apple lying about in their department, picks it up and puts it in your hands.
+- `sp_favour_calls_a_doctor` — the call goes out on the radio, one medic takes it, and puts you at the top of their list.
+- `sp_work_opens_conversations` — a drink served, a patient seen to and produce dropped off each open their own
+  conversation, a regular and a returning patient get a different one, and the cook's ask for tomatoes is a
+  request botany hears.
+- `sp_security_remembers_the_prankster` — a prank is remembered with who pulled it; security have a word with that
+  assistant and not another, and watch them after.
+- `sp_all_access_is_refused` — the HoP refuses a player all access, remembers it, and answers the second ask
+  differently.
+- `sp_lingers_and_minds_names` — somebody a player just talked to stays put until they go, and a stranger is
+  "mate" until their name is known, never their name.
+- `sp_botany_requests_wait_their_turn` — a botanist growing bananas for somebody takes no tomato request on top,
+  but medbay's aloe comes first, and is not bumped by bananas.
+- `sp_loot_is_recognised` — a baton on an assistant, contraband, the station blueprints and the crayon a witness
+  saw taken are loot; a pen, the ID, a baton on an officer and the blueprints on the chief engineer are not.
+- `sp_search_takes_the_loot` — the pat-down moves the loot and only the loot into the officer's bag, as evidence
+  to file, and somebody already searched is passed over.
+- `sp_escort_takes_hold_again` — a hold lost beside the prisoner is taken again on the spot, one lost out of reach
+  turns the walk back to them, and somebody lost too often is let go of.
+- `sp_thief_is_asked_first` — asked for the crayon, crew hand it over; a schemer keeps it and is searched for it.
+- `sp_evidence_finds_its_home` — the warden's card opens the evidence closet; an officer's does not, so theirs goes
+  to the warden, or to a security locker once the walk to them has come to nothing.
+- `sp_evidence_is_filed` — filing puts the items in the closet, shut and locked again.
+- `sp_warden_lets_them_out` — a sentence that has run out clears the record at the cell door, and the empty cell
+  is shut again afterwards.
+- `sp_warden_calls_an_escape` — a prisoner out of a running cell goes back on the arrest list, and the cell is freed.
+- `sp_warden_minds_the_brig` — a report from elsewhere is left to the officers; one from the brig is taken up.
+- `sp_warden_locks_up` — an armoury locker left unlocked on a quiet shift is locked again.
 - `sp_arrest_is_not_an_attack` — a report by somebody being arrested, naming the arresting officer, is
   dropped; an actual attacker still gets answered.
 - `sp_janitor_leaves_shut_rooms_alone` — a room the janitor cannot get into is set aside as a room, and a
@@ -1464,10 +1649,10 @@ the game server logs nothing at all.
   door. It took five rounds to see, and four of those failed for reasons that had nothing to do with the
   escort: the only officer was in surgery, the suspect was in atmospherics, the suspect was in the Head of
   Personnel's office, and then the arrest turned into a brawl (see below).
-- None of the escalation above red has been seen in a round yet. The alert ladder, the armoury, the arming
-  order and the fire-mode switch are built and tested, but a quiet shift never reaches red, so what has
-  actually been watched end to end is a briefing and a stand down. `SP_DEBUG_SECURITY_ALARM` exists to force
-  the rest; until a round runs with it, treat the red-alert path as compiled rather than proven.
+- The escalation above red has been seen only as far as the keys. In five rounds with `SP_DEBUG_SECURITY_ALARM`
+  (2026-09-24) the head of security raised the alert to red after three attacks and unlocked the warden's
+  locker every time; nobody then drew the laser from it or fired lethal, because a quiet shift gives them
+  nobody to fire at. The arming order and the fire-mode switch are tested, not yet watched.
 - The lawyer takes no orders at all, being in `/datum/job_department/service` rather than security, and so
   running the ordinary crew controller with no security behaviour on it.
 - Antagonist theft still does not fire on a fresh station, but the reason is now measured rather than
@@ -1477,9 +1662,18 @@ the game server logs nothing at all.
   open, so it is access`. Not the catalogue, not the lift rule, not the path budget, all of which were
   theorised and all of which were wrong. TG's steal list is a challenge built for a player traitor with an
   emag; a crew member who can open only what their own ID opens will correctly find nothing on it.
-- Security's answer to a petty crime stops at a word and a note. An officer confronts a witnessed thief,
-  files it, and a pattern on the record becomes an arrest — but they will not demand the stolen item back,
-  search anybody, or do anything with the brig, so a thief who keeps walking keeps the loot.
+- A search takes what the list says and nothing else: the reported item, contraband, weapons on civilians and
+  the steal catalogue. Something stolen that is on none of those, and that no witness saw taken, stays with the
+  thief. Nothing recovered is ever returned to where it came from; it goes to evidence and stays there. A
+  prisoner's own belongings are not put in the brig locker for the sentence, so a released prisoner has nothing
+  to collect.
+- The warden does not take a prisoner off the arresting officer at the brig door, run the prison wing or
+  genpop, or search anybody themselves; the officer who made the arrest does the searching. Nobody takes the
+  cuffs off a released prisoner either: an AI prisoner works them off on their own, a player resists them.
+- What has been seen live (2026-09-26, six rounds): the search, the filing, the escort with its turn-backs, the
+  cell, and the warden letting the prisoner out eight minutes later. The cell shut again afterwards, an escape
+  called in, and evidence handed from an officer to the warden are unit-tested but not yet watched -- officers
+  open the evidence closet themselves on this TG, so the handover never comes up.
 - The greytide's malicious streak is one behaviour (a smashed light tube). Emptying a locker and stashing
   the loot, prying a door, and slips in the hallway are planned, not built.
 - Mutagen reliably pushes a plant's instability into the 20-50 band, where stat mutations happen. A
@@ -1498,27 +1692,19 @@ the game server logs nothing at all.
   other two benches keep the twenty units each that they started with.
 - Medics do not yet collect patches from the chemistry fridge. They treat with what they carry, and players
   can take from the fridge.
-- Conversation branches and remembers now, but it only talks. Standing is felt in how people speak to you
-  and shows at the extremes; it is not yet spent on anything they would do for you -- follow you, open a door
-  they have access to, fetch something. Directions are stock answers rather than worked out from where the
-  crew member stands. The reply links and Talk to have been driven by the stand-in in live rounds, but not
-  yet by a real client.
-- Idle crew-to-crew chat outranks a player. Talk to refuses anybody already in a conversation, so a crew
-  member who falls into small talk with a colleague the moment yours ends is out of reach until it finishes; the
-  stand-in's fifth visit lost both its Talk to menus this way. A crew member just introduced to you may still
-  add the newcomer line afterwards, and a mime cast in a conversation says nothing, since TG will not let a
-  mime speak.
+- Standing is felt in how people speak to you, shows at the extremes, and is spent on four favours. A fetch
+  only finds what is lying loose in the department -- nothing out of a shut locker, a fridge or a vending
+  machine -- so a department whose tables are bare has nothing to fetch; a door is held by opening it again
+  when it shuts. Directions are stock answers rather than worked out from where the crew member stands. The
+  reply links and Talk to have been driven by the stand-in in live rounds, but not yet by a real client.
+- Security only have a word with a prankster they happen to meet within fifteen minutes of the prank: nothing
+  sends an officer looking, and the HoP's "list" is a line and a note in their own memory, not a record security
+  read.
+- Mimes are left out of conversation rather than given pantomime lines of their own.
 - Nothing an assistant does gets through a door, starts a fight, or puts anything in anybody's face.
   Hacking, slips and lube are antagonist territory rather than theirs.
 
 ## Next
-- Players before small talk: Talk to, or a line naming somebody, ends their chat with a colleague; an
-  introduction counts as the greeting; mimes stay out of spoken parts. Small, and first, since spending
-  standing needs a crew member who stays with you.
 - Five minutes with a real client, when there is time. The stand-in has played the player's side in live rounds;
   what it cannot show is the chat window drawing a reply link and a click reaching the server.
-- Spending standing: crew who think well of you doing things for you -- following, opening a door they have
-  access to, fetching something. The plan's list of effects names these; none is built.
-- More written dialogue (the plan's M2): bartender and patron, doctor and patient, chef and botanist, the HoP
-  and the all-access request, security and the assistant who was seen pranking.
-- The warden's side of the brig, then searches and confiscation.
+- Fetching out of lockers, fridges and vendors, so a favour does not depend on what happens to be on a table.

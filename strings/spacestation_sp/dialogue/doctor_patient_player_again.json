@@ -1,0 +1,102 @@
+{
+	"id": "doctor_patient_player_again",
+	"triggers": [
+		"treated"
+	],
+	"weight": 1,
+	"roles": {
+		"doctor": {
+			"department": [
+				"Medical"
+			]
+		},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"memory": {
+			"doctor->player": "treated"
+		}
+	},
+	"start": "again",
+	"nodes": {
+		"again": {
+			"speaker": "doctor",
+			"lines": [
+				"You again?",
+				"Back so soon, %PLAYER_FIRST%? I'm starting a file on you.",
+				"We have to stop meeting like this."
+			],
+			"next": [
+				{
+					"to": "excuse"
+				}
+			]
+		},
+		"excuse": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "It wasn't my fault this time.",
+					"to": "never",
+					"effects": [
+						{
+							"standing": {
+								"doctor->player": -1
+							}
+						}
+					]
+				},
+				{
+					"text": "I missed you, doc.",
+					"to": "flattered",
+					"effects": [
+						{
+							"standing": {
+								"doctor->player": 1
+							}
+						}
+					]
+				}
+			],
+			"timeout_to": "sigh"
+		},
+		"never": {
+			"speaker": "doctor",
+			"lines": [
+				"It never is.",
+				"Of course it wasn't. Nothing ever is."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"flattered": {
+			"speaker": "doctor",
+			"lines": [
+				"Charming. Now go and miss me from further away.",
+				"Flattery gets you a lollipop. We're out of lollipops."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"sigh": {
+			"speaker": "doctor",
+			"lines": [
+				"Right. Off you go, then. Carefully.",
+				"Silence. That's new, at least."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

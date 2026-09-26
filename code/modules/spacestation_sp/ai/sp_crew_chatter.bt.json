@@ -38,6 +38,18 @@
 					"behavior": "/datum/bt_node/ai_behavior/sp_station_yap"
 				}
 			}
+		},
+		{
+			"type": "decorator",
+			"decorator": "/datum/bt_node/decorator/bb_key_set",
+			"vars": {
+				"key": "BB_SP_ENGAGED_WITH",
+				"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+			},
+			"child": {
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_linger_with_player"
+			}
 		}
 	]
 }

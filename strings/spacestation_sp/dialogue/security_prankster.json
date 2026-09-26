@@ -1,0 +1,134 @@
+{
+	"id": "security_prankster",
+	"weight": 6,
+	"roles": {
+		"officer": {
+			"department": [
+				"Security"
+			]
+		},
+		"prankster": {
+			"job": [
+				"Assistant"
+			]
+		}
+	},
+	"if": {
+		"did_recently": {
+			"prankster": [
+				"graffiti",
+				"lights",
+				"vandalism",
+				"bell",
+				"knock",
+				"honk"
+			]
+		}
+	},
+	"start": "stop",
+	"nodes": {
+		"stop": {
+			"speaker": "officer",
+			"lines": [
+				"Hold it, %PRANKSTER_FIRST%.",
+				"A word, %PRANKSTER_FIRST%.",
+				"You. Stop there."
+			],
+			"next": [
+				{
+					"to": "last_warning",
+					"weight": 10,
+					"if": {
+						"memory": {
+							"officer->prankster": "watched"
+						}
+					}
+				},
+				{
+					"to": "accuse"
+				}
+			]
+		},
+		"accuse": {
+			"speaker": "officer",
+			"lines": [
+				"Somebody's been busy in %EVENT_AREA%: %EVENT%. Funny, you were there.",
+				"%EVENT_AREA%, %EVENT%. I don't suppose you know anything about that."
+			],
+			"next": [
+				{
+					"to": "deny"
+				}
+			]
+		},
+		"deny": {
+			"speaker": "prankster",
+			"lines": [
+				"Wasn't me.",
+				"Never been there in my life.",
+				"Me? I've been in the hallway all shift. Ask anyone."
+			],
+			"next": [
+				{
+					"to": "warn"
+				}
+			]
+		},
+		"warn": {
+			"speaker": "officer",
+			"lines": [
+				"Course it wasn't. I'm watching you.",
+				"Move along. And stay out of trouble.",
+				"Next time it's the brig. Move along."
+			],
+			"effects": [
+				{
+					"remember": {
+						"officer->prankster": "watched"
+					}
+				},
+				{
+					"standing": {
+						"officer->prankster": -2
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"last_warning": {
+			"speaker": "officer",
+			"lines": [
+				"You again. %EVENT_AREA% this time. Last warning.",
+				"Twice now. I've got your name, %PRANKSTER_FIRST%, and I've got a cell with room in it."
+			],
+			"effects": [
+				{
+					"standing": {
+						"officer->prankster": -3
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "sulk"
+				}
+			]
+		},
+		"sulk": {
+			"speaker": "prankster",
+			"lines": [
+				"Fine. Fine!",
+				"This is harassment, this is."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

@@ -156,6 +156,10 @@
 		sp_ai_click(controller, patient)
 		controller.set_blackboard_key_assoc_lazylist(BB_SP_SCANNED, patient, world.time)
 		sp_record("med.scanned")
+	// Whoever we were called to has been seen.
+	if(controller.blackboard[BB_SP_HOUSE_CALL] == patient)
+		sp_record("med.house_call_seen")
+		sp_house_call_over(controller, "looked them over")
 	sp_free_hands(pawn)
 	if(!async_still_valid() || QDELETED(patient))
 		// finish_async() no-ops once the action is no longer valid, so it is safe on every exit. Without it a
@@ -260,7 +264,9 @@
 	sp_record("med.treated")
 	log_sp("[pawn.real_name] treated [patient.real_name] with [english_list(used)]: [round(damage_before, 1)] -> [round(damage_after, 1)] brute and burn")
 	if(damage_after < SP_TREAT_DAMAGE)
-		sp_crew_speak(pawn, pick("All done. Try to stay in one piece.", "There. You're patched up.", "That's you sorted."))
+		// A word of advice, where one is written for the two of them -- and "You again?" for a face they have seen before.
+		if(isnull(sp_talk_about(pawn, patient, "treated")))
+			sp_crew_speak(pawn, pick("All done. Try to stay in one piece.", "There. You're patched up.", "That's you sorted."))
 	else
 		sp_crew_speak(pawn, "That's as much as I can do with what I've got.")
 	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)

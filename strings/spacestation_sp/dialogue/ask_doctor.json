@@ -1,0 +1,105 @@
+{
+	"id": "ask_doctor",
+	"title": "Ask them to call a doctor",
+	"triggers": [
+		"doctor"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"can_favour": {
+			"crew->player": "doctor"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "crew",
+			"lines": [
+				"A doctor? What's happened?",
+				"You need medbay?"
+			],
+			"next": [
+				{
+					"to": "call",
+					"if": {
+						"hurt": {
+							"player": true
+						},
+						"standing": {
+							"crew->player": ">-4"
+						}
+					}
+				},
+				{
+					"to": "fine",
+					"if": {
+						"hurt": {
+							"player": false
+						}
+					}
+				},
+				{
+					"to": "no",
+					"if": {
+						"hurt": {
+							"player": true
+						},
+						"standing": {
+							"crew->player": "<=-4"
+						}
+					}
+				}
+			]
+		},
+		"call": {
+			"speaker": "crew",
+			"lines": [
+				"Stay there. I'll get somebody.",
+				"Hang on, I'll call medbay.",
+				"Sit down before you fall down. I'm calling it in."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "doctor"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"fine": {
+			"speaker": "crew",
+			"lines": [
+				"You look fine to me.",
+				"Medbay's that way, if you're worried."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"no": {
+			"speaker": "crew",
+			"lines": [
+				"Call one yourself.",
+				"You've got a radio."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

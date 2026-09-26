@@ -1,0 +1,146 @@
+{
+	"id": "bar_patron_player",
+	"triggers": [
+		"served"
+	],
+	"weight": 1,
+	"roles": {
+		"bartender": {
+			"job": [
+				"Bartender"
+			]
+		},
+		"player": {
+			"player": true
+		}
+	},
+	"start": "serve",
+	"nodes": {
+		"serve": {
+			"speaker": "bartender",
+			"lines": [
+				"There you go, %PLAYER_FIRST%. On the house. Everything's on the house.",
+				"One for you. Tell me it's good, I'm fragile.",
+				"Drink up. You look like you need it."
+			],
+			"next": [
+				{
+					"to": "again",
+					"weight": 5,
+					"if": {
+						"memory": {
+							"bartender->player": "regular"
+						}
+					}
+				},
+				{
+					"to": "verdict"
+				}
+			]
+		},
+		"again": {
+			"speaker": "bartender",
+			"lines": [
+				"You again. I'm starting a tab for you. There's no money, it's the principle.",
+				"Back so soon? Your usual's becoming a habit."
+			],
+			"next": [
+				{
+					"to": "verdict"
+				}
+			]
+		},
+		"verdict": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Cheers. That's the stuff.",
+					"to": "pleased",
+					"effects": [
+						{
+							"standing": {
+								"bartender->player": 1
+							}
+						},
+						{
+							"remember": {
+								"bartender->player": "regular"
+							}
+						}
+					]
+				},
+				{
+					"text": "Put it on my tab.",
+					"to": "tab",
+					"effects": [
+						{
+							"remember": {
+								"bartender->player": "regular"
+							}
+						}
+					]
+				},
+				{
+					"text": "This tastes like engine coolant.",
+					"to": "insulted",
+					"effects": [
+						{
+							"standing": {
+								"bartender->player": -2
+							}
+						}
+					]
+				}
+			],
+			"timeout_to": "silent"
+		},
+		"pleased": {
+			"speaker": "bartender",
+			"lines": [
+				"Finally, somebody with taste.",
+				"That's what I like to hear."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"tab": {
+			"speaker": "bartender",
+			"lines": [
+				"Everything's free, %PLAYER_FIRST%. There is no tab. I'm keeping one anyway.",
+				"Noted. In pen."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"insulted": {
+			"speaker": "bartender",
+			"lines": [
+				"Then you've had engine coolant, and I have questions.",
+				"Next one's water. Straight from the tap."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"silent": {
+			"speaker": "bartender",
+			"lines": [
+				"Strong silent type. Suit yourself.",
+				"I'll take that as a compliment."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

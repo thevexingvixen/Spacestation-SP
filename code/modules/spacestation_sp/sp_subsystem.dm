@@ -355,8 +355,8 @@ SUBSYSTEM_DEF(spacestation_sp)
 	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
 		var/datum/ai_controller/sp_crew/security/sec = crew.ai_controller
 		if(istype(sec))
-			// The head of security gives orders; an ordinary officer does the walking.
-			if(isnull(officer_ai) && !istype(sec, /datum/ai_controller/sp_crew/security/hos))
+			// The head of security gives orders and the warden keeps the brig; an ordinary officer does the walking.
+			if(isnull(officer_ai) && !istype(sec, /datum/ai_controller/sp_crew/security/hos) && !istype(sec, /datum/ai_controller/sp_crew/security/warden))
 				officer_ai = sec
 			continue
 		candidates += crew
@@ -367,6 +367,9 @@ SUBSYSTEM_DEF(spacestation_sp)
 	for(var/mob/living/carbon/human/crew as anything in candidates)
 		if(isnull(officer) || !sp_clown_prank_spot(crew))
 			continue
+		// Not a head of staff or command: a baton is theirs to carry, so the search would find nothing to take.
+		if(sp_is_authority(crew))
+			continue
 		if(!isnull(culprit) && get_dist(officer, crew) >= get_dist(officer, culprit))
 			continue
 		culprit = crew
@@ -375,8 +378,21 @@ SUBSYSTEM_DEF(spacestation_sp)
 	if(isnull(culprit) || isnull(officer))
 		log_sp("debug: wanted an arrest, but there is no officer and culprit to arrange one between")
 		return
+	// Beside the officer, if they are not already: the lever is for the arrest, the search, the cell and the warden,
+	// and two rounds went by with the officer chasing a culprit who was somewhere they could not get to.
+	if(get_dist(officer, culprit) > 2 || culprit.z != officer.z)
+		var/turf/beside = sp_stand_in_spot(officer, 1) || sp_stand_in_spot(officer, 2)
+		if(beside)
+			culprit.forceMove(beside)
+			log_sp("debug: moved [culprit.real_name] beside [officer.real_name] in [get_area_name(beside)]")
 	for(var/i in 1 to SP_CRIMES_BEFORE_ARREST + 1)
 		sp_file_crime_record(culprit, SP_CRIME_VANDALISM, "Seen at it repeatedly.", officer)
+	// Something in their bag for the search to find: a baton on a non-officer is taken and filed as evidence.
+	var/obj/item/melee/baton/planted = new(culprit)
+	if(culprit.equip_to_storage(planted, ITEM_SLOT_BACK, indirect_action = TRUE) || culprit.put_in_hands(planted))
+		log_sp("debug: slipped [planted] into [culprit.real_name]'s bag, for the search to find")
+	else
+		qdel(planted)
 	officer_ai.set_blackboard_key(BB_SP_SUSPECT, culprit)
 	officer_ai.set_blackboard_key(BB_SP_SUSPECT_CRIME, SP_CRIME_VANDALISM)
 	log_sp("debug: gave [culprit.real_name] a record and sent [officer.real_name] to have a word")

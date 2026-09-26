@@ -394,6 +394,8 @@ GLOBAL_LIST_INIT(sp_armoury_lockers, typecacheof(list(
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	sp_free_hands(pawn)
+	// Somebody else with the keys -- the warden and the head of security both hold them -- may have got here first.
+	var/was_shut = locker.locked || !locker.opened
 	if(locker.locked && locker.allowed(pawn))
 		sp_ai_click(controller, locker, list(RIGHT_CLICK = "1"))
 	if(!async_still_valid() || QDELETED(pawn) || QDELETED(locker))
@@ -407,6 +409,9 @@ GLOBAL_LIST_INIT(sp_armoury_lockers, typecacheof(list(
 	controller.clear_blackboard_key(BB_SP_ARMOURY_TARGET)
 	if(locker.locked)
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
+		return
+	if(!was_shut)
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED) // already open: nothing to announce twice
 		return
 	sp_record("sec.armoury_opened")
 	log_sp("[pawn.real_name] unlocked [locker.name] in [get_area_name(locker)]")

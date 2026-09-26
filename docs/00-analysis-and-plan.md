@@ -197,12 +197,78 @@ being attacked cuts a conversation off outright.
    done; the antagonist foundation (schemes rather than TG objectives) is in place, and theft is still
    held up by what a crew member's own ID can open.
 8. **Python sidecar** — reads `BB_SP_HEARD` and station state, few high-value model calls.
-9. **Dialogue trees + spending standing** — player conversations that track a thread, and crew
-   agreeing to follow someone they think well of. The bug list that came first (`01-dialogue-plan.md`
-   M0) is done, and so are M1 and M3: memory, a closed and validated vocabulary, reply links and a Talk verb.
-   What is left is spending standing on things crew will do for you.
+9. ~~**Dialogue trees + spending standing**~~ — Done: player conversations that track a thread (M0, M1 and M3
+   of `01-dialogue-plan.md`), conversations tied to what the crew already do (M2), and standing spent on
+   favours -- crew who think well of you come with you, open a door, fetch something, or call medbay (M4,
+   2026-09-24). Left: rumours spreading between crew, and the sidecar.
 
 Also outstanding: tune the real supermatter loop so `SP_ENGINE_REAL_EMITTERS` can become the default.
+
+### 2026-09-26 — The warden, and searches
+
+The brig had one half: officers walked prisoners to cells, and nobody let them out, shut the cell after, or took
+anything off them. Now:
+
+- **Searches and confiscation.** Everybody arrested is patted down between the cuffs and the walk, and a reported
+  thief is asked for it first at the word stage -- crew hand it over, a schemer is searched, and a player who has
+  not given it back in four seconds is too. What is taken is what a witness saw taken (theft reports carry the
+  item now), contraband, weapons on civilians, and anything off TG's steal catalogue that is another job's.
+  It goes to the brig's evidence closet, filed by whoever can open it -- which on this TG includes the officers
+  themselves -- handed to the warden or the head of security by anybody who cannot, and with nobody to hand it
+  to, locked in a security locker. A thief stops keeping the loot.
+- **The warden** keeps the brig rather than patrolling: prisoners let out when their time is up (the record
+  cleared, a word at the door), empty cells shut again (used cells stood open all shift before), escapes called
+  in and the escapee put back on the arrest list, evidence filed, and the armoury unlocked at red and locked
+  again while the shift is quiet. Reports from elsewhere on the station are left to the officers. The warden is an
+  essential job now.
+- **What the rounds found.** The search and the filing worked first time: the debug arrest's planted baton was
+  taken off the culprit and locked in the evidence closet within two minutes. The escort did not: it walked to
+  the cell and said "Situation handled" with no prisoner in tow. An escort that gives up says why in the log now,
+  and what it said was "no longer had hold of Rylie Powell, 9 tiles off" -- TG breaks a pull whenever the one
+  pulled cannot follow, and the officer walked on alone. The walk to the cell now turns round for a lost
+  prisoner, takes hold again and carries on, inside the one leaf, because a walk that simply failed fell through
+  to "Situation handled" instead. Two other things the rounds showed: the debug lever picked the warden as the
+  arresting officer once, and the Chief Engineer as the culprit once, on whom a baton is legal to carry -- it
+  skips both now, and stands the culprit beside the officer, since two rounds went by chasing somebody unreachable.
+  The fifth round then lost the same prisoner four times in thirty seconds along the brig's front corridor:
+  a pulled prisoner is moved into the tile the officer just left, and past a wall corner that is a diagonal step,
+  which TG refuses when a corner is dense. The escort walks straight steps only now, and a hold lost and taken
+  again on the spot costs nothing. The sixth round ran the whole way: the baton taken and filed, the prisoner
+  put in Cell 1 for eight minutes (four turn-backs on the way, all recovered), and the warden at the cell door
+  eight minutes later -- "Myrtie, time's up. Out you go, and stay out of trouble." -- with the record cleared
+  (`sec.jailed=1`, `sec.retook_hold=5`, `warden.released=1`). The cell being shut again after the prisoner
+  leaves, and an escape, are unit-tested but were not reached before the round ended.
+
+### 2026-09-24 — Players first, favours, and talk the work starts
+
+The three steps recommended the day before, built in one session and played by the stand-in in live rounds.
+
+- **Players before small talk.** Talk to, or naming somebody, breaks off a chat with a colleague; somebody you
+  have just talked to keeps you in mind for twenty seconds, starts no small talk and stays put while you are
+  about; any conversation counts as a greeting; a mime is left out of spoken parts and waves instead.
+- **Favours.** A crew member who thinks well of you (standing 4 or better) comes with you, opens a door their ID
+  opens and yours does not, fetches something lying about in their department, or calls medbay for you, and a
+  medic comes to you wherever you are. Each is a dialogue file, offered only when it can be done, costing a point
+  of standing; thanks earn two back. Nothing to security, command, the vault, the AI, EVA, the engine or space.
+- **M2.** Thirteen new dialogue files: the bar (a patron, a regular, a player), medbay (a patient and "You again?",
+  for crew and for a player), a kitchen delivery where the cook's ask for tomatoes is a real request to botany,
+  the HoP refusing all access (an assistant and a player, the first ask and the second), two engineers handing
+  over, and security having a word with the assistant who pulled a prank -- station events remember who now.
+
+The rounds found as much in the stand-in as in the crew. It had stood on the far side of a door from the crew
+member it was talking to, and once in the vacuum outside a hallway window; its knock was too light to count as
+hurt, since TG weighs a limb's damage at less than the body's. In the crew: somebody walked straight off after an
+introduction (now they stay put); a passer-by thanked the stand-in by a name nobody had told them (fixed
+everywhere a one-line answer names somebody); and the new "first come, first served" for botany requests kept
+medbay's aloe waiting behind the clown's bananas (medicine comes first now). The third round passed 26 of 27:
+small talk broken off for the player, a follower let off with a thanks, a maintenance door opened with the
+engineer's own card and let go once through, and an electrical toolbox fetched from Technical Storage. The fourth
+and fifth finished it: a cook opened the kitchen freezer for the stand-in, and an engineer, asked after the
+stand-in took a knock, called medbay -- and a medic came across the station and looked it over. What they missed
+was the stand-in asking from four tiles off once its host had gone back to work, which a player would walk over
+for (so now it does). Live, without anybody asking, a bartender and a regular had their "your usual"
+conversation, a medic gave a patched-up patient advice, two engineers handed over, and the cook's grumble about
+tomatoes reached botany as a request.
 
 ### 2026-09-23 — A stand-in for the player
 
@@ -222,33 +288,26 @@ introducing themselves to it at once, which is now one conversation at a time. T
 all three failures have one cause that a real player would meet too: idle crew-to-crew chat takes people away
 from a player standing beside them. A geneticist finished an introduction and was pulled into a colleague's
 small talk 0.3 seconds later; a mime started two with other crew within eight seconds of being greeted by
-name. Talk to
-refuses anybody already in a conversation, so both menus came up empty, and the third failure (no warmth on
-examine) followed because the offer of a hand never happened. The same visit showed two smaller things: a crew
+name. Talk to refused anybody already in a conversation, so both menus came up empty, and the third failure (no
+warmth on examine) followed because the offer of a hand never happened. The same visit showed two smaller things: a crew
 member who had just been introduced still added the newcomer line "Didn't see you come in.", because the
 greeting remembers only greetings it made itself; and a mime cast in a conversation says nothing at all, since
 TG will not let a mime speak.
 
-### Next steps (recommended 2026-09-23)
+### Next steps (recommended 2026-09-24)
 
-1. **Players before small talk** (small, and first). Talk to, or a line naming somebody, ends that person's
-   crew-to-crew chat and starts the player's; work still comes first, with the brush-off. An introduction,
-   however it started, counts as the newcomer greeting. Mimes stay out of spoken parts until M2 can give them
-   pantomime. Spending standing needs this: a crew member asked to follow you cannot be one the next idle chat
-   takes away. The stand-in's fifth visit is the test.
-2. **Spend standing: crew who do things for you.** Conversations change how people feel about you and nothing
-   else yet. The plan's effects that start a behaviour -- follow you, open a door they have access to, fetch
-   something from their department, call somebody on the radio -- turn standing into something you can use.
-   This closes the loop the dialogue work opened, and the stand-in can test each one.
-3. **M2: dialogue tied to what the crew already do.** Bartender and patron, doctor and patient ("You again?"),
-   chef and botanist, the HoP and the all-access request, security and the assistant seen pranking. Mostly
-   files; station events need to record who as well as where for the last one.
-4. **The warden and the brig.** Prisoners now reach cells; a warden to hold them, release them when the timer
-   runs out and keep the armoury, plus searches and confiscation so a thief stops keeping the loot.
+1. ~~**Players before small talk.**~~ Done 2026-09-24.
+2. ~~**Spend standing: crew who do things for you.**~~ Done 2026-09-24: follow, a door, a fetch, a doctor.
+3. ~~**M2: dialogue tied to what the crew already do.**~~ Done 2026-09-24.
+4. ~~**The warden and the brig.**~~ Done 2026-09-26: the warden, searches, evidence.
 5. **Five minutes with a real client**, whenever convenient: the only unverified piece of the player side.
-6. **Housekeeping:** an intermittent lavaland runtime in upstream atmospherics gets blamed on whichever long SP
-   test is running (usually `sp_brew`); and the module README has grown past fifteen hundred lines and wants
-   splitting by department.
+6. **Fetching out of lockers, fridges and vendors.** A favour can only fetch what is lying loose, so a department
+   whose tables are bare has nothing to offer; medbay's medkits and engineering's gloves are on tables on
+   MetaStation, the chemistry fridge and the booze-o-mat are not reachable.
+7. **Housekeeping:** an intermittent lavaland runtime in upstream atmospherics gets blamed on whichever long SP
+   test is running (usually `sp_brew`); several SP tests move the corner test tile into another area and never
+   move it back, so a later test that assumes the test room can fail only in the full run (it caught the fetch
+   test once); and the module README has grown past sixteen hundred lines and wants splitting by department.
 
 Later: the Python sidecar, layering generated lines over the static ones the dialogue engine falls back to;
 miners and wider chemistry; antagonists who sabotage, frame and escape.

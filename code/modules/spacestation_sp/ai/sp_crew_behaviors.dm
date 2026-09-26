@@ -50,6 +50,14 @@
 	maximum_length = 220
 
 /**
+ * Walking somebody to a cell: no diagonal steps. A pulled prisoner is moved into the tile the officer just left,
+ * and past a wall corner that is a diagonal move, which TG refuses when a corner is dense; the pull breaks, and
+ * one escort lost its prisoner four times in thirty seconds along the brig's front corridor. Straight steps only.
+ */
+/datum/ai_movement/jps/sp_crew/escort
+	diagonal_flags = DIAGONAL_REMOVE_ALL
+
+/**
  * Plastic flaps tell the pathfinder that anyone may walk through them, then stop anyone standing up. The Head
  * of Personnel, whose access opens the bridge's delivery windoor, was routed into the maintenance flaps in
  * front of it on the way to medbay and stood there until the walk gave up — and again every few minutes, for
@@ -434,7 +442,7 @@
 	var/line = pick(lines)
 	if(!QDELETED(target))
 		pawn.face_atom(target)
-		line = replacetext(line, "%TARGET%", target.name)
+		line = replacetext(line, "%TARGET%", sp_what_we_call(controller, target))
 	var/area/here = get_area(pawn)
 	line = replacetext(line, "%AREA%", here ? here.name : "the station")
 	sp_crew_speak(pawn, line, radio_channel)
@@ -652,17 +660,31 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
  * (SP_CRIMES_BEFORE_ARREST) does the officer call an arrest and hand them to the baton path, and anybody who
  * swings back becomes an attacker on their own (the security controller's on_attacked), which is escalation
  * enough without a special case here.
+ *
+ * A thief is asked for what they took first. Crew with nothing to hide hand it over; a schemer keeps it, and a
+ * player who does not give it back in SP_LOOT_DEMAND_TIME is treated the same way: searched, and it is taken
+ * (sp_search.dm). Async for that wait.
  */
 /datum/bt_node/ai_behavior/sp_confront_suspect
+	/// Held across the async half.
+	VAR_PRIVATE/mob/living/carbon/human/reach
 
 /datum/bt_node/ai_behavior/sp_confront_suspect/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/async_flags = handle_async()
+	if(async_flags)
+		return async_flags
 	var/mob/living/carbon/human/pawn = controller.pawn
-	var/mob/living/suspect = controller.blackboard[BB_SP_SUSPECT]
-	var/crime = controller.blackboard[BB_SP_SUSPECT_CRIME]
-	controller.clear_blackboard_key(BB_SP_SUSPECT)
-	controller.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
-	if(!istype(pawn) || QDELETED(suspect) || !suspect.Adjacent(pawn))
+	reach = controller.blackboard[BB_SP_SUSPECT]
+	if(!istype(pawn) || !istype(reach) || !reach.Adjacent(pawn))
+		sp_clear_suspect(controller)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	return start_async()
+
+/datum/bt_node/ai_behavior/sp_confront_suspect/perform_async(datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/carbon/human/suspect = reach
+	var/crime = controller.blackboard[BB_SP_SUSPECT_CRIME]
+	var/obj/item/reported = controller.blackboard[BB_SP_SUSPECT_ITEM]
 	pawn.face_atom(suspect)
 	var/area/scene = get_area(suspect)
 	var/priors = sp_file_crime_record(suspect, crime, "Reported in [scene ? scene.name : "the station"].", pawn)
@@ -670,10 +692,31 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	sp_record("sec.confronted")
 	controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
 	log_sp("[pawn.real_name] had a word with [suspect.real_name] about [crime || "it"] in [scene ? scene.name : "the station"]")
+	var/list/lines = GLOB.sp_confrontation_lines[crime]
+	sp_crew_speak(pawn, length(lines) ? pick(lines) : "I will be keeping an eye on you.")
+	// A thief still carrying it: hand it over, or have it taken.
+	if(crime == SP_CRIME_THEFT && length(sp_loot_on(suspect, reported)))
+		sleep(SP_LOOT_DEMAND_TIME)
+		if(!async_still_valid() || QDELETED(suspect))
+			sp_clear_suspect(controller)
+			return
+		var/list/loot = sp_loot_on(suspect, reported)
+		if(!length(loot))
+			sp_crew_speak(pawn, "Good.")
+		else if(!suspect.Adjacent(pawn))
+			log_sp("[suspect.real_name] walked off before [pawn.real_name] could take [sp_item_names(loot)] back")
+		else if(sp_hands_over(suspect))
+			sp_hand_over_loot(controller, suspect, loot)
+		else
+			sp_crew_speak(pawn, pick("Have it your way.", "We can do this the other way, then."))
+			sp_search_person(controller, suspect, reported)
+		if(!async_still_valid())
+			sp_clear_suspect(controller)
+			return
 	// A pattern on the record, rather than one bad afternoon: now it is an arrest.
 	// sp_mark_for_arrest() returns FALSE for anybody already wanted, and nothing ever clears WANTED_ARREST, so a
 	// repeat offender could never be arrested a second time. The pattern on the record decides, not the flag.
-	if(priors > SP_CRIMES_BEFORE_ARREST)
+	if(priors > SP_CRIMES_BEFORE_ARREST && !QDELETED(suspect))
 		sp_mark_for_arrest(suspect)
 		sp_crew_speak(pawn, "[suspect.real_name], that is once too many. You are coming with me.", RADIO_CHANNEL_SECURITY)
 		controller.set_blackboard_key(BB_SP_INCIDENT_TARGET, suspect)
@@ -681,10 +724,18 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 		controller.set_blackboard_key(BB_SP_ARREST_NONLETHAL, suspect)
 		controller.set_blackboard_key(BB_SP_INCIDENT_LOCATION, get_turf(suspect))
 		log_sp("[pawn.real_name] called an arrest on [suspect.real_name] ([priors] crimes on record)")
-		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
-	var/list/lines = GLOB.sp_confrontation_lines[crime]
-	sp_crew_speak(pawn, length(lines) ? pick(lines) : "I will be keeping an eye on you.")
-	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+	sp_clear_suspect(controller)
+	finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
+
+/datum/bt_node/ai_behavior/sp_confront_suspect/finish_action(datum/ai_controller/controller, succeeded)
+	reach = null
+	return ..()
+
+/// Lets go of the suspect in hand, and of whatever they were said to have taken.
+/proc/sp_clear_suspect(datum/ai_controller/controller)
+	controller?.clear_blackboard_key(BB_SP_SUSPECT)
+	controller?.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
+	controller?.clear_blackboard_key(BB_SP_SUSPECT_ITEM)
 
 /**
  * The suspect is somewhere we cannot walk to: say so on the radio, and hold on to the incident.
@@ -740,8 +791,7 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	sp_crew_speak(pawn, "[suspect.real_name] is in [get_area_name(suspect)] and I cannot get to them. Somebody with the access, please.", RADIO_CHANNEL_SECURITY)
 	log_sp("[pawn.real_name] gave up on reaching [suspect.real_name] in [get_area_name(suspect)]")
 	sp_record("sec.lost_them")
-	controller.clear_blackboard_key(BB_SP_SUSPECT)
-	controller.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
+	sp_clear_suspect(controller)
 	controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
@@ -1059,8 +1109,10 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 /proc/sp_abandon_escort(datum/ai_controller/controller)
 	var/mob/living/pawn = controller?.pawn
 	var/mob/living/prisoner = controller?.blackboard[BB_SP_PRISONER]
-	if(!QDELETED(pawn) && !QDELETED(prisoner) && pawn.pulling == prisoner)
-		pawn.stop_pulling()
+	if(!QDELETED(pawn) && !QDELETED(prisoner))
+		if(pawn.pulling == prisoner)
+			pawn.stop_pulling()
+		sp_release_patient(prisoner, pawn)
 	sp_clear_escort_keys(controller)
 
 /proc/sp_clear_escort_keys(datum/ai_controller/controller)
@@ -1068,31 +1120,119 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	controller?.clear_blackboard_key(BB_SP_CELL)
 	controller?.clear_blackboard_key(BB_SP_CELL_SPOT)
 	controller?.clear_blackboard_key(BB_SP_CELL_OUTSIDE)
+	controller?.clear_blackboard_key(BB_SP_SEARCHED)
+	controller?.clear_blackboard_key(BB_SP_ESCORT_RETAKES)
+	controller?.clear_blackboard_key(BB_SP_ESCORT_GOAL)
 
 /**
- * Picking a cell for somebody just cuffed, and taking hold of them for the walk.
+ * Picking a cell for somebody just cuffed.
  *
  * The prisoner is held in BB_SP_PRISONER from here on, not read from INCIDENT_TARGET, which any fresh report
- * overwrites. A corpse is not a prisoner, and a pull begun from across a room breaks on the first step, so
- * both are refused -- and an escort resumed after its prisoner slipped away is let go of properly.
+ * overwrites. A corpse is not a prisoner. Taking hold of them is the next leaf's business (sp_take_hold), after a
+ * walk back to them if they were lost on the way; this one keeps the cell already chosen, since it re-runs every
+ * time the escort starts over.
  */
 /datum/bt_node/ai_behavior/sp_find_cell/perform(seconds_per_tick, datum/ai_controller/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
 	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER] || controller.blackboard[BB_SP_INCIDENT_TARGET]
-	if(!ishuman(pawn) || QDELETED(prisoner) || prisoner.stat == DEAD || !prisoner.Adjacent(pawn) || sp_sentence_time(prisoner) <= 0)
+	if(!ishuman(pawn) || QDELETED(prisoner) || prisoner.stat == DEAD || sp_sentence_time(prisoner) <= 0)
+		if(ishuman(pawn) && !QDELETED(prisoner))
+			log_sp("[pawn.real_name] is not walking [prisoner.real_name] to a cell: [prisoner.stat == DEAD ? "they are dead" : "nothing on their record to serve"]")
 		sp_abandon_escort(controller)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-	var/obj/machinery/status_display/door_timer/cell = sp_free_cell(pawn)
-	var/list/doorway = sp_cell_doorway(cell)
-	if(!length(doorway) || (pawn.pulling != prisoner && !pawn.start_pulling(prisoner, supress_message = TRUE)))
+	var/obj/machinery/status_display/door_timer/cell = controller.blackboard[BB_SP_CELL]
+	var/list/doorway = QDELETED(cell) ? null : sp_cell_doorway(cell)
+	if(!length(doorway) || cell.timing)
+		cell = sp_free_cell(pawn)
+		doorway = sp_cell_doorway(cell)
+	if(!length(doorway))
+		log_sp("[pawn.real_name] is not walking [prisoner.real_name] to a cell: no free cell with a clear doorway")
 		sp_abandon_escort(controller)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
-	sp_hold_still(prisoner, pawn, SP_ESCORT_TIME)
 	controller.set_blackboard_key(BB_SP_PRISONER, prisoner)
 	controller.set_blackboard_key(BB_SP_CELL, cell)
 	controller.set_blackboard_key(BB_SP_CELL_SPOT, doorway[1])
 	controller.set_blackboard_key(BB_SP_CELL_OUTSIDE, doorway[2])
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/**
+ * Taking hold of the prisoner beside them, for the first time or again after losing them on the way. TG breaks a
+ * pull whenever the one pulled cannot follow -- a door shutting between them, somebody in the way -- so a hold is
+ * counted (BB_SP_ESCORT_RETAKES), and somebody lost SP_ESCORT_MAX_RETAKES times is let go of, wanted still. A pull
+ * begun from across a room breaks on the first step, so this wants them adjacent. The prisoner is held still for the
+ * walk (sp_hold_still(), which has purchase on AI crew only). Returns TRUE with them in hand.
+ */
+/proc/sp_take_hold_of(datum/ai_controller/controller, mob/living/carbon/human/pawn, mob/living/prisoner, went_back = FALSE)
+	if(!ishuman(pawn) || QDELETED(prisoner) || !prisoner.Adjacent(pawn))
+		return FALSE
+	if(pawn.pulling != prisoner)
+		// Only a loss that meant going back for them counts against the escort: a hold lost and taken again on
+		// the spot is a corner turned, not a prisoner getting away.
+		var/holds = controller.blackboard[BB_SP_ESCORT_RETAKES] || 0
+		if(holds >= SP_ESCORT_MAX_RETAKES)
+			log_sp("[pawn.real_name] let go of [prisoner.real_name] after going back for them [holds] times")
+			sp_abandon_escort(controller)
+			return FALSE
+		if(!pawn.start_pulling(prisoner, supress_message = TRUE))
+			log_sp("[pawn.real_name] could not take hold of [prisoner.real_name]")
+			sp_abandon_escort(controller)
+			return FALSE
+		if(went_back)
+			controller.set_blackboard_key(BB_SP_ESCORT_RETAKES, holds + 1)
+		sp_record("sec.retook_hold")
+		log_sp("[pawn.real_name] took hold of [prisoner.real_name] again at [AREACOORD(pawn)][went_back ? " after going back for them ([holds + 1] time[holds ? "s" : ""])" : ""]")
+	sp_hold_still(prisoner, pawn, SP_ESCORT_TIME)
+	return TRUE
+
+/// The first hold, beside the prisoner, and where the walk is going from here: the cell.
+/datum/bt_node/ai_behavior/sp_take_hold/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
+	var/first = pawn?.pulling != prisoner
+	if(!sp_take_hold_of(controller, pawn, prisoner))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	if(first)
+		controller.set_blackboard_key(BB_SP_ESCORT_RETAKES, 0)
+	controller.set_blackboard_key(BB_SP_ESCORT_GOAL, controller.blackboard[BB_SP_CELL_SPOT])
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/**
+ * The walk to the cell, with the prisoner in hand -- or back to them when the hold is lost on the way, to take
+ * hold again and carry on. The escort used to walk on to the cell alone and give up there ("no longer had hold of
+ * Rylie Powell, 9 tiles off"); a walk that simply failed instead fell through to "Situation handled". So this
+ * leaf never fails for a lost hold: it turns round (BB_SP_ESCORT_GOAL), and only somebody lost too often or gone
+ * ends it. Where it walks is the goal key, so the ordinary retargeting does the turning.
+ */
+/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_escort
+	target_key = BB_SP_ESCORT_GOAL
+	required_dist = 0
+	movement_type = /datum/ai_movement/jps/sp_crew/escort
+
+/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_escort/perform(seconds_per_tick, datum/ai_controller/controller)
+	var/mob/living/carbon/human/pawn = controller.pawn
+	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
+	var/turf/spot = controller.blackboard[BB_SP_CELL_SPOT]
+	if(!ishuman(pawn) || QDELETED(prisoner) || isnull(spot))
+		return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+	if(pawn.pulling == prisoner)
+		if(controller.blackboard[BB_SP_ESCORT_GOAL] != spot)
+			controller.set_blackboard_key(BB_SP_ESCORT_GOAL, spot)
+		required_dist = 0
+		return ..()
+	// Lost them. Beside them: take hold again and turn back for the cell. Otherwise, go back for them.
+	if(prisoner.Adjacent(pawn))
+		if(!sp_take_hold_of(controller, pawn, prisoner, went_back = controller.blackboard[BB_SP_ESCORT_GOAL] == prisoner))
+			return AI_BEHAVIOR_INSTANT | AI_BEHAVIOR_FAILED
+		controller.set_blackboard_key(BB_SP_ESCORT_GOAL, spot)
+		required_dist = 0
+		return AI_BEHAVIOR_INSTANT
+	if(controller.blackboard[BB_SP_ESCORT_GOAL] != prisoner)
+		log_sp("[pawn.real_name] lost hold of [prisoner.real_name] on the way to the cell at [AREACOORD(pawn)], [get_dist(pawn, prisoner)] tiles back, and is going back for them")
+		controller.set_blackboard_key(BB_SP_ESCORT_GOAL, prisoner)
+	required_dist = 1
+	. = ..()
+	if(. & AI_BEHAVIOR_SUCCEEDED)
+		return AI_BEHAVIOR_INSTANT // beside them again: the hold is taken on the next pass, not the cell reached
 
 /**
  * The one move that puts a pulled prisoner in a cell and leaves the officer outside it.
@@ -1153,6 +1293,8 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/mob/living/carbon/human/pawn = controller.pawn
 	reach = controller.blackboard[BB_SP_CELL_SPOT]
 	if(!istype(pawn) || isnull(reach) || get_turf(pawn) != reach)
+		// Said in the log: an escort that gets this far and stops is otherwise "Situation handled" and nothing else.
+		log_sp("[pawn?.real_name] gave up at the cell: [isnull(reach) ? "no cell spot" : "standing on [AREACOORD(pawn)] rather than the spot [AREACOORD(reach)]"]")
 		sp_abandon_escort(controller)
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	return start_async()
@@ -1164,24 +1306,33 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/mob/living/prisoner = controller.blackboard[BB_SP_PRISONER]
 	var/obj/machinery/status_display/door_timer/cell = controller.blackboard[BB_SP_CELL]
 	var/jailed = FALSE
+	var/why
 	// A few goes, one action each: the door may still be swinging open, and a prisoner lying down takes a move
 	// more than a standing one. Nothing here loops on a prisoner who is no longer in hand.
 	for(var/attempt in 1 to 5)
-		if(!isturf(inside) || !isturf(outside) || QDELETED(prisoner) || QDELETED(cell) || pawn.pulling != prisoner)
+		if(!isturf(inside) || !isturf(outside) || QDELETED(prisoner) || QDELETED(cell))
+			why = "the cell or the prisoner is gone"
+			break
+		if(pawn.pulling != prisoner)
+			why = "no longer had hold of [prisoner.real_name] ([prisoner.pulledby ? "held by [prisoner.pulledby]" : "held by nobody"], [get_dist(pawn, prisoner)] tiles off)"
 			break
 		if(get_turf(pawn) == outside && get_turf(prisoner) == inside)
 			jailed = TRUE
 			break
 		if(get_turf(prisoner) != outside || (get_turf(pawn) != inside && get_turf(pawn) != outside))
+			why = "[prisoner.real_name] was at [AREACOORD(prisoner)] rather than the doorway [AREACOORD(outside)], the officer at [AREACOORD(pawn)]"
 			break
 		if(sp_open_cell_doors(cell, pawn))
+			why = "the cell door never opened"
 			sleep(1.2 SECONDS) // a windoor drops its density only at the end of the opening animation
 		else
+			why = "the swap through the door did not come off"
 			sp_swap_into_cell(pawn, prisoner, inside, outside)
 			sleep(0.2 SECONDS)
 		if(!async_still_valid())
 			return
 	if(!jailed)
+		log_sp("[pawn.real_name] gave up at [cell?.name || "the cell"]: [why]")
 		sp_abandon_escort(controller)
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
@@ -1193,6 +1344,8 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	if(record)
 		record.wanted_status = WANTED_PRISONER
 		update_matching_security_huds(prisoner.real_name)
+	// The warden takes it from here: lets them out when the time is up, and shuts the cell again after.
+	sp_note_prisoner(prisoner, cell, sentence, pawn)
 	// Only let the incident go if it is still about this prisoner: a report that arrived mid-escort stands.
 	if(controller.blackboard[BB_SP_INCIDENT_TARGET] == prisoner)
 		controller.clear_blackboard_key(BB_SP_INCIDENT_TARGET)

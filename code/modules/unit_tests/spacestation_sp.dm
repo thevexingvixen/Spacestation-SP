@@ -790,7 +790,7 @@
 /datum/unit_test/sp_botany_request/Run()
 	TEST_ASSERT_EQUAL(sp_plant_asked_for("Botany, could you send some aloe up to medbay?"), "aloe", "that is a request")
 	TEST_ASSERT_NULL(sp_plant_asked_for("I could murder an aloe smoothie"), "a passing mention is not a request")
-	TEST_ASSERT_NULL(sp_plant_asked_for("Botany, how are the tomatoes coming along?"), "and nor is a plant we take no requests for")
+	TEST_ASSERT_NULL(sp_plant_asked_for("Botany, how are the cabbages coming along?"), "and nor is a plant we take no requests for")
 	var/mob/living/carbon/human/botanist = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
 	var/datum/ai_controller/sp_crew/botanist/controller = new(botanist)
 	controller.set_ai_status(AI_STATUS_OFF)
@@ -2116,13 +2116,15 @@
 	var/datum/sp_dialogue/wet_floor = sp_all_dialogues()["janitor_wet_floor"]
 	var/datum/sp_dialogue_thread/second = sp_begin_dialogue(wet_floor, asker, other)
 	TEST_ASSERT_NOTNULL(second, "the janitor has something to say about the floor")
+	// Measured from here: the shift talk above can move it by one first, and the two used to cancel out to nothing.
+	var/before = sp_reputation(asker_ai, other)
 	turns = 0
 	while(second.advance() && turns < SP_DIALOGUE_MAX_LINES)
 		turns++
 	// Both of the second nodes in that dialogue move standing, so two lines said means standing moved. The
 	// counts are in the messages because a thread that stops early is the interesting failure, not the sum.
 	TEST_ASSERT(second.lines_said >= 2, "the janitor got an answer about the floor: [second.lines_said] lines said")
-	TEST_ASSERT(sp_reputation(asker_ai, other) != 0, "and it moved what they think of them ([second.lines_said] lines said)")
+	TEST_ASSERT(sp_reputation(asker_ai, other) != before, "and it moved what they think of them ([second.lines_said] lines said, [before] before)")
 	qdel(second)
 	qdel(asker_ai)
 	qdel(other_ai)
@@ -2632,3 +2634,893 @@
 	sp_test_hush(second_ai)
 	qdel(first_ai)
 	qdel(second_ai)
+
+// --- Players before small talk ------------------------------------------------------------------------
+
+/**
+ * A player outranks small talk. Talk to still offers what fits while somebody chats with a colleague, and picking
+ * from it -- or naming them -- breaks the chat off. The stand-in's fifth visit lost both of the people it went to
+ * see to colleagues within seconds, and Talk to came up empty both times.
+ */
+/datum/unit_test/sp_player_outranks_small_talk
+
+/datum/unit_test/sp_player_outranks_small_talk/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/first = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/second = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	first.real_name = "Cora Venn"
+	second.real_name = "Dale Hurst"
+	player.mind_initialize()
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/first_ai = new(first)
+	first_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/second_ai = new(second)
+	second_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/sp_dialogue/small = sp_all_dialogues()["shift_talk"]
+
+	var/datum/sp_dialogue_thread/chat = sp_start_thread(first_ai, small, first, second)
+	TEST_ASSERT_NOTNULL(chat, "the two of them get chatting")
+	TEST_ASSERT(("Ask what they do" in sp_talk_offer(first, player)), "Talk to still offers what fits while they chat")
+	var/datum/sp_dialogue_thread/ours = sp_talk_start(first, player, "Ask what they do")
+	TEST_ASSERT_NOTNULL(ours, "and picking from it starts our conversation")
+	TEST_ASSERT(!(chat in GLOB.sp_active_threads), "breaking off the chat")
+	TEST_ASSERT(!second_ai.blackboard_key_exists(BB_SP_IN_THREAD), "and letting the colleague go")
+	sp_end_dialogue(first_ai, ours)
+
+	sp_test_hush(first_ai)
+	sp_test_hush(second_ai)
+	chat = sp_start_thread(first_ai, small, first, second)
+	TEST_ASSERT_NOTNULL(chat, "they get chatting again")
+	second_ai.consider_conversation(player, "Hello, Dale.")
+	TEST_ASSERT(!(chat in GLOB.sp_active_threads), "and turning to one of them by name breaks it off")
+	TEST_ASSERT_EQUAL(sp_test_answering(second_ai), player, "so they take us up")
+	sp_test_hush(first_ai)
+	sp_test_hush(second_ai)
+	qdel(first_ai)
+	qdel(second_ai)
+
+/**
+ * Somebody a player has just been talking to does not wander off into small talk while the player is still there,
+ * and is not drawn into any; once the player has gone, they are free again.
+ */
+/datum/unit_test/sp_no_small_talk_while_engaged
+
+/datum/unit_test/sp_no_small_talk_while_engaged/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/colleague = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/colleague_ai = new(colleague)
+	colleague_ai.set_ai_status(AI_STATUS_OFF)
+
+	TEST_ASSERT_EQUAL(sp_find_chat_partner(colleague), crew, "with nobody else about, a colleague is somebody to chat to")
+	var/datum/sp_dialogue_thread/ours = sp_start_thread(crew_ai, sp_all_dialogues()["ask_job"], crew, player)
+	TEST_ASSERT_NOTNULL(ours, "a player gets talking to them")
+	sp_end_dialogue(crew_ai, ours)
+	TEST_ASSERT(crew_ai.engaged_with_player(), "and still has their attention once it is over")
+	TEST_ASSERT_NULL(sp_find_chat_partner(colleague), "so a colleague does not draw them into small talk")
+	var/datum/bt_node/ai_behavior/sp_start_chat/start_chat = new
+	start_chat.perform(1, crew_ai)
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_THREAD), "and they start none of their own")
+	player.forceMove(locate(spot.x + SP_DIALOGUE_RANGE + 2, spot.y, spot.z))
+	TEST_ASSERT(!crew_ai.engaged_with_player(), "until the player has gone")
+	TEST_ASSERT_EQUAL(sp_find_chat_partner(colleague), crew, "after which they are free to chat again")
+	start_chat.perform(1, crew_ai)
+	TEST_ASSERT(crew_ai.blackboard_key_exists(BB_SP_THREAD), "and do")
+	qdel(start_chat)
+	sp_test_hush(crew_ai)
+	qdel(crew_ai)
+	qdel(colleague_ai)
+
+/// Being introduced counts as being greeted, however it started: nobody tells somebody they have just met that they didn't see them come in.
+/datum/unit_test/sp_introduction_counts_as_greeting
+
+/datum/unit_test/sp_introduction_counts_as_greeting/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	crew.real_name = "Luca Fisher"
+	player.mind_initialize()
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	crew_ai.consider_conversation(player, "Hello, Luca.")
+	var/datum/sp_dialogue_thread/thread = crew_ai.blackboard[BB_SP_THREAD]
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "introductions", "a hello to a stranger starts an introduction")
+	sp_end_dialogue(crew_ai, thread)
+	var/datum/bt_node/ai_behavior/sp_greet_newcomer/greet = new
+	TEST_ASSERT(greet.perform(1, crew_ai) & AI_BEHAVIOR_FAILED, "after which there is nobody left to greet")
+	qdel(greet)
+	qdel(crew_ai)
+
+/// A mime is cast in no spoken part and drawn into no small talk, and waves at a newcomer rather than greeting them in words TG will not let them say.
+/datum/unit_test/sp_mimes_keep_quiet
+
+/datum/unit_test/sp_mimes_keep_quiet/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/mime = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/colleague = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	mime.mind_initialize()
+	ADD_TRAIT(mime.mind, TRAIT_MIMING, SP_TRAIT_SOURCE)
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/mime_ai = new(mime)
+	mime_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/colleague_ai = new(colleague)
+	colleague_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(!mime.can_speak(), "the vow holds")
+
+	TEST_ASSERT(!sp_dialogue_role_fits(sp_all_dialogues()["introductions"], "crew", mime), "a mime is cast in no spoken part")
+	TEST_ASSERT(!length(sp_dialogues_for_talk(mime, player)), "so there is nothing to talk to them about")
+	TEST_ASSERT_NULL(sp_find_chat_partner(colleague), "and no colleague picks them for small talk")
+	var/datum/bt_node/ai_behavior/sp_greet_newcomer/greet = new
+	greet.perform(1, mime_ai)
+	TEST_ASSERT(!mime_ai.blackboard_key_exists(BB_SP_THREAD), "a newcomer gets a wave, not an introduction")
+	TEST_ASSERT(LAZYACCESS(mime_ai.blackboard[BB_SP_GREETED], player), "which counts as greeting them")
+	qdel(greet)
+	qdel(mime_ai)
+	qdel(colleague_ai)
+
+// --- Favours: standing spent ---------------------------------------------------------------------------
+
+/// Dresses somebody in a jumpsuit with an ID clipped to it, carrying these accesses.
+/proc/sp_test_give_id(mob/living/carbon/human/who, list/accesses)
+	who.equip_to_slot_or_del(new /obj/item/clothing/under/color/grey(who), ITEM_SLOT_ICLOTHING)
+	var/obj/item/card/id/advanced/card = new(who)
+	card.registered_name = who.real_name
+	card.access = accesses.Copy()
+	who.equip_to_slot_if_possible(card, ITEM_SLOT_ID)
+	return card
+
+/// Plays a thread through to its end, a line at a time, all within the test's tick.
+/proc/sp_test_run_thread(datum/sp_dialogue_thread/thread)
+	for(var/i in 1 to SP_DIALOGUE_MAX_LINES)
+		if(!thread.advance())
+			return
+
+/**
+ * A favour is offered only where it can be done, granted only to somebody liked well enough, and costs a point of
+ * that standing when it is.
+ */
+/datum/unit_test/sp_favours_are_earned
+
+/datum/unit_test/sp_favours_are_earned/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	player.mind_initialize()
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/list/menu = sp_dialogues_for_talk(crew, player)
+	TEST_ASSERT(("Ask them to come with you" in menu), "anybody can be asked to come along")
+	TEST_ASSERT(!("Ask them to open a door" in menu), "but not to open a door with none about")
+	TEST_ASSERT(!("Ask them to fetch something" in menu), "or to fetch what their job has none of")
+	TEST_ASSERT(!("Ask them to call a doctor" in menu), "or to call a medic with no radio and no medic")
+
+	var/datum/sp_dialogue/follow = sp_all_dialogues()["ask_follow"]
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(follow, crew, player)
+	sp_test_run_thread(thread)
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "a stranger is turned down")
+	qdel(thread)
+
+	sp_adjust_reputation(crew_ai, player, 5, "test")
+	thread = sp_begin_dialogue(follow, crew, player)
+	sp_test_run_thread(thread)
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_FAVOUR], SP_FAVOUR_FOLLOW, "somebody they like gets a yes")
+	TEST_ASSERT_EQUAL(sp_reputation(crew_ai, player), 4, "and spends a point of standing on it")
+	TEST_ASSERT(!("Ask them to come with you" in sp_dialogues_for_talk(crew, player)), "one favour at a time")
+	qdel(thread)
+	sp_end_favour(crew_ai)
+	qdel(crew_ai)
+
+/// Somebody who agreed to come along sets off after you, and is let off with a thank you, or when the time is up.
+/datum/unit_test/sp_favour_follow
+
+/datum/unit_test/sp_favour_follow/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_do_favour/favour = new
+
+	TEST_ASSERT(sp_start_favour(crew_ai, SP_FAVOUR_FOLLOW, player), "they agree to come along")
+	player.forceMove(locate(spot.x + 4, spot.y, spot.z))
+	favour.perform(1, crew_ai)
+	TEST_ASSERT_EQUAL(crew_ai.ai_movement.moving_controllers[crew_ai], player, "and set off after the player when they walk off")
+	crew_ai.consider_conversation(player, "Thanks.")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "a thank you lets them off")
+	TEST_ASSERT(!crew_ai.ai_movement.moving_controllers[crew_ai], "and they stop")
+
+	sp_test_hush(crew_ai)
+	sp_start_favour(crew_ai, SP_FAVOUR_FOLLOW, player)
+	crew_ai.set_blackboard_key(BB_SP_FAVOUR_UNTIL, world.time - 1)
+	favour.perform(1, crew_ai)
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "and so does the time running out")
+	qdel(favour)
+	sp_test_hush(crew_ai)
+	qdel(crew_ai)
+
+/**
+ * A door is opened for somebody who cannot open it, by somebody whose own card can, and held until they are
+ * through; never one to anywhere nobody opens for anybody else.
+ */
+/datum/unit_test/sp_favour_door
+
+/datum/unit_test/sp_favour_door/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/turf/doorway = get_step(spot, NORTH)
+	var/obj/machinery/door/airlock/door = allocate(/obj/machinery/door/airlock, doorway)
+	door.req_access = list(ACCESS_ENGINEERING)
+	sp_test_give_id(crew, list(ACCESS_ENGINEERING, ACCESS_ARMORY))
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+
+	TEST_ASSERT_EQUAL(sp_favour_door(crew, player), door, "a shut door their card opens and ours does not")
+	door.req_access = list(ACCESS_ARMORY)
+	TEST_ASSERT_NULL(sp_favour_door(crew, player), "but never the armoury, whoever asks")
+	door.req_access = list(ACCESS_ENGINEERING)
+
+	var/datum/bt_node/ai_behavior/sp_do_favour/favour = new
+	sp_start_favour(crew_ai, SP_FAVOUR_DOOR, player, door)
+	favour.perform(1, crew_ai)
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_SP_FAVOUR_STAGE], "holding", "they open it")
+	TEST_ASSERT(door.operating || !door.density, "with their own card")
+	player.forceMove(doorway)
+	favour.perform(1, crew_ai)
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "and let go once we are through")
+
+	var/mob/living/carbon/human/insider = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	sp_test_give_id(insider, list(ACCESS_ENGINEERING))
+	TEST_ASSERT_NULL(sp_favour_door(crew, insider), "nobody opens a door for somebody who can open it themselves")
+	qdel(favour)
+	qdel(crew_ai)
+
+/// Fetching: the nearest one lying about in their own department, picked up, brought back and put in our hands.
+/datum/unit_test/sp_favour_fetch
+
+/datum/unit_test/sp_favour_fetch/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/obj/item/food/grown/apple/apple = allocate(/obj/item/food/grown/apple, get_step(spot, NORTH))
+	var/datum/ai_controller/sp_crew/botanist/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	// The apple's own room is the department. Not the corner tile's: other tests move that tile into a hallway or
+	// medbay to test places, and it stays moved for the rest of the run.
+	var/area/room = get_area(apple)
+	crew_ai.override_blackboard_key(BB_SP_WANDER_AREAS, list(room.type))
+	TEST_ASSERT(length(crew_ai.fetchables()), "a botanist has things to fetch")
+	TEST_ASSERT_EQUAL(sp_favour_fetchable(crew_ai), apple, "a botanist would fetch the apple lying about in their department")
+
+	var/datum/bt_node/ai_behavior/sp_do_favour/favour = new
+	TEST_ASSERT(sp_start_favour(crew_ai, SP_FAVOUR_FETCH, player, apple), "and agrees to")
+	favour.perform(1, crew_ai)
+	TEST_ASSERT(crew.is_holding(apple), "picks it up")
+	favour.perform(1, crew_ai)
+	TEST_ASSERT(player.is_holding(apple) || apple.loc == get_turf(player), "and hands it over")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "which is the favour done")
+	qdel(favour)
+	qdel(crew_ai)
+
+/// Calling medbay: the call goes out on the radio, one medic takes it, and comes to that person wherever they are.
+/datum/unit_test/sp_favour_calls_a_doctor
+
+/datum/unit_test/sp_favour_calls_a_doctor/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/medic = allocate(/mob/living/carbon/human/consistent, run_loc_floor_top_right)
+	crew.equip_to_slot_or_del(new /obj/item/radio/headset(crew), ITEM_SLOT_EARS)
+	medic.put_in_hands(new /obj/item/healthanalyzer(medic))
+	player.adjust_brute_loss(30)
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/medical/medic_ai = new(medic)
+	medic_ai.set_ai_status(AI_STATUS_OFF)
+	SSspacestation_sp.register_crew(medic)
+
+	TEST_ASSERT(sp_favour_possible(crew_ai, player, SP_FAVOUR_DOCTOR), "somebody with a headset can call medbay")
+	var/datum/bt_node/ai_behavior/sp_do_favour/favour = new
+	sp_start_favour(crew_ai, SP_FAVOUR_DOCTOR, player)
+	favour.perform(1, crew_ai)
+	var/list/radio_call = crew_ai.blackboard[BB_SP_LAST_CALL]
+	TEST_ASSERT(length(radio_call), "and does, on the radio")
+	TEST_ASSERT(!crew_ai.blackboard_key_exists(BB_SP_FAVOUR), "which is all the favour is")
+	medic_ai.on_heard_call(crew, radio_call)
+	TEST_ASSERT_EQUAL(medic_ai.blackboard[BB_SP_HOUSE_CALL], player, "a medic takes the call")
+	TEST_ASSERT_EQUAL(sp_find_patient(medic, medic_ai), player, "and comes to see them")
+	sp_house_call_over(medic_ai, "test over")
+	SSspacestation_sp.ai_crew -= medic
+	qdel(favour)
+	qdel(crew_ai)
+	qdel(medic_ai)
+
+// --- Dialogue tied to what the crew do (M2) ------------------------------------------------------------
+
+/// Gives a test mob a job, for dialogue cast by job and department.
+/proc/sp_test_give_job(mob/living/carbon/human/who, job_type)
+	if(isnull(who.mind))
+		who.mind_initialize()
+	who.mind.assigned_role = SSjob.get_job_type(job_type)
+
+/**
+ * What the crew do together opens the conversation written for it -- a drink served, a patient seen to, produce
+ * dropped off in the kitchen -- and the second time round is not the first.
+ */
+/datum/unit_test/sp_work_opens_conversations
+
+/datum/unit_test/sp_work_opens_conversations/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/worker = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/other = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/datum/ai_controller/sp_crew/worker_ai = new(worker)
+	worker_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/other_ai = new(other)
+	other_ai.set_ai_status(AI_STATUS_OFF)
+
+	sp_test_give_job(worker, /datum/job/bartender)
+	var/datum/sp_dialogue_thread/thread = sp_talk_about(worker, other, "served")
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "bar_patron", "a drink served opens a word at the bar")
+	sp_test_run_thread(thread)
+	sp_end_dialogue(worker_ai, thread)
+	thread = sp_talk_about(worker, other, "served")
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "bar_patron_regular", "and the next one, a word with a regular")
+	sp_end_dialogue(worker_ai, thread)
+
+	sp_test_give_job(worker, /datum/job/doctor)
+	thread = sp_talk_about(worker, other, "treated")
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "doctor_patient", "a patient seen to gets some advice")
+	sp_test_run_thread(thread)
+	sp_end_dialogue(worker_ai, thread)
+	thread = sp_talk_about(worker, other, "treated")
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "doctor_patient_again", "and on a second visit, a doctor who has seen them before")
+	sp_end_dialogue(worker_ai, thread)
+
+	sp_test_give_job(worker, /datum/job/botanist)
+	sp_test_give_job(other, /datum/job/cook)
+	thread = sp_talk_about(worker, other, "delivered")
+	TEST_ASSERT_EQUAL(thread?.dialogue?.id, "chef_botanist", "produce dropped off in the kitchen gets a word with the cook")
+	sp_end_dialogue(worker_ai, thread)
+	TEST_ASSERT_EQUAL(sp_plant_asked_for("Any tomatoes going, botany? I'm out."), "tomato", "whose ask for tomatoes is a request botany acts on")
+	qdel(worker_ai)
+	qdel(other_ai)
+
+/// A botanist already growing something for somebody takes no other request, except medbay's aloe, which comes first.
+/datum/unit_test/sp_botany_requests_wait_their_turn
+
+/datum/unit_test/sp_botany_requests_wait_their_turn/Run()
+	var/mob/living/carbon/human/botanist = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	var/datum/ai_controller/sp_crew/botanist/controller = new(botanist)
+	controller.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(controller.takes_request("banana"), "a botanist with nothing on takes a request")
+	controller.set_blackboard_key(BB_SP_PLANT_REQUEST, "banana")
+	TEST_ASSERT(controller.takes_request("banana"), "and the same one again")
+	TEST_ASSERT(!controller.takes_request("tomato"), "but not tomatoes on top of the bananas")
+	TEST_ASSERT(controller.takes_request("aloe"), "while medbay's aloe comes first")
+	controller.set_blackboard_key(BB_SP_PLANT_REQUEST, "aloe")
+	TEST_ASSERT(!controller.takes_request("banana"), "and is not bumped by bananas")
+	qdel(controller)
+
+// --- Searches, confiscation and the warden ---------------------------------------------------------------
+
+/// A cell's parts for a test, sharing one id so the timer links them as it initialises (urange(20), by id).
+/obj/machinery/door/window/brigdoor/security/cell/sp_test
+	id = "sp_test_cell"
+	dir = NORTH
+
+/obj/structure/closet/secure_closet/brig/sp_test
+	id = "sp_test_cell"
+
+/obj/machinery/status_display/door_timer/sp_test
+	id = "sp_test_cell"
+
+/**
+ * Builds a cell in the test room with its door on `door_turf`, facing north, and the locker two tiles beyond, so
+ * the tile past the door is the inside (sp_cell_doorway()). Returns list(timer, door, inside, outside).
+ */
+/datum/unit_test/proc/sp_test_cell(turf/door_turf)
+	var/obj/machinery/door/window/brigdoor/door = allocate(/obj/machinery/door/window/brigdoor/security/cell/sp_test, door_turf)
+	var/turf/inside = get_step(door_turf, NORTH)
+	allocate(/obj/structure/closet/secure_closet/brig/sp_test, get_step(inside, NORTH))
+	var/obj/machinery/status_display/door_timer/timer = allocate(/obj/machinery/status_display/door_timer/sp_test, get_step(door_turf, EAST))
+	return list(timer, door, inside, door_turf)
+
+/// Dresses somebody as a member of security for a test: the job, and an ID carrying the accesses.
+/proc/sp_test_make_security(mob/living/carbon/human/who, job_type, list/accesses)
+	sp_test_give_job(who, job_type)
+	sp_test_give_id(who, accesses)
+	who.equip_to_slot_or_del(new /obj/item/storage/backpack/security(who), ITEM_SLOT_BACK)
+
+/// What an officer takes off somebody: the thing they were seen taking, contraband, a weapon on a civilian, and what belongs to another job; never the ID.
+/datum/unit_test/sp_loot_is_recognised
+
+/datum/unit_test/sp_loot_is_recognised/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/suspect = allocate(/mob/living/carbon/human/consistent, spot)
+	sp_test_give_job(suspect, /datum/job/assistant)
+	var/obj/item/card/id/card = sp_test_give_id(suspect, list())
+	suspect.equip_to_slot_or_del(new /obj/item/storage/backpack(suspect), ITEM_SLOT_BACK)
+	var/obj/item/melee/baton/stick = new(suspect)
+	suspect.equip_to_storage(stick, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/pen/pen = new(suspect)
+	suspect.equip_to_storage(pen, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/pen/marked = new(suspect)
+	ADD_TRAIT(marked, TRAIT_CONTRABAND, SP_TRAIT_SOURCE)
+	suspect.equip_to_storage(marked, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/toy/crayon/red/crayon = new(suspect)
+	suspect.put_in_hands(crayon)
+	var/obj/item/blueprints/plans = new(suspect)
+	suspect.equip_to_storage(plans, ITEM_SLOT_BACK, indirect_action = TRUE)
+
+	TEST_ASSERT(sp_is_loot(stick, suspect), "a baton on an assistant is taken")
+	TEST_ASSERT(!sp_is_loot(pen, suspect), "a pen is not")
+	TEST_ASSERT(!sp_is_loot(card, suspect), "and the ID never is")
+	TEST_ASSERT(!sp_is_loot(crayon, suspect), "a crayon is theirs")
+	TEST_ASSERT(sp_is_loot(crayon, suspect, crayon), "unless a witness saw them take it")
+	TEST_ASSERT(sp_is_loot(marked, suspect), "contraband is taken")
+	TEST_ASSERT(sp_is_loot(plans, suspect), "and so are the station blueprints, off an assistant")
+	var/list/loot = sp_loot_on(suspect, crayon)
+	TEST_ASSERT_EQUAL(length(loot), 4, "a pat-down finds the four of them: [english_list(loot)]")
+	TEST_ASSERT(!(pen in loot) && !(card in loot), "and leaves the pen and the ID")
+
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	sp_test_give_job(officer, /datum/job/security_officer)
+	TEST_ASSERT(!sp_is_loot(stick, officer), "security carry batons")
+	var/mob/living/carbon/human/chief = allocate(/mob/living/carbon/human/consistent, get_step(spot, WEST))
+	sp_test_give_job(chief, /datum/job/chief_engineer)
+	TEST_ASSERT(!sp_is_loot(plans, chief), "and the blueprints are the chief engineer's to carry")
+
+/// The pat-down after an arrest takes the loot off them and into the officer's bag, and nothing else.
+/datum/unit_test/sp_search_takes_the_loot
+
+/datum/unit_test/sp_search_takes_the_loot/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/suspect = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	sp_test_make_security(officer, /datum/job/security_officer, list(ACCESS_BRIG))
+	sp_test_give_job(suspect, /datum/job/assistant)
+	suspect.equip_to_slot_or_del(new /obj/item/storage/backpack(suspect), ITEM_SLOT_BACK)
+	var/obj/item/melee/baton/stick = new(suspect)
+	suspect.equip_to_storage(stick, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/pen/pen = new(suspect)
+	suspect.equip_to_storage(pen, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/toy/crayon/red/crayon = new(suspect)
+	suspect.put_in_hands(crayon)
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/list/taken = sp_search_person(officer_ai, suspect, crayon)
+	TEST_ASSERT_EQUAL(length(taken), 2, "the baton and the crayon are taken: [english_list(taken)]")
+	TEST_ASSERT_EQUAL(get(stick, /mob), officer, "the baton is the officer's to carry now")
+	TEST_ASSERT_EQUAL(get(crayon, /mob), officer, "and so is the crayon")
+	TEST_ASSERT_EQUAL(get(pen, /mob), suspect, "the pen stays where it was")
+	var/list/evidence = officer_ai.blackboard[BB_SP_EVIDENCE]
+	TEST_ASSERT_EQUAL(length(evidence), 2, "and both are evidence to file")
+	TEST_ASSERT(officer_ai.busy_with_work(), "which is duty until it is filed")
+
+	// The leaf itself skips somebody already searched, and is not a reason to leave anybody on the floor.
+	officer_ai.set_blackboard_key(BB_SP_PRISONER, suspect)
+	var/datum/bt_node/ai_behavior/sp_search_prisoner/search = new
+	search.owning_controller = officer_ai
+	officer_ai.set_blackboard_key(BB_SP_SEARCHED, suspect)
+	TEST_ASSERT(search.perform(1, officer_ai) & AI_BEHAVIOR_SUCCEEDED, "a prisoner already searched is passed over, and the escort goes on")
+	qdel(search)
+	sp_forget_evidence(officer_ai)
+	qdel(officer_ai)
+
+/// The escort takes hold of the prisoner again after losing them on the way, and lets go after too many lost holds.
+/datum/unit_test/sp_escort_takes_hold_again
+
+/datum/unit_test/sp_escort_takes_hold_again/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/prisoner = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	prisoner.set_handcuffed(new /obj/item/restraints/handcuffs(prisoner))
+	prisoner.update_handcuffed()
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	officer_ai.set_blackboard_key(BB_SP_PRISONER, prisoner)
+	officer_ai.set_blackboard_key(BB_SP_CELL_SPOT, locate(spot.x + 5, spot.y, spot.z))
+	var/turf/cell_spot = officer_ai.blackboard[BB_SP_CELL_SPOT]
+	var/datum/bt_node/ai_behavior/sp_take_hold/hold = new
+	var/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_escort/walk = new
+	walk.owning_controller = officer_ai
+
+	TEST_ASSERT(hold.perform(1, officer_ai) & AI_BEHAVIOR_SUCCEEDED, "beside them, the officer takes hold")
+	TEST_ASSERT_EQUAL(officer.pulling, prisoner, "of the prisoner")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_ESCORT_GOAL], cell_spot, "and the walk is to the cell")
+	officer.stop_pulling()
+	var/result = walk.perform(1, officer_ai)
+	TEST_ASSERT(!(result & (AI_BEHAVIOR_FAILED | AI_BEHAVIOR_SUCCEEDED)), "the hold lost with the prisoner beside them, the walk goes on")
+	TEST_ASSERT_EQUAL(officer.pulling, prisoner, "with hold taken again")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_ESCORT_RETAKES], 0, "which a corner turned does not count against them")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_ESCORT_GOAL], cell_spot, "and the cell still the goal")
+
+	officer.stop_pulling()
+	prisoner.forceMove(locate(spot.x + 3, spot.y, spot.z))
+	result = walk.perform(1, officer_ai)
+	TEST_ASSERT(!(result & (AI_BEHAVIOR_FAILED | AI_BEHAVIOR_SUCCEEDED)), "lost with the prisoner out of reach, the walk goes on too")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_ESCORT_GOAL], prisoner, "back to them")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_PRISONER], prisoner, "who is still the prisoner")
+	walk.finish_action(officer_ai, FALSE)
+	prisoner.forceMove(get_step(spot, EAST))
+	result = walk.perform(1, officer_ai)
+	TEST_ASSERT_EQUAL(officer.pulling, prisoner, "beside them again, hold is taken")
+	TEST_ASSERT_EQUAL(officer_ai.blackboard[BB_SP_ESCORT_RETAKES], 1, "and going back for them is what counts")
+	walk.finish_action(officer_ai, FALSE)
+
+	officer.stop_pulling()
+	officer_ai.set_blackboard_key(BB_SP_ESCORT_RETAKES, SP_ESCORT_MAX_RETAKES)
+	TEST_ASSERT(walk.perform(1, officer_ai) & AI_BEHAVIOR_FAILED, "but not for ever")
+	TEST_ASSERT(!officer_ai.blackboard_key_exists(BB_SP_PRISONER), "somebody lost too often is let go of")
+	walk.finish_action(officer_ai, FALSE)
+	qdel(hold)
+	qdel(walk)
+	qdel(officer_ai)
+
+/// A thief is asked for it first: crew with nothing to hide hand it over, and a schemer is searched for it.
+/datum/unit_test/sp_thief_is_asked_first
+
+/datum/unit_test/sp_thief_is_asked_first/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/thief = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	sp_test_make_security(officer, /datum/job/security_officer, list(ACCESS_BRIG))
+	sp_test_give_job(thief, /datum/job/botanist)
+	thief.equip_to_slot_or_del(new /obj/item/storage/backpack(thief), ITEM_SLOT_BACK)
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/thief_ai = new(thief)
+	thief_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_confront_suspect/confront = new
+	confront.owning_controller = officer_ai
+
+	TEST_ASSERT(sp_hands_over(thief), "crew with nothing to hide hand it over")
+	var/obj/item/toy/crayon/red/crayon = new(thief)
+	thief.put_in_hands(crayon)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT, thief)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT_CRIME, SP_CRIME_THEFT)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT_ITEM, crayon)
+	confront.perform(1, officer_ai)
+	sleep(SP_LOOT_DEMAND_TIME + 1 SECONDS)
+	TEST_ASSERT_EQUAL(get(crayon, /mob), officer, "asked for the crayon, they hand it over")
+	TEST_ASSERT(!officer_ai.blackboard_key_exists(BB_SP_SUSPECT_ITEM), "and the matter is closed")
+	sp_forget_evidence(officer_ai)
+
+	// A schemer has every reason to keep it, so it is taken: the demand, the wait, the search. A fresh leaf: an
+	// async leaf hands its finished result to the next perform, and the tree resets it between runs, not us.
+	thief_ai.set_blackboard_key(BB_SP_SCHEME, TRUE) // anything at all in the key is a scheme, for this test
+	TEST_ASSERT(!sp_hands_over(thief), "a schemer never hands anything over")
+	var/obj/item/toy/crayon/blue/second = new(thief)
+	thief.put_in_hands(second)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT, thief)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT_CRIME, SP_CRIME_THEFT)
+	officer_ai.set_blackboard_key(BB_SP_SUSPECT_ITEM, second)
+	var/datum/bt_node/ai_behavior/sp_confront_suspect/confront_again = new
+	confront_again.owning_controller = officer_ai
+	confront_again.perform(1, officer_ai)
+	sleep(SP_LOOT_DEMAND_TIME + SP_SEARCH_TIME + 2 SECONDS)
+	TEST_ASSERT_EQUAL(get(second, /mob), officer, "so the officer takes it off them")
+	TEST_ASSERT(!officer_ai.blackboard_key_exists(BB_SP_SUSPECT), "and lets the matter go")
+	qdel(confront)
+	qdel(confront_again)
+	sp_forget_evidence(officer_ai)
+	thief_ai.clear_blackboard_key(BB_SP_SCHEME)
+	qdel(officer_ai)
+	qdel(thief_ai)
+
+/**
+ * Where evidence goes: the evidence closet for whoever can open it, the warden or the head of security for an
+ * officer who cannot, and a security locker once a keeper has proved impossible to reach or there is none.
+ */
+/datum/unit_test/sp_evidence_finds_its_home
+
+/datum/unit_test/sp_evidence_finds_its_home/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	sp_test_make_security(officer, /datum/job/security_officer, list(ACCESS_BRIG))
+	sp_test_make_security(warden, /datum/job/warden, list(ACCESS_BRIG, ACCESS_ARMORY))
+	var/obj/structure/closet/secure_closet/evidence/evidence = allocate(/obj/structure/closet/secure_closet/evidence, locate(spot.x + 2, spot.y, spot.z))
+	GLOB.roundstart_station_closets |= evidence
+	var/datum/ai_controller/sp_crew/security/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+
+	TEST_ASSERT(evidence.locked, "the evidence closet starts locked")
+	TEST_ASSERT_EQUAL(sp_evidence_home(warden_ai), evidence, "and the warden's card opens it")
+	TEST_ASSERT_NULL(sp_evidence_home(officer_ai), "an officer's does not, and with nobody to hand it to and no locker there is nowhere")
+	var/obj/structure/closet/secure_closet/security/sec/locker = allocate(/obj/structure/closet/secure_closet/security/sec, locate(spot.x + 3, spot.y, spot.z))
+	GLOB.roundstart_station_closets |= locker
+	TEST_ASSERT_EQUAL(sp_evidence_home(officer_ai), locker, "a security locker is somewhere")
+	SSspacestation_sp.register_crew(warden)
+	TEST_ASSERT_EQUAL(sp_evidence_home(officer_ai), warden, "but the warden, on duty, is who it goes to")
+	officer_ai.set_blackboard_key(BB_SP_EVIDENCE_TRIES, SP_EVIDENCE_MAX_TRIES)
+	TEST_ASSERT_EQUAL(sp_evidence_home(officer_ai), locker, "unless the walk to them has come to nothing too often")
+	SSspacestation_sp.ai_crew -= warden
+	GLOB.roundstart_station_closets -= list(evidence, locker)
+	qdel(officer_ai)
+	qdel(warden_ai)
+
+/// Filing: into the closet, which is locked again behind it.
+/datum/unit_test/sp_evidence_is_filed
+
+/datum/unit_test/sp_evidence_is_filed/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, spot)
+	sp_test_make_security(warden, /datum/job/warden, list(ACCESS_BRIG, ACCESS_ARMORY))
+	var/obj/structure/closet/secure_closet/evidence/evidence = allocate(/obj/structure/closet/secure_closet/evidence, get_step(spot, EAST))
+	var/obj/item/melee/baton/stick = new(warden)
+	warden.equip_to_storage(stick, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/obj/item/toy/crayon/red/crayon = new(warden)
+	warden.equip_to_storage(crayon, ITEM_SLOT_BACK, indirect_action = TRUE)
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+	sp_hold_evidence(warden_ai, list(stick, crayon))
+	warden_ai.set_blackboard_key(BB_SP_EVIDENCE_HOME, evidence)
+
+	var/datum/bt_node/ai_behavior/sp_file_evidence/file = new
+	file.owning_controller = warden_ai
+	file.perform(1, warden_ai)
+	sleep(8 SECONDS)
+	TEST_ASSERT_EQUAL(stick.loc, evidence, "the baton is in the evidence closet")
+	TEST_ASSERT_EQUAL(crayon.loc, evidence, "and so is the crayon")
+	TEST_ASSERT(!evidence.opened, "which is shut")
+	TEST_ASSERT(evidence.locked, "and locked again")
+	TEST_ASSERT(!warden_ai.blackboard_key_exists(BB_SP_EVIDENCE), "and there is nothing left to file")
+	qdel(file)
+	qdel(warden_ai)
+
+/// The warden lets a prisoner out when their time is up, and shuts the cell again once they have gone.
+/datum/unit_test/sp_warden_lets_them_out
+
+/datum/unit_test/sp_warden_lets_them_out/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/list/cell = sp_test_cell(get_step(spot, NORTH))
+	var/obj/machinery/status_display/door_timer/timer = cell[1]
+	var/obj/machinery/door/window/brigdoor/door = cell[2]
+	var/turf/inside = cell[3]
+	var/turf/outside = cell[4]
+	TEST_ASSERT_EQUAL(length(timer.doors), 1, "the timer found its door")
+	TEST_ASSERT_EQUAL(length(timer.closets), 1, "and its locker")
+	var/list/doorway = sp_cell_doorway(timer)
+	TEST_ASSERT_EQUAL(doorway?[1], inside, "the tile past the door is the inside")
+	TEST_ASSERT_EQUAL(doorway?[2], outside, "and the door's own tile the outside")
+
+	var/mob/living/carbon/human/prisoner = allocate(/mob/living/carbon/human/consistent, inside)
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, spot)
+	prisoner.real_name = "Isla Ferrant"
+	sp_test_give_job(prisoner, /datum/job/assistant)
+	var/datum/record/crew/record = new(name = prisoner.real_name, rank = "Assistant")
+	record.wanted_status = WANTED_PRISONER
+	sp_test_make_security(warden, /datum/job/warden, list(ACCESS_BRIG, ACCESS_ARMORY))
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+	sp_note_prisoner(prisoner, timer, 1 MINUTES, warden)
+	TEST_ASSERT(sp_in_cell(prisoner, timer), "the prisoner is in the cell")
+	TEST_ASSERT(!sp_in_cell(warden, timer), "and the warden outside it")
+
+	var/datum/bt_node/ai_behavior/sp_warden_check_cells/check = new
+	check.owning_controller = warden_ai
+	check.time_between_perform = 0
+	var/datum/bt_node/ai_behavior/sp_warden_cell_duty/duty = new
+	duty.owning_controller = warden_ai
+	TEST_ASSERT(check.perform(1, warden_ai) & AI_BEHAVIOR_SUCCEEDED, "a sentence that has run out is a walk to the cell")
+	TEST_ASSERT_EQUAL(warden_ai.blackboard[BB_SP_CELL_DUTY_KIND], SP_CELL_DUTY_RELEASE, "to let them out")
+	TEST_ASSERT_EQUAL(warden_ai.blackboard[BB_SP_CELL_DUTY_SPOT], outside, "from the door")
+	duty.perform(1, warden_ai)
+	sleep(1 SECONDS)
+	TEST_ASSERT_EQUAL(record.wanted_status, WANTED_NONE, "and their record is cleared")
+	TEST_ASSERT(!warden_ai.blackboard_key_exists(BB_SP_CELL_DUTY), "duty done")
+
+	// The door stands open and they leave; the cell is shut again behind them.
+	INVOKE_ASYNC(door, TYPE_PROC_REF(/obj/machinery/door/window, open), BYPASS_DOOR_CHECKS)
+	sleep(2 SECONDS)
+	TEST_ASSERT(!door.density, "the test opened the door")
+	prisoner.forceMove(locate(spot.x + 4, spot.y, spot.z))
+	TEST_ASSERT(check.perform(1, warden_ai) & AI_BEHAVIOR_SUCCEEDED, "an open cell with nobody in it is a walk over")
+	TEST_ASSERT_EQUAL(warden_ai.blackboard[BB_SP_CELL_DUTY_KIND], SP_CELL_DUTY_RESET, "to shut it")
+	// A fresh leaf: an async leaf hands its finished result to the next perform, and only the tree resets it.
+	var/datum/bt_node/ai_behavior/sp_warden_cell_duty/reset = new
+	reset.owning_controller = warden_ai
+	reset.perform(1, warden_ai)
+	sleep(3 SECONDS)
+	TEST_ASSERT(door.density, "and it is shut")
+	TEST_ASSERT_NULL(sp_prisoner_entry(timer), "with nobody left to see to")
+	TEST_ASSERT(check.perform(1, warden_ai) & AI_BEHAVIOR_FAILED, "so there is nothing more to do")
+	qdel(check)
+	qdel(duty)
+	qdel(reset)
+	qdel(record)
+	qdel(warden_ai)
+
+/// A prisoner out of the cell with time left is put back on the arrest list, and the cell freed for the next one.
+/datum/unit_test/sp_warden_calls_an_escape
+
+/datum/unit_test/sp_warden_calls_an_escape/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/list/cell = sp_test_cell(get_step(spot, NORTH))
+	var/obj/machinery/status_display/door_timer/timer = cell[1]
+	var/mob/living/carbon/human/prisoner = allocate(/mob/living/carbon/human/consistent, locate(spot.x + 4, spot.y, spot.z))
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, spot)
+	prisoner.real_name = "Rook Adair"
+	sp_test_give_job(prisoner, /datum/job/assistant)
+	var/datum/record/crew/record = new(name = prisoner.real_name, rank = "Assistant")
+	record.wanted_status = WANTED_PRISONER
+	sp_test_make_security(warden, /datum/job/warden, list(ACCESS_BRIG, ACCESS_ARMORY))
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+	timer.set_timer(2 MINUTES)
+	TEST_ASSERT(timer.timer_start(), "the sentence starts")
+	sp_note_prisoner(prisoner, timer, 2 MINUTES, warden)
+
+	var/datum/bt_node/ai_behavior/sp_warden_check_cells/check = new
+	check.owning_controller = warden_ai
+	check.time_between_perform = 0
+	TEST_ASSERT(check.perform(1, warden_ai) & AI_BEHAVIOR_FAILED, "an escape is called in on the spot, not walked to")
+	TEST_ASSERT_EQUAL(record.wanted_status, WANTED_ARREST, "the escapee is back on the arrest list")
+	TEST_ASSERT(!timer.timing, "and the cell is free for the next one")
+	TEST_ASSERT_NULL(sp_prisoner_entry(timer), "with the entry closed")
+	qdel(check)
+	qdel(record)
+	qdel(warden_ai)
+
+/// The warden minds the brig: a report from elsewhere on the station is somebody else's, one from the brig is theirs.
+/datum/unit_test/sp_warden_minds_the_brig
+
+/datum/unit_test/sp_warden_minds_the_brig/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/reporter = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/culprit = allocate(/mob/living/carbon/human/consistent, get_step(spot, WEST))
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+	var/turf/elsewhere = get_step(spot, EAST)
+	var/turf/in_brig = locate(spot.x + 6, spot.y + 6, spot.z)
+	var/area/station/security/brig/brig = new
+	brig.contents += in_brig
+	TEST_ASSERT(!sp_in_brig(elsewhere) && sp_in_brig(in_brig), "the test has one tile in the brig and one out of it")
+
+	var/list/report = list(SP_INCIDENT_ATTACKER = null, SP_INCIDENT_SUSPECT = WEAKREF(culprit), SP_INCIDENT_VICTIM = WEAKREF(reporter), SP_INCIDENT_TURF = elsewhere, SP_INCIDENT_TIME = world.time, SP_INCIDENT_CRIME = SP_CRIME_VANDALISM)
+	warden_ai.on_heard_incident(reporter, report)
+	TEST_ASSERT(!warden_ai.blackboard_key_exists(BB_SP_SUSPECT) && !warden_ai.blackboard_key_exists(BB_SP_INCIDENT_LOCATION), "a report from elsewhere is left to the officers")
+	report[SP_INCIDENT_TURF] = in_brig
+	warden_ai.on_heard_incident(reporter, report)
+	TEST_ASSERT_EQUAL(warden_ai.blackboard[BB_SP_SUSPECT], culprit, "one from the brig is the warden's")
+	qdel(warden_ai)
+
+/// An armoury locker left unlocked on a quiet shift is locked up again.
+/datum/unit_test/sp_warden_locks_up
+
+/datum/unit_test/sp_warden_locks_up/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/warden = allocate(/mob/living/carbon/human/consistent, spot)
+	sp_test_make_security(warden, /datum/job/warden, list(ACCESS_BRIG, ACCESS_ARMORY))
+	var/obj/structure/closet/secure_closet/warden/locker = allocate(/obj/structure/closet/secure_closet/warden, get_step(spot, EAST))
+	GLOB.roundstart_station_closets |= locker
+	var/datum/ai_controller/sp_crew/security/warden/warden_ai = new(warden)
+	warden_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_warden_find_open_armoury/find = new
+	find.owning_controller = warden_ai
+	find.time_between_perform = 0
+	TEST_ASSERT(SSsecurity_level.get_current_level_as_number() < SEC_LEVEL_RED, "a quiet shift")
+	TEST_ASSERT(locker.locked, "the locker starts locked")
+	TEST_ASSERT(find.perform(1, warden_ai) & AI_BEHAVIOR_FAILED, "so there is nothing to lock")
+	locker.locked = FALSE
+	TEST_ASSERT(find.perform(1, warden_ai) & AI_BEHAVIOR_SUCCEEDED, "left unlocked, it is something to lock")
+	TEST_ASSERT_EQUAL(warden_ai.blackboard[BB_SP_ARMOURY_TARGET], locker, "that one")
+	var/datum/bt_node/ai_behavior/sp_warden_secure_locker/secure = new
+	secure.owning_controller = warden_ai
+	secure.perform(1, warden_ai)
+	sleep(4 SECONDS)
+	TEST_ASSERT(locker.locked, "and it is locked again")
+	TEST_ASSERT(!warden_ai.blackboard_key_exists(BB_SP_ARMOURY_TARGET), "and forgotten")
+	GLOB.roundstart_station_closets -= locker
+	qdel(find)
+	qdel(secure)
+	qdel(warden_ai)
+
+/// Security have a word with the assistant who pulled a prank, and only with that one, and keep an eye on them after.
+/datum/unit_test/sp_security_remembers_the_prankster
+
+/datum/unit_test/sp_security_remembers_the_prankster/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/officer = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/prankster = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/innocent = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	prankster.real_name = "Tam Ruckle"
+	innocent.real_name = "Ivy Plume"
+	sp_test_give_job(officer, /datum/job/security_officer)
+	sp_test_give_job(prankster, /datum/job/assistant)
+	sp_test_give_job(innocent, /datum/job/assistant)
+	var/datum/ai_controller/sp_crew/officer_ai = new(officer)
+	officer_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/prankster_ai = new(prankster)
+	prankster_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/innocent_ai = new(innocent)
+	innocent_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/sp_dialogue/word = sp_all_dialogues()["security_prankster"]
+
+	TEST_ASSERT_NULL(sp_begin_dialogue(word, officer, prankster), "nobody is taken to task for nothing")
+	sp_station_event("vandalism", prankster, prankster)
+	var/list/event = SSspacestation_sp.station_events[length(SSspacestation_sp.station_events)]
+	TEST_ASSERT_EQUAL(event[SP_EVENT_WHO], "Tam Ruckle", "a prank is remembered with who pulled it")
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(word, officer, prankster)
+	TEST_ASSERT_NOTNULL(thread, "so security can have a word with them about it")
+	TEST_ASSERT_NULL(sp_begin_dialogue(word, officer, innocent), "and not with an assistant who did nothing")
+	sp_test_run_thread(thread)
+	TEST_ASSERT(sp_remembers(officer_ai, prankster, "watched"), "who is watched from then on")
+	qdel(thread)
+	SSspacestation_sp.station_events -= list(event)
+	qdel(officer_ai)
+	qdel(prankster_ai)
+	qdel(innocent_ai)
+
+/// The Head of Personnel turns down all access, remembers who asked, and has less patience the second time.
+/datum/unit_test/sp_all_access_is_refused
+
+/datum/unit_test/sp_all_access_is_refused/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/hop = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	player.mind_initialize()
+	sp_test_give_job(hop, /datum/job/head_of_personnel)
+	var/datum/ai_controller/sp_crew/hop_ai = new(hop)
+	hop_ai.set_ai_status(AI_STATUS_OFF)
+
+	var/list/menu = sp_dialogues_for_talk(hop, player)
+	TEST_ASSERT(("Ask for all access" in menu), "anybody can ask the HoP for all access")
+	var/datum/sp_dialogue_thread/thread = sp_begin_dialogue(menu["Ask for all access"], hop, player)
+	thread.advance()
+	thread.advance()
+	TEST_ASSERT(length(thread.pending_options), "and gets to say what they want")
+	TEST_ASSERT(thread.choose(player, 1), "which is all access, please")
+	sp_test_run_thread(thread)
+	TEST_ASSERT(sp_remembers(hop_ai, player, "asked_for_aa"), "refused, and remembered")
+	qdel(thread)
+	menu = sp_dialogues_for_talk(hop, player)
+	var/datum/sp_dialogue/asking_again = menu["Ask for all access"]
+	TEST_ASSERT_EQUAL(asking_again?.id, "hop_all_access_player_again", "so asking again gets the other answer")
+	qdel(hop_ai)
+
+/**
+ * Somebody a player has just talked to stays put for them until they go, rather than walking straight off; and
+ * nobody calls a player by a name they were never told.
+ */
+/datum/unit_test/sp_lingers_and_minds_names
+
+/datum/unit_test/sp_lingers_and_minds_names/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/player = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	player.real_name = "Jo Standin"
+	player.mind_initialize()
+	ADD_TRAIT(player, TRAIT_SP_STAND_IN, SP_TRAIT_SOURCE)
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/bt_node/ai_behavior/sp_linger_with_player/linger = new
+
+	TEST_ASSERT(linger.perform(1, crew_ai) & AI_BEHAVIOR_FAILED, "with nobody to stay for, nobody is stayed for")
+	crew_ai.engage(player)
+	TEST_ASSERT(linger.perform(1, crew_ai) & AI_BEHAVIOR_SUCCEEDED, "a player just talked to is stayed for")
+	player.forceMove(locate(spot.x + SP_DIALOGUE_RANGE + 2, spot.y, spot.z))
+	TEST_ASSERT(linger.perform(1, crew_ai) & AI_BEHAVIOR_FAILED, "until they go")
+
+	TEST_ASSERT_EQUAL(sp_what_we_call(crew_ai, player), "mate", "a stranger is 'mate'")
+	for(var/i in 1 to 10)
+		var/line = sp_answer_for(crew_ai, player, "Thanks!")
+		TEST_ASSERT(!findtext(line, "Jo"), "and is never called by a name nobody told them: '[line]'")
+	sp_learn_name(crew_ai, player)
+	TEST_ASSERT_EQUAL(sp_what_we_call(crew_ai, player), "Jo", "but by their name once it is known")
+	qdel(linger)
+	qdel(crew_ai)

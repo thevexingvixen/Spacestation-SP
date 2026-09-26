@@ -45,8 +45,23 @@
 	if(isnull(line))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	pawn.face_atom(asker)
-	sp_crew_speak(pawn, replacetext(line, "%TARGET%", sp_first_name(asker)))
+	if(!pawn.can_speak())
+		sp_mime_answer(pawn, heard)
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+	sp_crew_speak(pawn, replacetext(line, "%TARGET%", sp_what_we_call(controller, asker)))
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
+
+/// A mime's answer: the right gesture instead of the words TG will not let them say.
+/proc/sp_mime_answer(mob/living/carbon/human/mime, heard)
+	switch(sp_speech_intent(sp_words(heard)))
+		if(SP_INTENT_GREETING)
+			mime.emote("wave")
+		if(SP_INTENT_THANKS)
+			mime.emote("bow")
+		if(SP_INTENT_INSULT, SP_INTENT_WHERE)
+			mime.emote("shrug")
+		else
+			mime.emote("nod")
 
 // --- Conversations ------------------------------------------------------------------------------
 
@@ -57,9 +72,12 @@
 /datum/bt_node/ai_behavior/sp_start_chat
 	time_between_perform = 5 SECONDS
 
-/datum/bt_node/ai_behavior/sp_start_chat/perform(seconds_per_tick, datum/ai_controller/controller)
+/datum/bt_node/ai_behavior/sp_start_chat/perform(seconds_per_tick, datum/ai_controller/sp_crew/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
 	if(!istype(pawn) || controller.blackboard_key_exists(BB_SP_THREAD) || controller.blackboard_key_exists(BB_SP_IN_THREAD))
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// Not with a player we have just been talking to still standing there, and not for a mime.
+	if(!pawn.can_speak() || (istype(controller) && controller.engaged_with_player()))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
 	var/mob/living/carbon/human/partner = sp_find_chat_partner(pawn)
 	if(isnull(partner))
@@ -101,10 +119,12 @@
 /datum/bt_node/ai_behavior/sp_greet_newcomer
 	time_between_perform = 4 SECONDS
 
-/datum/bt_node/ai_behavior/sp_greet_newcomer/perform(seconds_per_tick, datum/ai_controller/controller)
+/datum/bt_node/ai_behavior/sp_greet_newcomer/perform(seconds_per_tick, datum/ai_controller/sp_crew/controller)
 	var/mob/living/carbon/human/pawn = controller.pawn
-	if(!istype(pawn) || controller.blackboard_key_exists(BB_SP_THREAD) || controller.blackboard_key_exists(BB_SP_IN_THREAD))
+	if(!istype(pawn) || !istype(controller) || controller.blackboard_key_exists(BB_SP_THREAD) || controller.blackboard_key_exists(BB_SP_IN_THREAD))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	// Anybody we have talked to counts as greeted, however it started (engage()): the stand-in was introduced to
+	// somebody it had said hello to first, and got "Didn't see you come in." straight after.
 	var/list/greeted = controller.blackboard[BB_SP_GREETED]
 	for(var/mob/living/carbon/human/nearby in oview(4, pawn))
 		if(!sp_is_playing(nearby) || nearby.stat != STABLE)
@@ -113,8 +133,11 @@
 			continue
 		if(!can_see(pawn, nearby, 4))
 			continue
-		controller.set_blackboard_key_assoc_lazylist(BB_SP_GREETED, nearby, TRUE)
+		controller.engage(nearby)
 		pawn.face_atom(nearby)
+		if(!pawn.can_speak())
+			pawn.emote("wave")
+			return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 		// One conversation at a time: a newcomer already talking to somebody gets a line rather than a second
 		// introduction to answer. The stand-in walked into a hallway and three crew introduced themselves at once.
 		if(!sp_in_any_thread(nearby) && !isnull(sp_start_thread(controller, sp_pick_dialogue(pawn, nearby, "newcomer"), pawn, nearby)))
@@ -128,6 +151,22 @@
 		))
 		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+
+/**
+ * Stays put, facing them, for a player we have just been talking to while they are still about (engaged_with_player()).
+ * The stand-in was introduced to an atmospheric technician who walked straight back to Engineering, and Talk to,
+ * opened four seconds later, found them out of reach. It sits at the bottom of the chatter subtree: job work still
+ * comes first, and only idling -- a stroll, a commute, a rummage -- waits.
+ */
+/datum/bt_node/ai_behavior/sp_linger_with_player
+	time_between_perform = 1 SECONDS
+
+/datum/bt_node/ai_behavior/sp_linger_with_player/perform(seconds_per_tick, datum/ai_controller/sp_crew/controller)
+	if(!istype(controller) || !controller.engaged_with_player())
+		return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED
+	var/mob/living/pawn = controller.pawn
+	pawn.face_atom(controller.blackboard[BB_SP_ENGAGED_WITH])
+	return AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED
 
 /// An occasional remark to the whole station over common.
 /datum/bt_node/ai_behavior/sp_station_yap

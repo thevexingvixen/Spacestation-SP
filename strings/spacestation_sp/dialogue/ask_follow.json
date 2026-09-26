@@ -1,0 +1,183 @@
+{
+	"id": "ask_follow",
+	"title": "Ask them to come with you",
+	"triggers": [
+		"follow"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"can_favour": {
+			"crew->player": "follow"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "crew",
+			"lines": [
+				"Come with you?",
+				"Where to?",
+				"What, now?"
+			],
+			"next": [
+				{
+					"to": "yes",
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						}
+					}
+				},
+				{
+					"to": "yes_medical",
+					"weight": 3,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						},
+						"department": {
+							"crew": [
+								"Medical"
+							]
+						}
+					}
+				},
+				{
+					"to": "yes_engineering",
+					"weight": 3,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						},
+						"department": {
+							"crew": [
+								"Engineering"
+							]
+						}
+					}
+				},
+				{
+					"to": "not_yet",
+					"if": {
+						"standing": {
+							"crew->player": "<4"
+						}
+					}
+				},
+				{
+					"to": "no",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": "<=-4"
+						}
+					}
+				}
+			]
+		},
+		"yes": {
+			"speaker": "crew",
+			"lines": [
+				"Lead on, %PLAYER_FIRST%.",
+				"Go on then. A few minutes, mind.",
+				"Right behind you. Don't make me regret it."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "follow"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"yes_medical": {
+			"speaker": "crew",
+			"lines": [
+				"Lead on. If you're taking me to a body, I'd rather know now.",
+				"Fine. I'll bring my bedside manner."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "follow"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"yes_engineering": {
+			"speaker": "crew",
+			"lines": [
+				"Lead on. If it's the engine, don't tell me. I'd rather not know.",
+				"Go on. Everything's broken anyway, it'll keep."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "follow"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"not_yet": {
+			"speaker": "crew",
+			"lines": [
+				"I don't know you well enough to go wandering off with you.",
+				"Got my own work, sorry.",
+				"Maybe once I know you a bit better."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"no": {
+			"speaker": "crew",
+			"lines": [
+				"No.",
+				"Not with you, I'm not."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

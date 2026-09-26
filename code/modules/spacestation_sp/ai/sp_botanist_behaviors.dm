@@ -284,6 +284,17 @@
 /datum/bt_node/ai_behavior/sp_unload_produce/kitchen
 	announcement = "Dropped %COUNT% off in the kitchen: %WHAT%. Help yourself."
 
+/// A delivery the cook is there to see gets a word between the two of them -- and, now and then, an order for more.
+/datum/bt_node/ai_behavior/sp_unload_produce/kitchen/perform(seconds_per_tick, datum/ai_controller/controller)
+	. = ..()
+	if(!(. & AI_BEHAVIOR_SUCCEEDED))
+		return
+	var/mob/living/carbon/human/pawn = controller.pawn
+	for(var/mob/living/carbon/human/cook in oview(SP_DIALOGUE_RANGE, pawn))
+		if(istype(cook.ai_controller, /datum/ai_controller/sp_crew/chef) && cook.stat == STABLE)
+			sp_talk_about(pawn, cook, "delivered")
+			return
+
 /// Samples left out in hydroponics for whoever wanders past.
 /datum/bt_node/ai_behavior/sp_unload_produce/sample
 	table_key = BB_SP_SAMPLE_TABLE

@@ -1,0 +1,81 @@
+{
+	"id": "hop_all_access",
+	"weight": 4,
+	"roles": {
+		"asker": {
+			"job": [
+				"Assistant"
+			]
+		},
+		"hop": {
+			"job": [
+				"Head of Personnel"
+			]
+		}
+	},
+	"if": {
+		"memory": {
+			"hop->asker": "!asked_for_aa"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "asker",
+			"lines": [
+				"Any chance of all access, %HOP_FIRST%?",
+				"I need all access. For science.",
+				"Quick one: all access. For a friend."
+			],
+			"next": [
+				{
+					"to": "refuse"
+				}
+			]
+		},
+		"refuse": {
+			"speaker": "hop",
+			"lines": [
+				"No.",
+				"Not a chance.",
+				"Fill in the form. In triplicate. Then no."
+			],
+			"effects": [
+				{
+					"remember": {
+						"hop->asker": "asked_for_aa"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "plead"
+				}
+			]
+		},
+		"plead": {
+			"speaker": "asker",
+			"lines": [
+				"Maintenance access, then? Please?",
+				"What if I said please?"
+			],
+			"next": [
+				{
+					"to": "still_no"
+				}
+			]
+		},
+		"still_no": {
+			"speaker": "hop",
+			"lines": [
+				"Still no.",
+				"Please is how I know it's for something bad."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

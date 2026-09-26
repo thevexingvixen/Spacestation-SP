@@ -1,0 +1,145 @@
+{
+	"id": "ask_door",
+	"title": "Ask them to open a door",
+	"triggers": [
+		"door"
+	],
+	"weight": 1,
+	"roles": {
+		"crew": {},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"can_favour": {
+			"crew->player": "door"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "crew",
+			"lines": [
+				"Locked out?",
+				"That door?",
+				"Need in there, do you?"
+			],
+			"next": [
+				{
+					"to": "yes",
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						}
+					}
+				},
+				{
+					"to": "yes_engineering",
+					"weight": 3,
+					"if": {
+						"standing": {
+							"crew->player": ">=4"
+						},
+						"department": {
+							"crew": [
+								"Engineering"
+							]
+						}
+					}
+				},
+				{
+					"to": "not_yet",
+					"if": {
+						"standing": {
+							"crew->player": "<4"
+						}
+					}
+				},
+				{
+					"to": "no",
+					"weight": 10,
+					"if": {
+						"standing": {
+							"crew->player": "<=-4"
+						}
+					}
+				}
+			]
+		},
+		"yes": {
+			"speaker": "crew",
+			"lines": [
+				"Hold on, I'll get it.",
+				"Go on then. Don't tell anyone it was me.",
+				"Stand back, I've got it."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "door"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"yes_engineering": {
+			"speaker": "crew",
+			"lines": [
+				"Engineering's finest doorman, at your service.",
+				"Fine. If anything in there explodes, you were never here."
+			],
+			"effects": [
+				{
+					"favour": {
+						"crew->player": "door"
+					}
+				},
+				{
+					"standing": {
+						"crew->player": -1
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"not_yet": {
+			"speaker": "crew",
+			"lines": [
+				"I can't just let anybody in, sorry.",
+				"More than my job's worth.",
+				"Ask somebody who works in there."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"no": {
+			"speaker": "crew",
+			"lines": [
+				"Absolutely not.",
+				"Not a chance."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

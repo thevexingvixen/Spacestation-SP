@@ -1,0 +1,90 @@
+{
+	"id": "hop_all_access_player_again",
+	"title": "Ask for all access",
+	"weight": 1,
+	"roles": {
+		"hop": {
+			"job": [
+				"Head of Personnel"
+			]
+		},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"memory": {
+			"hop->player": "asked_for_aa"
+		}
+	},
+	"start": "again",
+	"nodes": {
+		"again": {
+			"speaker": "hop",
+			"lines": [
+				"You again. The answer hasn't changed, %PLAYER_FIRST%.",
+				"I remember you. You're the all access one."
+			],
+			"next": [
+				{
+					"to": "last_warning",
+					"weight": 10,
+					"if": {
+						"memory": {
+							"hop->player": "asked_twice"
+						}
+					}
+				},
+				{
+					"to": "warning"
+				}
+			]
+		},
+		"warning": {
+			"speaker": "hop",
+			"lines": [
+				"Ask me once more and you're on the list.",
+				"Every time you ask, somebody in security gets a little bit happier."
+			],
+			"effects": [
+				{
+					"standing": {
+						"hop->player": -2
+					}
+				},
+				{
+					"remember": {
+						"hop->player": "asked_twice"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"last_warning": {
+			"speaker": "hop",
+			"lines": [
+				"Right. That's the list. Congratulations.",
+				"I'm writing your name down. In the bad book."
+			],
+			"effects": [
+				{
+					"standing": {
+						"hop->player": -3
+					}
+				},
+				{
+					"event": "all_access"
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

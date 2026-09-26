@@ -52,7 +52,8 @@ SP_DEBUG_BREACH_COUNT 0
 ## Debug: two minutes in, convince the head of security the shift has turned (alert, armoury, arming orders)
 #SP_DEBUG_SECURITY_ALARM
 
-## Debug: three minutes in, give somebody a record and send an officer to arrest them (cuffs, cell)
+## Debug: three minutes in, stand somebody beside an officer with a record and a baton slipped into their bag, and
+## have the officer arrest them (the word, cuffs, the search, the cell, the warden letting them out again)
 #SP_DEBUG_ARREST
 
 # Send a stand-in player to visit the crew two minutes in, and log what they hear, see and click.

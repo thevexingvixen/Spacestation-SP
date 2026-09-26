@@ -26,13 +26,30 @@
 									"children": [
 										{
 											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_search_prisoner"
+										},
+										{
+											"type": "leaf",
 											"behavior": "/datum/bt_node/ai_behavior/sp_find_cell"
 										},
 										{
 											"type": "leaf",
 											"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
 											"vars": {
-												"target_key": "BB_SP_CELL_SPOT",
+												"target_key": "BB_SP_PRISONER",
+												"required_dist": 1,
+												"finish_on_arrival": true
+											}
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/sp_take_hold"
+										},
+										{
+											"type": "leaf",
+											"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_escort",
+											"vars": {
+												"target_key": "BB_SP_ESCORT_GOAL",
 												"required_dist": 0,
 												"finish_on_arrival": true
 											}

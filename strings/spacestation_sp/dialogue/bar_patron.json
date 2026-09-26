@@ -1,0 +1,203 @@
+{
+	"id": "bar_patron",
+	"triggers": [
+		"served"
+	],
+	"weight": 1,
+	"roles": {
+		"bartender": {
+			"job": [
+				"Bartender"
+			]
+		},
+		"patron": {}
+	},
+	"if": {
+		"memory": {
+			"bartender->patron": "!regular"
+		}
+	},
+	"start": "serve",
+	"nodes": {
+		"serve": {
+			"speaker": "bartender",
+			"lines": [
+				"There you go, %PATRON_FIRST%.",
+				"One for you. Try not to spill it on the console.",
+				"Drink up. You look like you need it."
+			],
+			"next": [
+				{
+					"to": "rough",
+					"weight": 3,
+					"if": {
+						"hurt": {
+							"patron": true
+						}
+					}
+				},
+				{
+					"to": "shop_medical",
+					"weight": 2,
+					"if": {
+						"department": {
+							"patron": [
+								"Medical"
+							]
+						}
+					}
+				},
+				{
+					"to": "shop_engineering",
+					"weight": 2,
+					"if": {
+						"department": {
+							"patron": [
+								"Engineering"
+							]
+						}
+					}
+				},
+				{
+					"to": "tip"
+				},
+				{
+					"to": "tab"
+				}
+			]
+		},
+		"rough": {
+			"speaker": "bartender",
+			"lines": [
+				"Rough shift? You look terrible.",
+				"Is that blood? Drink first, medbay after."
+			],
+			"next": [
+				{
+					"to": "rough_reply"
+				}
+			]
+		},
+		"rough_reply": {
+			"speaker": "patron",
+			"lines": [
+				"Don't ask.",
+				"You should see the other guy."
+			],
+			"next": [
+				{
+					"to": "tab"
+				}
+			]
+		},
+		"shop_medical": {
+			"speaker": "bartender",
+			"lines": [
+				"Doctor's orders?",
+				"Go on, what's the body count today?"
+			],
+			"next": [
+				{
+					"to": "shop_medical_reply"
+				}
+			]
+		},
+		"shop_medical_reply": {
+			"speaker": "patron",
+			"lines": [
+				"Lower than yesterday. That's the good news.",
+				"I'm off duty. Nobody's dying for ten minutes."
+			],
+			"next": [
+				{
+					"to": "tip"
+				}
+			]
+		},
+		"shop_engineering": {
+			"speaker": "bartender",
+			"lines": [
+				"Engine still in one piece?",
+				"Should you be drinking with the engine like that?"
+			],
+			"next": [
+				{
+					"to": "shop_engineering_reply"
+				}
+			]
+		},
+		"shop_engineering_reply": {
+			"speaker": "patron",
+			"lines": [
+				"If it goes, a clear head won't save anybody.",
+				"It's fine. It's always fine until it isn't."
+			],
+			"next": [
+				{
+					"to": "tip"
+				}
+			]
+		},
+		"tip": {
+			"speaker": "patron",
+			"lines": [
+				"Cheers. Keep the change.",
+				"Lovely. You're wasted on this station.",
+				"That's the stuff."
+			],
+			"effects": [
+				{
+					"standing": {
+						"bartender->patron": 1
+					}
+				},
+				{
+					"remember": {
+						"bartender->patron": "regular"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"tab": {
+			"speaker": "patron",
+			"lines": [
+				"Put it on my tab.",
+				"I'll get you back next time. Probably."
+			],
+			"effects": [
+				{
+					"remember": {
+						"bartender->patron": "regular"
+					}
+				},
+				{
+					"remember": {
+						"bartender->patron": "on_tab"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "tab_answer"
+				}
+			]
+		},
+		"tab_answer": {
+			"speaker": "bartender",
+			"lines": [
+				"Everything's free, %PATRON_FIRST%. There is no tab. But I'm keeping one anyway.",
+				"Noted. In pen."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

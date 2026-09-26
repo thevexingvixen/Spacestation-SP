@@ -246,6 +246,12 @@
 			if(length(incident) && world.time - incident[SP_INCIDENT_TIME] < 5 SECONDS)
 				on_heard_incident(human_speaker, incident)
 				return
+			// A call for another department's help -- medbay, come and see somebody -- rides the same rails, once.
+			var/list/radio_call = other.blackboard[BB_SP_LAST_CALL]
+			if(length(radio_call) && world.time - radio_call[SP_CALL_TIME] < 5 SECONDS && blackboard[BB_SP_LAST_CALL_HEARD] != radio_call[SP_CALL_TIME])
+				set_blackboard_key(BB_SP_LAST_CALL_HEARD, radio_call[SP_CALL_TIME])
+				on_heard_call(human_speaker, radio_call)
+				return
 	// A player calling for help. AI crew report trouble through the structured incident above, which returns
 	// before this, so their ordinary talk must never be read for distress words: "I'd kill for a decent meal"
 	// sent every officer in earshot to the scene, and "All security staff, on me" did the same to a briefing.
@@ -264,29 +270,46 @@
  * A player's line is ours when they use our name, or say something plainly aimed at a person and we are the
  * nearest crew member free to take it (sp_first_to_answer()). A line that opens a written conversation starts
  * one; anything else gets a line back; our name and nothing more gets a look up.
+ *
+ * A player comes before small talk: one who names us while we are chatting with a colleague gets us, and the
+ * colleague is left mid-sentence (drop_small_talk()). Work still comes first, and says so (brush_off()).
  */
 /datum/ai_controller/sp_crew/proc/consider_conversation(mob/living/speaker, raw_message)
 	if(istype(speaker.ai_controller, /datum/ai_controller/sp_crew))
 		return
+	var/list/words = sp_words(raw_message)
+	// The person we are doing a favour for, letting us off it. Thanks gets its usual answer as well.
+	if(blackboard[BB_SP_FAVOUR_FOR] == speaker && sp_releases_favour(words))
+		var/thanked = sp_speech_intent(words) == SP_INTENT_THANKS
+		sp_end_favour(src, thanked ? null : pick("Right, back to it then.", "Suit yourself."), "let off")
+		sp_record("favour.let_off")
+		if(!thanked)
+			return
+	// Already talking to us: their side of it goes through the conversation, not through what they type.
+	var/datum/sp_dialogue_thread/ours = blackboard[BB_SP_THREAD]
+	if(!isnull(ours) && sp_dialogue_other(ours, pawn) == speaker)
+		return
+	var/named = sp_named(words, pawn)
 	// Somebody mid-conversation is answering it, unless they have turned to us by name: a player with an
 	// introduction still pending from one crew member used to be ignored by everybody else until it lapsed.
-	if(sp_in_any_thread(speaker) && !sp_named(sp_words(raw_message), pawn))
+	if(sp_in_any_thread(speaker) && !named)
 		return
 	if(!free_to_talk(speaker))
-		brush_off(speaker, raw_message)
-		return
-	var/list/words = sp_words(raw_message)
+		if(!named || !sp_is_playing(speaker) || !free_to_talk(speaker, ignore_small_talk = TRUE) || !drop_small_talk(speaker))
+			brush_off(speaker, raw_message)
+			return
 	sp_notice_id(src, speaker)
 	if(sp_introduces_self(words, speaker))
 		sp_learn_name(src, speaker)
 	var/intent = sp_speech_intent(words)
-	if(sp_named(words, pawn))
-		if(isnull(intent))
-			set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
-			set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time)
-			set_blackboard_key(BB_SP_ATTENTION_TARGET, speaker)
-			return
-	else if(isnull(intent) || !sp_first_to_answer(pawn, speaker, words))
+	if(!named && (isnull(intent) || !sp_first_to_answer(pawn, speaker, words)))
+		return
+	engage(speaker)
+	if(isnull(intent))
+		// Our name and nothing more: a look up.
+		set_blackboard_key(BB_SP_GREET_COOLDOWN, world.time + SP_REPLY_GAP)
+		set_blackboard_key(BB_SP_CHAT_ASKED_AT, world.time)
+		set_blackboard_key(BB_SP_ATTENTION_TARGET, speaker)
 		return
 	var/mob/living/carbon/human/human_pawn = pawn
 	var/mob/living/carbon/human/human_speaker = speaker
@@ -301,21 +324,71 @@
  * Whether we could take up something said to us right now. A line we have already taken up -- as an answer
  * owed or a conversation started -- still leaves us free for that same line from that same speaker, because
  * listeners decide one after another (sp_first_to_answer()).
+ *
+ * With `ignore_small_talk`, the question is asked on a player's behalf: a chat with a colleague does not count,
+ * because a player outranks it (drop_small_talk()). Work still does.
  */
-/datum/ai_controller/sp_crew/proc/free_to_talk(mob/living/speaker)
+/datum/ai_controller/sp_crew/proc/free_to_talk(mob/living/speaker, ignore_small_talk = FALSE)
 	var/mob/living/carbon/human/human_pawn = pawn
 	if(!istype(human_pawn) || human_pawn.stat != STABLE || human_pawn.client || busy_with_work())
 		return FALSE
-	if(blackboard_key_exists(BB_SP_IN_THREAD))
+	var/datum/sp_dialogue_thread/small_talk = ignore_small_talk ? small_talk() : null
+	var/datum/sp_dialogue_thread/joined = blackboard[BB_SP_IN_THREAD]
+	if(!isnull(joined) && joined != small_talk)
 		return FALSE
 	var/owed = blackboard[BB_SP_CHAT_REPLY_DUE] || blackboard[BB_SP_ATTENTION_TARGET]
 	var/datum/sp_dialogue_thread/thread = blackboard[BB_SP_THREAD]
-	if(!isnull(thread))
+	if(!isnull(thread) && thread != small_talk)
 		owed = sp_dialogue_other(thread, pawn)
 	if(!isnull(owed))
 		return owed == speaker && blackboard[BB_SP_CHAT_ASKED_AT] == world.time
 	var/ready_at = blackboard[BB_SP_GREET_COOLDOWN]
 	return isnull(ready_at) || ready_at <= world.time
+
+/// The conversation we are having with a colleague, if that is all we are doing: no player is in it.
+/datum/ai_controller/sp_crew/proc/small_talk()
+	var/datum/sp_dialogue_thread/thread = blackboard[BB_SP_THREAD] || blackboard[BB_SP_IN_THREAD]
+	if(QDELETED(thread) || !isnull(sp_dialogue_player_role(thread)))
+		return null
+	return thread
+
+/**
+ * Breaks off a chat with a colleague because a player wants us. The stand-in's fifth visit lost a geneticist to
+ * a colleague's small talk 0.3 seconds after being introduced to them, and a mime to two chats within seconds of
+ * being greeted by name; Talk to refused anybody in a conversation, so both came up empty. Returns TRUE if
+ * there was a chat to break off.
+ */
+/datum/ai_controller/sp_crew/proc/drop_small_talk(mob/living/player)
+	var/datum/sp_dialogue_thread/thread = small_talk()
+	if(isnull(thread))
+		return FALSE
+	sp_record("talk.interrupted")
+	log_sp("[pawn] broke off [thread.dialogue?.id] for [player]")
+	sp_end_dialogue(sp_dialogue_runner(thread), thread)
+	return TRUE
+
+/**
+ * A player has our attention for a little while: somebody we just spoke to, or who just spoke to us, however
+ * it started. It counts as having greeted them, and while they are still about we do not wander off into small
+ * talk (engaged_with_player()).
+ */
+/datum/ai_controller/sp_crew/proc/engage(mob/living/player)
+	if(QDELETED(player) || !sp_dialogue_is_player(player))
+		return
+	set_blackboard_key(BB_SP_ENGAGED_WITH, player)
+	set_blackboard_key(BB_SP_ENGAGED_UNTIL, world.time + SP_ENGAGED_TIME)
+	set_blackboard_key_assoc_lazylist(BB_SP_GREETED, player, TRUE)
+
+/// Whether a player we were just talking to is still about and still has our attention.
+/datum/ai_controller/sp_crew/proc/engaged_with_player()
+	var/mob/living/player = blackboard[BB_SP_ENGAGED_WITH]
+	if(QDELETED(player))
+		return FALSE
+	if(blackboard[BB_SP_ENGAGED_UNTIL] > world.time && player.z == pawn.z && get_dist(pawn, player) <= SP_DIALOGUE_RANGE)
+		return TRUE
+	clear_blackboard_key(BB_SP_ENGAGED_WITH)
+	clear_blackboard_key(BB_SP_ENGAGED_UNTIL)
+	return FALSE
 
 /**
  * Too busy to talk, but not too busy to say so. A crew member mid-job does not stop for a chat -- that rule is
@@ -633,7 +706,7 @@
  * cannot interrupt an arrest -- but one taken up now would only be given once the arrest was over.
  */
 /datum/ai_controller/sp_crew/security/busy_with_work()
-	var/static/list/duty_keys = list(BB_SP_INCIDENT_TARGET, BB_SP_INCIDENT_LOCATION, BB_SP_SUSPECT, BB_SP_PRISONER, BB_SP_ARM_ORDER)
+	var/static/list/duty_keys = list(BB_SP_INCIDENT_TARGET, BB_SP_INCIDENT_LOCATION, BB_SP_SUSPECT, BB_SP_PRISONER, BB_SP_ARM_ORDER, BB_SP_EVIDENCE)
 	for(var/key in duty_keys)
 		if(blackboard_key_exists(key))
 			return TRUE
@@ -694,6 +767,13 @@
 		if(!isnull(suspect) && suspect != pawn)
 			set_blackboard_key(BB_SP_SUSPECT, suspect)
 			set_blackboard_key(BB_SP_SUSPECT_CRIME, incident[SP_INCIDENT_CRIME])
+			// What they were seen taking, if the witness could say: the thing the officer asks for back.
+			var/datum/weakref/item_ref = incident[SP_INCIDENT_ITEM]
+			var/obj/item/taken = item_ref?.resolve()
+			if(isnull(taken))
+				clear_blackboard_key(BB_SP_SUSPECT_ITEM)
+			else
+				set_blackboard_key(BB_SP_SUSPECT_ITEM, taken)
 	acknowledge_report()
 
 /datum/ai_controller/sp_crew/security/on_heard_distress(mob/living/speaker, raw_message, is_radio)
@@ -824,6 +904,8 @@
 	var/area/where = get_area(real_speaker)
 	if(isnull(where))
 		return
+	if(!takes_request(plant))
+		return
 	set_blackboard_key(BB_SP_PLANT_REQUEST, plant)
 	// Where they said to send it, if they said ("up to medbay"); otherwise wherever they are standing.
 	var/deliver_to = sp_named_delivery_area(raw_message) || where.type
@@ -837,6 +919,22 @@
 		"[capitalize(plant)]? I will see what I have got.",
 		"Someone wants [plant]. I will bring some over.",
 	), RADIO_CHANNEL_COMMON)
+
+/**
+ * Whether we take a request for `plant` on top of whatever we are already growing for somebody. First come, first
+ * served -- the cook asking for tomatoes in passing bumps nobody -- except that medicine comes first: medbay's aloe,
+ * which becomes burn cream, takes over from bananas or tomatoes. The newest ask used to win outright, and the clown
+ * asking for bananas every few minutes would have kept medbay waiting.
+ */
+/datum/ai_controller/sp_crew/botanist/proc/takes_request(plant)
+	var/in_hand = blackboard[BB_SP_PLANT_REQUEST]
+	if(isnull(in_hand) || in_hand == plant)
+		return TRUE
+	if(!GLOB.sp_request_cooked_forms[plant] || GLOB.sp_request_cooked_forms[in_hand])
+		log_sp("[pawn] heard a request for [plant] but is still on the [in_hand]")
+		return FALSE
+	log_sp("[pawn] put the [in_hand] aside for the [plant]: medicine comes first")
+	return TRUE
 
 /datum/ai_controller/sp_crew/botanist/setup_job_blackboard(mob/living/carbon/human/human_pawn)
 	set_blackboard_key(BB_SP_WANDER_AREAS, sp_botany_areas())
@@ -960,6 +1058,12 @@
 		return
 	set_blackboard_key(BB_SP_DRINK_ORDER, ordered)
 	set_blackboard_key(BB_SP_ORDER_FOR, speaker.name)
+	var/atom/movable/real_speaker = speaker
+	if(istype(speaker, /atom/movable/virtualspeaker))
+		var/atom/movable/virtualspeaker/virtual = speaker
+		real_speaker = virtual.source || speaker
+	if(ishuman(real_speaker))
+		set_blackboard_key(BB_SP_ORDER_FROM, real_speaker)
 	INVOKE_ASYNC(src, PROC_REF(acknowledge_order), ordered, speaker.name)
 
 /// Says the order back, which is half of what a bartender is for.

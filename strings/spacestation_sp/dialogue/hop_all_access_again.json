@@ -1,0 +1,63 @@
+{
+	"id": "hop_all_access_again",
+	"weight": 4,
+	"roles": {
+		"asker": {
+			"job": [
+				"Assistant"
+			]
+		},
+		"hop": {
+			"job": [
+				"Head of Personnel"
+			]
+		}
+	},
+	"if": {
+		"memory": {
+			"hop->asker": "asked_for_aa"
+		}
+	},
+	"start": "ask",
+	"nodes": {
+		"ask": {
+			"speaker": "asker",
+			"lines": [
+				"About that all access...",
+				"Have you thought any more about the all access thing?"
+			],
+			"next": [
+				{
+					"to": "warning"
+				}
+			]
+		},
+		"warning": {
+			"speaker": "hop",
+			"lines": [
+				"You again. Ask me once more and you're on the list.",
+				"I have thought about it. I thought no. Twice."
+			],
+			"effects": [
+				{
+					"standing": {
+						"hop->asker": -2
+					}
+				},
+				{
+					"remember": {
+						"hop->asker": "asked_twice"
+					}
+				},
+				{
+					"event": "all_access"
+				}
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,13 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_crew_favour",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_FAVOUR",
+		"observer_abort": "BT_ABORT_LOWER_PRIORITY"
+	},
+	"child": {
+		"type": "leaf",
+		"behavior": "/datum/bt_node/ai_behavior/sp_do_favour"
+	}
+}

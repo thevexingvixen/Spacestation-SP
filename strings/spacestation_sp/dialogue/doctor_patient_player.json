@@ -1,0 +1,106 @@
+{
+	"id": "doctor_patient_player",
+	"triggers": [
+		"treated"
+	],
+	"weight": 1,
+	"roles": {
+		"doctor": {
+			"department": [
+				"Medical"
+			]
+		},
+		"player": {
+			"player": true
+		}
+	},
+	"if": {
+		"memory": {
+			"doctor->player": "!treated"
+		}
+	},
+	"start": "advice",
+	"nodes": {
+		"advice": {
+			"speaker": "doctor",
+			"lines": [
+				"All done. Keep it clean and come back if it goes green.",
+				"You'll live. Probably. Drink some water.",
+				"That's you patched up, %PLAYER_FIRST%."
+			],
+			"effects": [
+				{
+					"remember": {
+						"doctor->player": "treated"
+					}
+				}
+			],
+			"next": [
+				{
+					"to": "reply"
+				}
+			]
+		},
+		"reply": {
+			"speaker": "player",
+			"options": [
+				{
+					"text": "Thanks, doc.",
+					"to": "welcome",
+					"effects": [
+						{
+							"standing": {
+								"doctor->player": 1
+							}
+						}
+					]
+				},
+				{
+					"text": "Will I live?",
+					"to": "live"
+				},
+				{
+					"text": "That hurt more than the injury did.",
+					"to": "hurt"
+				}
+			],
+			"timeout_to": "end"
+		},
+		"welcome": {
+			"speaker": "doctor",
+			"lines": [
+				"Don't mention it. Really, don't. I'll have queues.",
+				"Any time. Well, not any time. Try to space it out."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"live": {
+			"speaker": "doctor",
+			"lines": [
+				"We all die eventually. Just not today, and not on my shift.",
+				"Today, yes. After that, it's up to you."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		},
+		"hurt": {
+			"speaker": "doctor",
+			"lines": [
+				"It was supposed to. That's how you know it's working.",
+				"Next time get hurt somewhere less awkward."
+			],
+			"next": [
+				{
+					"to": "end"
+				}
+			]
+		}
+	}
+}

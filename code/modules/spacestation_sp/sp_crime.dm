@@ -49,15 +49,16 @@ GLOBAL_LIST_INIT(sp_crime_callouts, list(
  * * description - what they were seen doing, to follow "saw them": "smash a light", "take a stamp off the desk"
  * * where - the scene
  * * notice_chance - the chance each witness actually notices
+ * * taken - for a theft, the thing taken, so an officer can ask for it back by name (sp_search.dm)
  */
-/proc/sp_crime_seen(mob/living/culprit, crime, description, atom/where, notice_chance = SP_WITNESS_NOTICE_CHANCE)
+/proc/sp_crime_seen(mob/living/culprit, crime, description, atom/where, notice_chance = SP_WITNESS_NOTICE_CHANCE, obj/item/taken)
 	if(QDELETED(culprit))
 		return null
 	for(var/mob/living/carbon/human/witness as anything in shuffle(sp_crime_witnesses(culprit)))
 		var/datum/ai_controller/sp_crew/their_ai = witness.ai_controller
 		if(!istype(their_ai) || !prob(notice_chance))
 			continue
-		sp_call_out_crime(their_ai, culprit, crime, description, where)
+		sp_call_out_crime(their_ai, culprit, crime, description, where, taken)
 		return witness
 	return null
 
@@ -65,7 +66,7 @@ GLOBAL_LIST_INIT(sp_crime_callouts, list(
  * A witness calls out what they saw and holds it against the culprit; with a headset, they also tell security where.
  * The report names a suspect but no attacker, so officers who hear it walk over and look rather than reach for a baton.
  */
-/proc/sp_call_out_crime(datum/ai_controller/sp_crew/controller, mob/living/culprit, crime, description, atom/where)
+/proc/sp_call_out_crime(datum/ai_controller/sp_crew/controller, mob/living/culprit, crime, description, atom/where, obj/item/taken)
 	var/mob/living/carbon/human/witness = controller.pawn
 	var/area/scene = get_area(where)
 	var/place = scene ? scene.name : "the station"
@@ -87,6 +88,7 @@ GLOBAL_LIST_INIT(sp_crime_callouts, list(
 		SP_INCIDENT_TURF = get_turf(where),
 		SP_INCIDENT_TIME = world.time,
 		SP_INCIDENT_CRIME = crime,
+		SP_INCIDENT_ITEM = QDELETED(taken) ? null : WEAKREF(taken),
 	))
 	sp_crew_speak(witness, "Security, I just saw [culprit.name] [description] in [place].", RADIO_CHANNEL_COMMON)
 
