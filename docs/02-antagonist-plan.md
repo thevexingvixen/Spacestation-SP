@@ -173,6 +173,9 @@ added — the latter visible as `crew.buzzed_through=12`.
 
 ## 7. Order of work
 
+Superseded on 2026-09-27 by `docs/03-antagonists-plan.md`, which plans every antagonist on TG's roster and
+starts with the traitor, the changeling and the wizard. The list below is the record of the first session.
+
 1. **This session:** crime/witness layer; one malicious greytide behaviour (break a light); the scheme
    datum and steal scheme; the antagonist controller and one theft behaviour; an admin verb to make an
    antagonist; unit tests; a live round. No commit.

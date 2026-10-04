@@ -294,6 +294,21 @@ member who had just been introduced still added the newcomer line "Didn't see yo
 greeting remembers only greetings it made itself; and a mime cast in a conversation says nothing at all, since
 TG will not let a mime speak.
 
+### 2026-09-27 — Review, and what comes next
+
+A review of the whole project was published as an artifact (Spacestation SP Review) and followed by a Q&A.
+Decided:
+
+- **Antagonists are the next big build**, with a plan for every antagonist on TG's roster, the non-human ones
+  included, starting with the main ones: traitor, changeling, wizard. The plan is `docs/03-antagonists-plan.md`.
+- **The real-client check:** the user plays ten minutes soon; the stand-in stays for everything between.
+- **Housekeeping** is folded into feature sessions rather than given one of its own.
+- **Maps:** MetaStation only for now; its assumptions (three cells, the warden's locker as the armoury) stay
+  noted as limits.
+- **Antagonists may kill, and medbay gains revival** (defibrillation before the morgue). **The AI side of each
+  antagonist is built first.** **One antagonist a round** by default, with a config key.
+- **First step:** the traitor with an emag, which is the missing half of the theft funnel (`docs/02` §8).
+
 ### Next steps (recommended 2026-09-24)
 
 1. ~~**Players before small talk.**~~ Done 2026-09-24.
