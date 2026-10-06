@@ -86,9 +86,6 @@ Local settings go in `config/dev_overrides.txt`, which is gitignored; copy
 
 ## How it is proved
 
-Emergent crew are miserable to verify by playing: silence in a log does not say whether a behaviour is broken
-or has not come up yet. So a feature is not done until two things agree.
-
 - **Unit tests.** 122 SP tests in a `UNIT_TESTS` build pin the logic, and every bug found in play gets one.
 - **Live rounds.** Headless rounds with 32 AI crew, with the tally the game prints of what actually happened.
 
