@@ -102,10 +102,15 @@ player is the antagonist; "Needs" is what SP must build first.
 
 The traitor is the one most rounds would have, and the most natural for the player to be.
 
-- **AI side, first cut.** A scheme picked from targets the thief can reach *with an emag*. `docs/02` §8 found
-  TG's steal list "a challenge built for a player traitor with an emag"; giving the AI traitor one is the missing
-  half. The emag is used on the doors and lockers in the way (`ai_interact`, which is what a click does). The
-  theft is still witnessed or not by the existing layer, so the station's response is already there.
+- **AI side, first cut.** *Built 2026-10-05.* A scheme picked from targets the thief can reach *with the kit a
+  player traitor would buy*. `docs/02` §8 found TG's steal list "a challenge built for a player traitor with an
+  emag"; giving the AI traitor one was the missing half, and it turned out to be two cards, because TG's plain
+  emag refuses every door: a **doorjack** for airlocks and windoors (it recharges) and an **emag** for secure
+  closets. The thief paths with every station door while the doorjack has a charge, hacks a door that refuses
+  them where they stand, and breaks the lock on the target's locker, each with a click (`ai_interact`). The
+  hacks are witnessed as vandalism and the theft as theft by the existing layer, so the station's response is
+  already there, and both cards are contraband that a search takes back. The module README, *Antagonists*,
+  has the detail.
 - **Second cut: killing.** A kill scheme: follow the target at a distance, strike only when nobody would see
   (`sp_witnesses()` is empty), hide the body in a locker or in maintenance, and go back to work. This needs
   §3's body reports to have any answer at all, and the lethality decision in §9.
@@ -114,8 +119,12 @@ The traitor is the one most rounds would have, and the most natural for the play
 - **Player side.** The crew's half is mostly built: witnesses and callouts, reports, the confrontation ladder,
   searches and evidence. Missing: an owner noticing their item is gone and saying so, and a detective who
   investigates a scene rather than only officers answering a report.
-- **Proof.** Unit tests for target choice with and without an emag, the emag opening a door the thief could
-  not, and "alone" meaning alone; a live round where theft happens without a debug nudge (`antag.stole`).
+- **Proof.** Unit tests for target choice with and without the kit, the doorjack opening a door the thief could
+  not and the emag a locker, the walk planned for the fewest hacks, and later "alone" meaning alone; a live
+  round where theft happens (`antag.stole`). *Six live rounds on 2026-10-05, the sixth a theft; the five before
+  it each found one thing (hacking while wandering, a walk sent to a stale destination, a maintenance route
+  with more doors than charges, waiting for charges a card never holds, a spawn inside the confession booth),
+  each fixed and most of them unit-tested.*
 
 ### Changeling
 
@@ -174,10 +183,19 @@ The traitor is the one most rounds would have, and the most natural for the play
 
 ## 8. Order of work
 
-1. **Traitor, first cut:** the emag, reachable targets with it, theft without a debug nudge. One session.
-2. **The station's side, first part:** bodies found and reported; a medic tries the defibrillator, then
+1. ~~**Traitor, first cut:** the emag, reachable targets with it, theft without a debug nudge. One session.~~
+   Done 2026-10-05: the doorjack and the emag, targets picked and walks planned against them, and a real
+   theft in a live round (`sp_antag6`: the CMO's hypospray, 64 seconds from scheme to theft, three doors
+   hacked and the locker broken open, two witnesses, one record). The thief still arrives by
+   `SP_DEBUG_ANTAGONIST` or the admin verb; arriving on their own is step 6.
+2. ~~**The station's side, first part:** bodies found and reported; a medic tries the defibrillator, then
    carries the body to the morgue; the detective investigates a scene; sightings as incidents. One or two
-   sessions.
+   sessions.~~ Done 2026-10-12 for bodies: found and called out by whoever sees one, a doctor with a compact
+   defibrillator who revives what TG says can be revived and takes the rest to the morgue, the head of
+   security counting a body as violence, and a detective of their own who reads the prints on the dead and on
+   what was dropped beside them and hands security a name. Proved live with `SP_DEBUG_BODY`: a murder in a
+   corridor, the body called out within a second, the victim revived 96 seconds after death in one round, the
+   killer named from the prints on the jumpsuit and arrested. Sightings of monsters are step 5's.
 3. **Traitor, second cut:** the kill scheme, alone-ness, hiding a body. One session.
 4. **Changeling.** One or two sessions.
 5. **Wizard,** with the station's side, second part: the monster response, repairs to walls and windows, and

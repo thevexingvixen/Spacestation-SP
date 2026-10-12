@@ -1213,6 +1213,367 @@
 	TEST_ASSERT(!sp_reachable_steal_item(thief, reachable), "but a target we cannot get to is not a target")
 	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/red] = list()
 
+// --- The traitor's kit ----------------------------------------------------------------------------------
+
+/// A thief draws a doorjack and an emag, and with the doorjack charged the pathfinder may plan through any door.
+/datum/unit_test/sp_thief_draws_a_kit
+
+/datum/unit_test/sp_thief_draws_a_kit/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/thief = allocate(/mob/living/carbon/human/consistent, spot)
+	thief.equip_to_slot_or_del(new /obj/item/storage/backpack(thief), ITEM_SLOT_BACK)
+	var/datum/ai_controller/sp_crew/antagonist/thief_ai = new(thief)
+	thief_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT_NULL(sp_doorjack_carried(thief), "a crew member starts with no doorjack")
+	TEST_ASSERT(!(ACCESS_ARMORY in sp_thief_access(thief)), "and reaches what their own access reaches")
+
+	TEST_ASSERT(sp_issue_uplink_kit(thief_ai), "the uplink issues the kit")
+	var/obj/item/card/emag/doorjack/jack = sp_doorjack_carried(thief)
+	TEST_ASSERT_NOTNULL(jack, "a doorjack")
+	TEST_ASSERT_NOTNULL(sp_emag_carried(thief), "and an emag")
+	TEST_ASSERT(!istype(sp_emag_carried(thief), /obj/item/card/emag/doorjack), "which is not the doorjack again")
+	TEST_ASSERT(sp_is_loot(jack, thief), "both are contraband, and a search takes them")
+	TEST_ASSERT((ACCESS_ARMORY in sp_thief_access(thief)), "with the doorjack charged, every station door is one to plan a theft through")
+	TEST_ASSERT(!sp_issue_uplink_kit(thief_ai), "the uplink issues nothing twice")
+
+	// But the pathfinder only gets that reach on the scheme's own walk, and only when that walk needs it. The first
+	// live thief hacked three doors open while wandering engineering, before they had so much as picked a target.
+	TEST_ASSERT(!thief_ai.on_scheme_business(), "with no scheme there is no scheme business")
+	TEST_ASSERT(!(ACCESS_ARMORY in (thief_ai.get_access() || list())), "and a wander is planned with their own access")
+	var/datum/sp_scheme/steal/scheme = new
+	var/datum/objective_item/info = new
+	info.targetitem = /obj/item/toy/crayon/red
+	info.name = "a red crayon"
+	scheme.set_target(info)
+	thief_ai.set_blackboard_key(BB_SP_SCHEME, scheme)
+	thief_ai.set_blackboard_key(BB_SP_SCHEME_WALK, TRUE)
+	TEST_ASSERT(thief_ai.on_scheme_business(), "the walk to the target is scheme business")
+	TEST_ASSERT(!(ACCESS_ARMORY in (thief_ai.get_access() || list())), "but is planned with our own card until the plan says otherwise")
+	thief_ai.override_blackboard_key(BB_SP_SCHEME_WALK_ACCESS, sp_thief_access(thief))
+	TEST_ASSERT((ACCESS_ARMORY in thief_ai.get_access()), "and with what the plan says once it does")
+	thief_ai.clear_blackboard_key(BB_SP_SCHEME_WALK)
+	TEST_ASSERT(!(ACCESS_ARMORY in (thief_ai.get_access() || list())), "and with our own card again off the walk")
+	thief_ai.clear_blackboard_key(BB_SP_SCHEME_WALK_ACCESS)
+	jack.charges = 0
+	TEST_ASSERT(!(ACCESS_ARMORY in sp_thief_access(thief)), "with the doorjack flat, the kit reaches only our own doors")
+	qdel(scheme)
+	qdel(info)
+	qdel(thief_ai)
+
+/// Three officers hearing one report put one note on the record between them, and a second report another.
+/datum/unit_test/sp_one_note_per_incident
+
+/datum/unit_test/sp_one_note_per_incident/Run()
+	var/mob/living/carbon/human/suspect = allocate(/mob/living/carbon/human/consistent, run_loc_floor_bottom_left)
+	suspect.real_name = "Testy McTwice"
+	var/datum/record/crew/record = new(name = "Testy McTwice")
+	GLOB.manifest.general += record
+	var/when = world.time
+	TEST_ASSERT_EQUAL(sp_file_crime_record(suspect, SP_CRIME_VANDALISM, "Reported.", null, when), 1, "the first officer to arrive files the report")
+	TEST_ASSERT(sp_incident_filed(suspect, SP_CRIME_VANDALISM, when), "and it is on the record")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(suspect, SP_CRIME_VANDALISM, "Reported.", null, when), 1, "the second officer files nothing for the same report")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(suspect, SP_CRIME_THEFT, "Reported.", null, when), 2, "a different crime at the same moment is its own note")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(suspect, SP_CRIME_VANDALISM, "Reported.", null, when + 10 SECONDS), 3, "and so is the same crime reported again later")
+	TEST_ASSERT_EQUAL(sp_file_crime_record(suspect, SP_CRIME_VANDALISM, "Planted.", null), 4, "a note with no report behind it is always filed")
+	GLOB.manifest.general -= record
+	qdel(record)
+
+// --- Bodies ----------------------------------------------------------------------------------------------
+
+/// A body in sight is called out once, over the radio with a headset, as an incident with the dead in it and nobody named.
+/datum/unit_test/sp_body_is_called_out
+
+/datum/unit_test/sp_body_is_called_out/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	victim.real_name = "Testy McDeceased"
+	var/mob/living/carbon/human/witness = allocate(/mob/living/carbon/human/consistent, spot)
+	witness.equip_to_slot_or_del(new /obj/item/radio/headset(witness), ITEM_SLOT_EARS)
+	var/datum/ai_controller/sp_crew/witness_ai = new(witness)
+	witness_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(!sp_is_body(victim), "somebody alive is not a body")
+	victim.death()
+	TEST_ASSERT(sp_is_body(victim), "somebody dead on the floor is")
+	TEST_ASSERT(sp_body_seen(witness_ai, victim), "and is called out")
+	var/list/incident = witness_ai.blackboard[BB_SP_LAST_INCIDENT]
+	TEST_ASSERT(length(incident), "as an incident")
+	var/datum/weakref/body_ref = incident[SP_INCIDENT_BODY]
+	TEST_ASSERT_EQUAL(body_ref?.resolve(), victim, "with the dead in it")
+	TEST_ASSERT_NULL(incident[SP_INCIDENT_ATTACKER], "and nobody named")
+	var/mob/living/carbon/human/other = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/datum/ai_controller/sp_crew/other_ai = new(other)
+	other_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT(!sp_body_seen(other_ai, victim), "a second witness leaves it to whoever is on their way")
+	GLOB.sp_reported_bodies -= REF(victim)
+	qdel(witness_ai)
+	qdel(other_ai)
+
+/// A body called in is taken by one doctor: not by a chemist, and not by two.
+/datum/unit_test/sp_medic_takes_a_body_call
+
+/datum/unit_test/sp_medic_takes_a_body_call/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, locate(spot.x + 3, spot.y + 3, spot.z))
+	victim.death()
+	var/mob/living/carbon/human/witness = allocate(/mob/living/carbon/human/consistent, spot)
+	var/mob/living/carbon/human/doctor = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/second = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/chemist = allocate(/mob/living/carbon/human/consistent, get_step(get_step(spot, NORTH), EAST))
+	var/datum/ai_controller/sp_crew/medical/doctor_ai = new(doctor)
+	doctor_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/medical/second_ai = new(second)
+	second_ai.set_ai_status(AI_STATUS_OFF)
+	var/datum/ai_controller/sp_crew/medical/chemist/chemist_ai = new(chemist)
+	chemist_ai.set_ai_status(AI_STATUS_OFF)
+	var/list/incident = list(
+		SP_INCIDENT_ATTACKER = null,
+		SP_INCIDENT_SUSPECT = null,
+		SP_INCIDENT_VICTIM = WEAKREF(victim),
+		SP_INCIDENT_BODY = WEAKREF(victim),
+		SP_INCIDENT_TURF = get_turf(victim),
+		SP_INCIDENT_TIME = world.time,
+	)
+	chemist_ai.on_heard_incident(witness, incident)
+	TEST_ASSERT(!chemist_ai.blackboard_key_exists(BB_SP_BODY), "a chemist stays at the bench")
+	doctor_ai.on_heard_incident(witness, incident)
+	TEST_ASSERT_EQUAL(doctor_ai.blackboard[BB_SP_BODY], victim, "a doctor takes the body")
+	TEST_ASSERT(doctor_ai.busy_with_work(), "and is busy with it")
+	second_ai.on_heard_incident(witness, incident)
+	TEST_ASSERT(!second_ai.blackboard_key_exists(BB_SP_BODY), "a second doctor leaves it to the first")
+	qdel(doctor_ai)
+	qdel(second_ai)
+	qdel(chemist_ai)
+
+/// A medic with a compact defibrillator brings a freshly dead body back the way the paddles do it; a husk is not shocked.
+/datum/unit_test/sp_medic_revives_a_body
+
+/datum/unit_test/sp_medic_revives_a_body/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/medic = allocate(/mob/living/carbon/human/consistent, spot)
+	medic.equip_to_slot_or_del(new /obj/item/storage/backpack(medic), ITEM_SLOT_BACK)
+	var/datum/ai_controller/sp_crew/medical/medic_ai = new(medic)
+	medic_ai.set_ai_status(AI_STATUS_OFF)
+	medic_ai.equip_extra_gear(medic)
+	var/obj/item/defibrillator/unit = sp_medic_defib(medic)
+	TEST_ASSERT_NOTNULL(unit, "a medic carries a charged defibrillator")
+	victim.adjust_brute_loss(120)
+	victim.death()
+	TEST_ASSERT_EQUAL(victim.can_defib(), DEFIB_POSSIBLE, "a body with wounds short of the limit can be revived")
+	TEST_ASSERT(sp_try_revive(medic_ai, victim), "and the paddles bring them back")
+	TEST_ASSERT(victim.stat != DEAD, "alive")
+	TEST_ASSERT_EQUAL(unit.paddles.loc, unit, "with the paddles put away")
+	// A body past the paddles' help is left to the morgue, and the verdict kept so they are not tried again.
+	var/mob/living/carbon/human/husk = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	husk.death()
+	ADD_TRAIT(husk, TRAIT_HUSK, TRAIT_GENERIC)
+	TEST_ASSERT(!sp_try_revive(medic_ai, husk), "a husk is not shocked")
+	TEST_ASSERT_EQUAL(GLOB.sp_body_verdicts[REF(husk)], DEFIB_FAIL_HUSK, "and the reason is kept")
+	GLOB.sp_body_verdicts -= REF(husk)
+	qdel(medic_ai)
+
+/// A body nothing can be done for goes onto the morgue tray and the tray shuts on it, without the medic.
+/datum/unit_test/sp_medic_uses_the_morgue
+
+/datum/unit_test/sp_medic_uses_the_morgue/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	// A slab on the room's west side opening east: the tray comes out onto the tile in front of it.
+	var/obj/structure/bodycontainer/morgue/slab = allocate(/obj/structure/bodycontainer/morgue, locate(spot.x, spot.y + 2, spot.z))
+	slab.setDir(EAST)
+	var/turf/front = sp_morgue_tray_turf(slab)
+	TEST_ASSERT_EQUAL(front, locate(spot.x + 1, spot.y + 2, spot.z), "the tray comes out in front of the slab")
+	var/mob/living/carbon/human/medic = allocate(/mob/living/carbon/human/consistent, locate(spot.x + 1, spot.y + 3, spot.z))
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, locate(spot.x + 2, spot.y + 3, spot.z))
+	victim.death()
+	var/datum/ai_controller/sp_crew/medical/medic_ai = new(medic)
+	medic_ai.set_ai_status(AI_STATUS_OFF)
+	var/turf/beside = sp_morgue_spot(slab, medic)
+	TEST_ASSERT_NOTNULL(beside, "there is somewhere to stand beside the tray")
+	TEST_ASSERT(beside != front, "that is not the tray's own tile")
+	TEST_ASSERT(medic.start_pulling(victim), "the medic takes hold of the body")
+	TEST_ASSERT(sp_store_in_morgue(medic_ai, victim, slab), "and puts them in the morgue")
+	TEST_ASSERT_EQUAL(victim.loc, slab, "the body is inside")
+	TEST_ASSERT_EQUAL(slab.connected.loc, slab, "and the tray is shut")
+	TEST_ASSERT(medic.loc != slab, "without the medic")
+	qdel(medic_ai)
+
+/// The detective reads the prints on the dead and on what was dropped beside them, and names whoever left them.
+/datum/unit_test/sp_detective_names_the_killer
+
+/datum/unit_test/sp_detective_names_the_killer/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/killer = allocate(/mob/living/carbon/human/consistent, locate(spot.x + 3, spot.y + 3, spot.z))
+	var/mob/living/carbon/human/detective = allocate(/mob/living/carbon/human/consistent, spot)
+	victim.real_name = "Testy McVictim"
+	killer.real_name = "Testy McCulprit"
+	detective.real_name = "Testy McHolmes"
+	// Consistent test humans share one DNA, and prints are the DNA: the killer needs their own.
+	killer.dna.unique_identity = "testy-mcculprit"
+	victim.equip_to_slot_or_del(new /obj/item/clothing/under/color/grey(victim), ITEM_SLOT_ICLOTHING)
+	TEST_ASSERT_NOTNULL(victim.w_uniform, "the victim is dressed")
+	// Records with prints, as the manifest keeps them.
+	var/datum/record/crew/killer_record = new(name = killer.real_name, fingerprint = md5(killer.dna.unique_identity))
+	var/datum/record/crew/victim_record = new(name = victim.real_name, fingerprint = md5(victim.dna.unique_identity))
+	GLOB.manifest.general += killer_record
+	GLOB.manifest.general += victim_record
+	var/datum/ai_controller/sp_crew/security/detective/detective_ai = new(detective)
+	detective_ai.set_ai_status(AI_STATUS_OFF)
+	victim.death()
+	// Nothing but the victim's own prints: nothing to go on.
+	victim.w_uniform.add_fingerprint(victim, ignoregloves = TRUE)
+	TEST_ASSERT(!length(sp_read_scene(detective, victim, get_turf(victim))), "a body with only its own prints says nothing")
+	// The killer's grip on their clothes, and the knife they dropped.
+	victim.w_uniform.add_fingerprint(killer, ignoregloves = TRUE)
+	var/obj/item/knife/kitchen/knife = allocate(/obj/item/knife/kitchen, get_turf(victim))
+	knife.add_fingerprint(killer, ignoregloves = TRUE)
+	var/list/findings = sp_read_scene(detective, victim, get_turf(victim))
+	TEST_ASSERT_EQUAL(length(findings), 1, "one name comes out of the scene")
+	TEST_ASSERT_EQUAL(length(findings[killer.real_name]), 2, "on the clothes and on the knife")
+	TEST_ASSERT_EQUAL(sp_investigate_scene(detective_ai, victim, get_turf(victim)), killer, "and the detective names the killer")
+	var/list/incident = detective_ai.blackboard[BB_SP_LAST_INCIDENT]
+	var/datum/weakref/attacker_ref = incident?[SP_INCIDENT_ATTACKER]
+	TEST_ASSERT_EQUAL(attacker_ref?.resolve(), killer, "to security as an attacker, which is the baton path")
+	TEST_ASSERT(sp_wanted_for_arrest(killer), "on the arrest list")
+	TEST_ASSERT_EQUAL(length(killer_record.crimes), 1, "and on the record")
+	TEST_ASSERT_EQUAL(sp_sentence_time(killer), SP_SENTENCE_MAX, "for the longest sentence a cell allows")
+	GLOB.manifest.general -= killer_record
+	GLOB.manifest.general -= victim_record
+	GLOB.sp_investigated_bodies -= REF(victim)
+	qdel(killer_record)
+	qdel(victim_record)
+	qdel(detective_ai)
+
+/// A body found counts as violence for the head of security's alert ladder.
+/datum/unit_test/sp_body_counts_as_violence
+
+/datum/unit_test/sp_body_counts_as_violence/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/victim = allocate(/mob/living/carbon/human/consistent, get_step(spot, EAST))
+	var/mob/living/carbon/human/witness = allocate(/mob/living/carbon/human/consistent, get_step(spot, NORTH))
+	var/mob/living/carbon/human/hos = allocate(/mob/living/carbon/human/consistent, spot)
+	var/datum/ai_controller/sp_crew/security/hos/hos_ai = new(hos)
+	hos_ai.set_ai_status(AI_STATUS_OFF)
+	victim.death()
+	hos_ai.on_heard_incident(witness, list(
+		SP_INCIDENT_ATTACKER = null,
+		SP_INCIDENT_SUSPECT = null,
+		SP_INCIDENT_VICTIM = WEAKREF(victim),
+		SP_INCIDENT_BODY = WEAKREF(victim),
+		SP_INCIDENT_TURF = get_turf(victim),
+		SP_INCIDENT_TIME = world.time,
+	))
+	TEST_ASSERT_EQUAL(hos_ai.blackboard[BB_SP_VIOLENCE_SEEN], 1, "a body found is one count of violence")
+	qdel(hos_ai)
+
+/// A walk that starts while an earlier one is still going goes to the new place, not the old one.
+/datum/unit_test/sp_walk_retargets
+
+/datum/unit_test/sp_walk_retargets/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/crew = allocate(/mob/living/carbon/human/consistent, spot)
+	var/datum/ai_controller/sp_crew/crew_ai = new(crew)
+	crew_ai.set_ai_status(AI_STATUS_OFF)
+	var/turf/first = locate(spot.x + 3, spot.y, spot.z)
+	var/turf/second = locate(spot.x, spot.y + 3, spot.z)
+	crew_ai.ai_movement.start_moving_towards(crew_ai, first, 0)
+	var/datum/move_loop/has_target/jps/loop = GLOB.move_manager.processing_on(crew, SSai_movement)
+	TEST_ASSERT_NOTNULL(loop, "a walk makes a move loop")
+	TEST_ASSERT_EQUAL(loop.target, first, "to where it was told")
+	crew_ai.ai_movement.start_moving_towards(crew_ai, second, 0)
+	TEST_ASSERT_EQUAL(GLOB.move_manager.processing_on(crew, SSai_movement), loop, "a second walk keeps the loop")
+	TEST_ASSERT_EQUAL(loop.target, second, "and points it at the new place, where TG left it at the old one")
+	TEST_ASSERT_EQUAL(crew_ai.blackboard[BB_CURRENT_MOVEMENT_TARGET], second, "which is what the blackboard says too")
+	// A loop that died by itself leaves the mark behind; the next walk must not be fooled by it.
+	qdel(loop)
+	TEST_ASSERT_NULL(GLOB.move_manager.processing_on(crew, SSai_movement), "the loop is gone")
+	TEST_ASSERT(crew_ai.ai_movement.moving_controllers[crew_ai], "but the controller is still marked as walking")
+	crew_ai.ai_movement.start_moving_towards(crew_ai, first, 0)
+	var/datum/move_loop/has_target/jps/fresh = GLOB.move_manager.processing_on(crew, SSai_movement)
+	TEST_ASSERT_NOTNULL(fresh, "and a new walk still makes a loop")
+	TEST_ASSERT_EQUAL(fresh.target, first, "to where it was told")
+	crew_ai.ai_movement.stop_moving_towards(crew_ai)
+	TEST_ASSERT_NULL(GLOB.move_manager.processing_on(crew, SSai_movement), "and stopping ends it")
+	qdel(crew_ai)
+
+/// An emag in the bag makes what is shut in a locked locker worth going for, and breaks the lock when there.
+/datum/unit_test/sp_emag_breaks_a_lock
+
+/datum/unit_test/sp_emag_breaks_a_lock/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/thief = allocate(/mob/living/carbon/human/consistent, spot)
+	thief.equip_to_slot_or_del(new /obj/item/storage/backpack(thief), ITEM_SLOT_BACK)
+	var/obj/structure/closet/secure_closet/security/sec/locker = allocate(/obj/structure/closet/secure_closet/security/sec, get_step(spot, EAST))
+	var/obj/item/toy/crayon/red/prize = allocate(/obj/item/toy/crayon/red, locker)
+	TEST_ASSERT(locker.locked, "the locker is locked")
+	TEST_ASSERT(!sp_can_be_lifted(prize, thief), "so what is in it is out of a thief's reach")
+	var/datum/ai_controller/sp_crew/antagonist/thief_ai = new(thief)
+	thief_ai.set_ai_status(AI_STATUS_OFF)
+	sp_issue_uplink_kit(thief_ai)
+	TEST_ASSERT(sp_can_be_lifted(prize, thief), "unless they carry an emag")
+
+	var/datum/sp_scheme/steal/scheme = new
+	var/datum/objective_item/info = new
+	info.targetitem = /obj/item/toy/crayon/red
+	info.name = "a red crayon"
+	scheme.set_target(info)
+	thief_ai.set_blackboard_key(BB_SP_SCHEME, scheme)
+	thief_ai.set_blackboard_key(BB_SP_SCHEME_TARGET, locker)
+	var/datum/bt_node/ai_behavior/sp_take_scheme_item/take = new
+	take.owning_controller = thief_ai
+	take.perform(1, thief_ai)
+	sleep(SP_THEFT_TIME + 6 SECONDS)
+	TEST_ASSERT(!locker.locked, "the emag breaks the lock")
+	TEST_ASSERT(locker.broken, "for good")
+	TEST_ASSERT((prize in thief.get_all_contents()), "and the crayon is taken")
+	TEST_ASSERT(scheme.complete, "which is the scheme done")
+	qdel(take)
+	qdel(scheme)
+	qdel(info)
+	qdel(thief_ai)
+
+/// A doorjack hacks a door the thief cannot open, and a target beyond one counts as reachable only with it.
+/datum/unit_test/sp_doorjack_opens_the_way
+
+/datum/unit_test/sp_doorjack_opens_the_way/Run()
+	var/turf/spot = run_loc_floor_bottom_left
+	var/mob/living/carbon/human/thief = allocate(/mob/living/carbon/human/consistent, spot)
+	thief.equip_to_slot_or_del(new /obj/item/storage/backpack(thief), ITEM_SLOT_BACK)
+	// A wall across the room with one door in it, locked to anybody without armoury access.
+	for(var/offset in list(0, 1, 3, 4))
+		allocate(/obj/structure/window/reinforced/fulltile, locate(spot.x + 2, spot.y + offset, spot.z))
+	var/obj/machinery/door/airlock/door = allocate(/obj/machinery/door/airlock, locate(spot.x + 2, spot.y + 2, spot.z))
+	door.req_access = list(ACCESS_ARMORY)
+	var/datum/objective_item/info = new
+	info.targetitem = /obj/item/toy/crayon/blue
+	var/obj/item/toy/crayon/blue/prize = allocate(/obj/item/toy/crayon/blue, locate(spot.x + 4, spot.y + 2, spot.z))
+	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/blue] = list(prize)
+	var/datum/ai_controller/sp_crew/antagonist/thief_ai = new(thief)
+	thief_ai.set_ai_status(AI_STATUS_OFF)
+	TEST_ASSERT_NULL(sp_reachable_steal_item(thief, info), "a crayon behind a locked door is out of reach")
+	var/datum/sp_walk_plan/plan = sp_scheme_walk_plan(thief, prize)
+	TEST_ASSERT_NOTNULL(plan, "though a walk to it can be planned")
+	TEST_ASSERT_EQUAL(plan.hacks, 1, "with one door to hack on the way")
+	TEST_ASSERT((ACCESS_ARMORY in plan.access), "which the walk would be given the access for")
+	qdel(plan)
+	sp_issue_uplink_kit(thief_ai)
+	TEST_ASSERT_EQUAL(sp_reachable_steal_item(thief, info), prize, "and with a doorjack in the bag it is a target")
+	door.req_access = list()
+	plan = sp_scheme_walk_plan(thief, prize)
+	TEST_ASSERT_EQUAL(plan.hacks, 0, "a door that opens for us is no hack")
+	TEST_ASSERT(!(ACCESS_ARMORY in plan.access), "and that walk is planned with our own card")
+	qdel(plan)
+	door.req_access = list(ACCESS_ARMORY)
+
+	thief.forceMove(locate(spot.x + 1, spot.y + 2, spot.z))
+	TEST_ASSERT(sp_jack_door(thief_ai, door), "walked into, the door is hacked")
+	TEST_ASSERT(door.obj_flags & EMAGGED, "and stays hacked")
+	TEST_ASSERT(!door.density, "and open")
+	TEST_ASSERT(!sp_jack_door(thief_ai, door), "and is not hacked twice")
+	GLOB.steal_item_handler.objectives_by_path[/obj/item/toy/crayon/blue] = list()
+	qdel(info)
+	qdel(thief_ai)
+
 /**
  * A crime reported with a suspect and no attacker sends security to have a word, not to swing a baton.
  *
@@ -2173,6 +2534,17 @@
 	)
 	colleague_ai.on_heard_incident(officer, real_attack)
 	TEST_ASSERT_EQUAL(colleague_ai.blackboard[BB_SP_INCIDENT_TARGET], thug, "an actual attacker still gets answered")
+
+	// And the head of security, who walks the alert up on attacks, does not count the complaint either: seven of
+	// them from one prisoner on the way to the cell took a live round to red alert and lethal force.
+	var/mob/living/carbon/human/hos = allocate(/mob/living/carbon/human/consistent, get_step(get_step(spot, NORTH), EAST))
+	var/datum/ai_controller/sp_crew/security/hos/hos_ai = new(hos)
+	hos_ai.set_ai_status(AI_STATUS_OFF)
+	hos_ai.on_heard_incident(suspect, incident)
+	TEST_ASSERT_EQUAL(hos_ai.blackboard[BB_SP_VIOLENCE_SEEN] || 0, 0, "the head of security does not count an arrest as violence")
+	hos_ai.on_heard_incident(officer, real_attack)
+	TEST_ASSERT_EQUAL(hos_ai.blackboard[BB_SP_VIOLENCE_SEEN], 1, "but counts a real attack")
+	qdel(hos_ai)
 	qdel(officer_ai)
 	qdel(colleague_ai)
 

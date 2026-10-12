@@ -1,0 +1,1 @@
+{"type":"/datum/bt_node/decorator/bb_key_set","children":[{"type":"/datum/bt_node/composite/sequence","children":[{"type":"/datum/bt_node/ai_behavior/sp_find_scene"},{"type":"/datum/bt_node/ai_behavior/move_to_target/sp_reported","target_key":"sp_scene_goal","required_dist":1,"finish_on_arrival":true},{"type":"/datum/bt_node/ai_behavior/sp_investigate_scene"}]}],"key":"sp_scene"}

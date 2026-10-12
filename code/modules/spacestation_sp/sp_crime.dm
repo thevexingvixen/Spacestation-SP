@@ -99,6 +99,7 @@ GLOBAL_LIST_INIT(sp_crime_record_names, list(
 	SP_CRIME_THEFT = "Theft",
 	SP_CRIME_VANDALISM = "Vandalism",
 	SP_CRIME_TRESPASS = "Trespass",
+	SP_CRIME_MURDER = "Murder",
 ))
 
 /**
@@ -111,19 +112,37 @@ GLOBAL_LIST_INIT(sp_crime_record_names, list(
  * the record itself shows a pattern. An earlier version of this note said TG has no Suspected status; it does,
  * WANTED_SUSPECT, and whether first offences should use it is a design question rather than a gap.
  */
-/proc/sp_file_crime_record(mob/living/suspect, crime, details, mob/living/officer)
+/proc/sp_file_crime_record(mob/living/suspect, crime, details, mob/living/officer, when)
 	if(QDELETED(suspect))
 		return 0
 	var/suspect_name = suspect.real_name
 	var/datum/record/crew/record = find_record(suspect_name)
 	if(isnull(record))
 		return 0
+	if(sp_incident_filed(suspect, crime, when))
+		return length(record.crimes)
 	var/crime_name = GLOB.sp_crime_record_names[crime] || "Misconduct"
 	record.crimes += new /datum/crime(crime_name, details, officer?.real_name || "Security")
+	if(!isnull(when))
+		GLOB.sp_filed_incidents[sp_incident_key(suspect, crime, when)] = TRUE
 	update_matching_security_huds(suspect_name)
 	sp_record("sec.recorded")
 	log_sp("[officer?.real_name || "security"] filed [crime_name] against [suspect_name] ([length(record.crimes)] on record)")
 	return length(record.crimes)
+
+/**
+ * Incidents already on somebody's record, keyed by who, what and when the report was made. Every officer on the
+ * channel hears the one report and every one of them used to file it: a thief seen hacking one door had three
+ * vandalism entries and an arrest called inside a minute, with no word, note and pattern about it.
+ */
+GLOBAL_LIST_EMPTY(sp_filed_incidents)
+
+/proc/sp_incident_key(mob/living/suspect, crime, when)
+	return "[suspect?.real_name]|[crime]|[when]"
+
+/// Whether the report made at `when` about this suspect and crime is already on their record.
+/proc/sp_incident_filed(mob/living/suspect, crime, when)
+	return !isnull(when) && GLOB.sp_filed_incidents[sp_incident_key(suspect, crime, when)]
 
 /// Puts somebody on the arrest list, so an officer meeting them later already knows, and the secbots too.
 /proc/sp_mark_for_arrest(mob/living/suspect)
@@ -150,6 +169,11 @@ GLOBAL_LIST_INIT(sp_crime_record_names, list(
 	var/crimes = length(record?.crimes)
 	if(!crimes)
 		return 0
+	// A murder is the longest sentence the cell allows, whatever else is on the record: the first killer the
+	// detective named walked out after two minutes, the tariff for a smashed light.
+	for(var/datum/crime/entry as anything in record.crimes)
+		if(entry.name == GLOB.sp_crime_record_names[SP_CRIME_MURDER])
+			return SP_SENTENCE_MAX
 	return min(crimes * SP_SENTENCE_PER_CRIME, SP_SENTENCE_MAX)
 
 /// The nearest cell nobody is already serving time in. A timer that is running has an occupant behind it.

@@ -33,6 +33,8 @@ Singleplayer additions to /tg/station. Everything SP-specific lives in this fold
 - `sp_crime.dm` — who can see a crime and what they do about it, shared by the greytide and antagonists.
 - `sp_antagonist.dm` — schemes: an AI crew member's hidden goal and the score-keeping for it.
 - `ai/sp_antagonist_behaviors.dm` — the antagonist controller and the leaves that pursue a scheme.
+- `sp_body.dm` — bodies: who notices one, the paddles, the morgue, and the detective's reading of a scene.
+- `ai/sp_body_behaviors.dm` — medbay's and the detective's side of a body: the controllers' hooks and the leaves.
 - `sp_greytide.dm` — the assistants' haunts and tastes, the prank menu, the tool-storage trips, and the
   malicious streak that smashes a light.
 - `ai/sp_greytide_behaviors.dm` — the greytide's gear-up, mischief, rummage and door-trying leaves.
@@ -917,7 +919,10 @@ dodgy: who can see me, and what happens if they do? One place answers them.
 report naming a *suspect* and no attacker goes to `sp_security_confront`, which ranks directly below the
 violent response and above everything else an officer does. They walk over and have a word — the line
 chosen by the crime ("That is not yours. Hand it over.") — think less of them for it, and write it up
-(`sp_file_crime_record()`, tally `sec.confronted` and `sec.recorded`).
+(`sp_file_crime_record()`, tally `sec.confronted` and `sec.recorded`). One note per report: every officer
+on the channel hears the same callout, and the first to reach the suspect files it, keyed by who, what and
+when (`GLOB.sp_filed_incidents`); the others find it filed and leave them be. Before that, a thief seen
+hacking one door had three vandalism entries and an arrest called inside a minute.
 
 The record is the memory, and the ladder is a word, then a word and a note, then an arrest. This fork has
 no "suspected" status between None and Arrest, and flagging Arrest puts every secbot on the station onto
@@ -1216,12 +1221,81 @@ the round-end report prints a blank key for a keyless mob.
 - `sp_crew_scheme.bt.json` ranks below self-preservation and above idle wandering: find the goal (the
   item, or the locker it is in), walk to it, take it (a `do_after`, witnessed as theft), then lie low.
   Completing a scheme is logged and tallied (`antag.scheme_done`, `antag.stole`), never announced.
+- **The uplink kit.** `sp_make_thief()` first draws what a player traitor would buy (`sp_issue_uplink_kit()`):
+  a doorjack, which hacks airlocks and windoors open and recharges, and an emag, which breaks the lock on any
+  secure closet. TG keeps the two apart (the plain emag's `type_blacklist` refuses every door), so a thief
+  carries both. Every walk to a target is planned first (`sp_scheme_walk_plan()`, a `/datum/sp_walk_plan`): the
+  pathfinder is asked for a route with every station access but the maintenance tunnels, then with everything,
+  and the doors on the route the thief's own card will not open are counted (`sp_hacks_on_path()`). A route
+  with no hack is walked with the thief's own card; one with hacks is walked with the access it was planned
+  under, and only once the doorjack holds the charges for all of them, or is full when the way needs more than
+  it ever holds (the rest are hacked after a recharge on the way; the fourth live thief waited a whole round
+  in the bar for six charges on a three-charge card). A target counts as reachable at pick time only if its
+  cheapest route from there needs no more hacks than the doorjack ever holds. The corridors-first order
+  matters: the first thief to walk with every door open went from cargo to medbay through the tunnels, four
+  hacks for a trip the corridors do in two, and stalled flat at the fourth. The walk itself is
+  `move_to_target/sp_reported/sp_scheme`, which starts from a fresh move loop and flags itself on the
+  blackboard (`BB_SP_SCHEME_WALK`); on that walk and only that walk (`on_scheme_business()`) the controller's
+  `get_access()` is the planned list (`BB_SP_SCHEME_WALK_ACCESS`), and a door that refuses the thief is hacked
+  where they stand (`on_bump()` calls `sp_jack_door()`, one attempt per door per ten seconds). A locker their
+  own ID will not open is broken open in the theft leaf (`sp_break_lock()`). A wander, or a door tried out of
+  curiosity, gets the ordinary grumble: the first live thief hacked three engineering doors open before they
+  had picked a target, was seen at the first, and had an arrest called before the scheme began.
+  `sp_can_be_lifted()` counts a locked locker as liftable when there is an emag in the bag. Both hacks are
+  witnessed as vandalism, the way a smashed light is, and both cards are contraband, so a search takes them
+  back. Tallied as `antag.uplink`, `antag.door_jacked` and `antag.lock_broken`.
 
 Bridging to TG's own antagonist system — so the round counts them, shares codewords and prints a
 round-end line — is possible with a silent, uplink-less traitor datum, but it is **off by default**
 (`SP_ANTAG_TG_DATUM`): with no client the round-end report shows a blank key and codewords reach a crew
 of NPCs. The scheme drives behaviour either way. `SP_DEBUG_ANTAGONIST` turns one crew member into a
 thief ninety seconds in; the admin verb **SP: Spawn Antagonist (Thief)** does it on demand.
+
+## Bodies, revival and the detective (`sp_body.dm`, `ai/sp_body_behaviors.dm`)
+Until 2026-10-12 nobody noticed a corpse, and death was permanent. Now a body is the station's business, in
+three parts that one structured report sets off (`docs/03-antagonists-plan.md` §3, built for the kill schemes
+to come; a player who dies gets the same).
+
+- **Found.** The look round every crew member makes each second for armed threats (`sp_scan_threats`) also
+  takes in the dead (`sp_is_body()`: a dead human lying on a tile, not on a tray or in a bag). The first to see
+  one says so and, with a headset, reports it over the common channel as an incident with the dead in it and
+  nobody named (`SP_INCIDENT_BODY`; `sp_body_seen()`). One callout per body (`GLOB.sp_reported_bodies`), and
+  another only once it has lain there three minutes.
+- **Medbay.** A doctor who hears it, or sees the body themselves, takes it like a house call: one medic per
+  body, never a chemist (`take_body()`, `BB_SP_BODY`). The `sp_medical_body` subtree, above patients in the
+  medical tree, walks them there and `sp_see_to_body` tries the paddles. AI doctors carry a compact
+  defibrillator from spawn (`equip_extra_gear()`: TG hands them none, the full unit is in their locker), and
+  `sp_try_revive()` does what a player does: paddles off the unit, wielded in both hands, placed on the chest
+  with TG's own five-second routine (`sp_ai_click` on the body), the result read off `stat`. Only when TG's own
+  `can_defib()` says the body can be revived; on any other verdict the reason is logged once and kept
+  (`GLOB.sp_body_verdicts`) and the body goes to the morgue instead: pulled there with no diagonal steps
+  (`move_to_target/sp_reported/sp_hauling`), the slab opened, the body dragged onto the tray and the slab shut
+  (`sp_store_in_morgue()`; the medic stands beside the tray and within reach of the slab, never on the tray).
+  A revived patient is in crit and becomes an ordinary patient; crit patients are now patched where they lie
+  before any trip to cryo or the theatre.
+- **Security.** The head of security counts a body as violence for the alert ladder. The detective, who now
+  has a controller of their own (`/datum/ai_controller/sp_crew/security/detective`, the security tree with
+  `sp_detective_scene` above the rest), takes the scene (`BB_SP_SCENE`), walks to the body, or to the tile it lay
+  on if a medic has already taken it, scans it for show, and reads the prints (`sp_read_scene()`): on what the
+  dead wear, where a grip or a blow by hand leaves them, and on anything lying within three tiles, a dropped
+  knife above all. Prints are the md5 of a DNA identity, which the manifest keeps on every crew record
+  (`sp_whose_prints()`). A name found goes on the arrest list and the record (`SP_CRIME_MURDER`) and to
+  security as an attack with a known attacker, which is the baton path: officers arrest, one of them
+  (`sp_take_hold_of()` leaves a prisoner already in a colleague's hands), and a murder on the record is the
+  longest sentence a cell allows (`sp_sentence_time()`). No prints (gloves) is said so, and that is the end of
+  it for now.
+
+The revival window is TG's: organs decay on a corpse, and the heart of the first live victim had failed six
+and a half minutes after death. `SP_DEBUG_BODY` murders somebody in a corridor two and a half minutes in,
+with the killer's prints on their clothes and on a knife beside them. Four live rounds on 2026-10-12: the
+first found the body in a second, named the killer and jailed them, but the coroner called to the body never
+set off (a move loop that had died by itself left them marked as walking; `/datum/ai_movement/jps/sp_crew`
+now clears the mark), two officers fought over one prisoner, and the CMO stood in front of the tray where
+the slab could not be reached; the second revived the victim 96 seconds after death, who died again in the
+corridor while the medic went to set up cryo for them (crit patients are now patched where they lie first);
+the third killed a chaplain in their own office, where nobody passes, and proved nothing; the fourth did the
+whole thing, revival at two minutes and a suture to 0 brute, the killer named off the shirt and the knife,
+one escort, a cell, and the warden letting them out.
 
 ## Greytide: assistants (`sp_greytide.dm`)
 One to three assistants join at roundstart on top of `SP_AUTOPOPULATE` (`SP_ASSISTANTS_MIN` and
@@ -1435,6 +1509,27 @@ bitten this module has lived in ordinary deterministic logic, so that is what th
   in a box or carried by somebody does not.
 - `sp_steal_target_reachable` — and it has to be somewhere this thief can actually walk to: wall the room off
   and the same liftable item stops being a target.
+- `sp_thief_draws_a_kit` — the uplink issues a doorjack and an emag, once, both contraband; with the doorjack
+  charged the controller paths with every station door, and with it flat only its own.
+- `sp_emag_breaks_a_lock` — what is shut in a locked locker is out of a thief's reach until there is an emag in
+  the bag; the theft leaf then breaks the lock, for good, and takes the crayon.
+- `sp_doorjack_opens_the_way` — a target behind a locked door counts as reachable only with a doorjack, the walk
+  to it is planned for the kit while a door that opens for us is walked through without a hack, and walked
+  into, the door is hacked open, stays hacked, and is not hacked twice.
+- `sp_walk_retargets` — a walk that starts while an earlier one is still going keeps the move loop but points it
+  at the new place; TG left it pathing to the old one.
+- `sp_one_note_per_incident` — three officers hearing one report put one note on the record between them; a
+  different crime, a later report, or a note with no report behind it is each its own entry.
+- `sp_body_is_called_out` — a dead crew member lying in sight is called out once, over the radio with a headset,
+  as an incident with the dead in it and nobody named; a second witness leaves it.
+- `sp_medic_takes_a_body_call` — a body called in is taken by one doctor, not by a chemist, and not by two.
+- `sp_medic_revives_a_body` — a medic with a compact defibrillator brings a freshly dead body back the way the
+  paddles do it, puts them away, and does not shock a husk.
+- `sp_medic_uses_the_morgue` — a body nothing can be done for goes onto the morgue tray and the tray shuts on
+  it, without the medic.
+- `sp_detective_names_the_killer` — a body with only its own prints says nothing; the killer's prints on the
+  clothes and on the knife name them, to security as an attacker, on the arrest list and on the record.
+- `sp_body_counts_as_violence` — a body found is one count of violence for the head of security's alert ladder.
 - `sp_security_confronts_suspect` — a report naming a suspect and no attacker sends an officer to have a
   word; one naming an attacker still sets the baton target.
 - `sp_crime_record_escalates` — crimes accumulate on the record, somebody with no record is left alone, and
@@ -1639,11 +1734,22 @@ the game server logs nothing at all.
   behind a wall is invisible and the quartermaster would never find their own desk.
 - Botanists do not compost, fight pests, or use grafts and the DNA manipulator.
 - An antagonist completed a theft in a live round for the first time on 2026-09-21 (`antag.stole`), on a
-  station of 32 crew. It is one sighting, not a pattern: with 17 crew the same scheme still finds nothing
-  liftable it can reach, for the access reasons written up in `docs/02-antagonist-plan.md`.
+  station of 32 crew, and that was one sighting: with 17 crew the same scheme found nothing liftable it could
+  reach, for the access reasons written up in `docs/02-antagonist-plan.md`. The traitor's kit (2026-10-05)
+  answered that: in round `sp_antag6` a quartermaster drew the cards, picked the CMO's hypospray in three
+  seconds, hacked three doors and the locker on the way and had it 64 seconds after the scheme began, with two
+  witnesses and one record. Five rounds before it each found one thing, now fixed: hacking while wandering,
+  a walk sent to a stale destination, a tunnel route with more doors than charges, waiting for charges a card
+  never holds, and a spawn inside the confession booth.
 - Schemes can only steal, and only from TG's own steal catalogue filtered down to things actually
-  liftable (out on a turf, or in a closet this thief can open). Most of that catalogue is deliberately
-  locked away, so the choice is narrow. Sabotage, framing and escape-with-the-loot are not written.
+  liftable (out on a turf, or in a closet this thief can open or break open). Sabotage, framing, killing and
+  escape-with-the-loot are not written: `docs/03-antagonists-plan.md`.
+- The doorjack holds three charges and regains one every three minutes, so a route with more locked doors than
+  that is walked in stages, with a wait on the way; and the pathfinder under a 32-crew load took up to a
+  minute to answer a single planning request in these rounds, so a thief can stand thinking for a while before
+  setting off. A thief seen taking the item was called out (`crime.theft_seen`) but the theft was never written
+  up, only the hacks: the witness had no headset, or the officers' suspect slot was already taken by the
+  vandalism report. Either way the thief kept the hypospray.
 - The cell was used in a live round on 2026-09-21: *"put Isabelle Leach in Cell 1 for 8 minutes"*, 49
   seconds from the arrest being called, through the chase, the cuffing, the walk and the swap through the
   door. It took five rounds to see, and four of those failed for reasons that had nothing to do with the
@@ -1655,13 +1761,25 @@ the game server logs nothing at all.
   nobody to fire at. The arming order and the fire-mode switch are tested, not yet watched.
 - The lawyer takes no orders at all, being in `/datum/job_department/service` rather than security, and so
   running the ordinary crew controller with no security behaviour on it.
-- Antagonist theft still does not fire on a fresh station, but the reason is now measured rather than
+- Antagonist theft did not fire on a fresh station until the kit, and the reason was measured rather than
   guessed. The funnel logs where it closed -- `52 catalogued, 15 on the map, 12 with a copy somewhere, 1
   liftable, none of those reachable` -- and then retries that one at a budget nobody could exceed and again
   with every door open: `ablative trenchcoat in Armory, 13 tiles off, budget 220: 21 steps with every door
   open, so it is access`. Not the catalogue, not the lift rule, not the path budget, all of which were
   theorised and all of which were wrong. TG's steal list is a challenge built for a player traitor with an
   emag; a crew member who can open only what their own ID opens will correctly find nothing on it.
+- A body too damaged for the paddles (180 brute or burn), or dead past the organs' decay, goes to the morgue:
+  nobody repairs a corpse (cryo and surgery on the dead are TG's answer, and not written). A revived patient
+  who needs cryo is still walked there with a plain pull, which breaks at corners (the fourth live victim was
+  left in the corridor, out of crit, while the medic reached the tube alone); the theatre and cryo trips want
+  the escort's straight-step movement. Twice in one live round two officers were refused a pull on a cuffed
+  prisoner right after cuffing them, for no reason TG's code shows in isolation; `sp_take_hold_of()` now logs
+  every condition when it happens again.
+- Morgue-style doors (`/obj/machinery/door/morgue`: the confession booth, the relic closet, the morgue trays' room)
+  have no pathfinder rule of their own and so are impassable to JPS when shut, whatever access is offered, and
+  the doorjack does not fit them. Anybody put behind one cannot plan a walk anywhere: the fifth live thief was
+  spawned onto the chaplain's tile in the confession booth and reported every target on the station as
+  unreachable "topology". A late spawn now goes to a corridor (`sp_hallway_spot()`).
 - A search takes what the list says and nothing else: the reported item, contraband, weapons on civilians and
   the steal catalogue. Something stolen that is on none of those, and that no witness saw taken, stays with the
   thief. Nothing recovered is ever returned to where it came from; it goes to evidence and stays there. A

@@ -194,8 +194,9 @@ being attacked cuts a conversation off outright.
    command layer, kit fetched from the department's own lockers, and a sentence served in a cell. The
    warden's side of the brig is deliberately left for its own session.
 7. **Antagonist / grey-tide assistant behaviour** — the SP antagonist director. Greytide assistants are
-   done; the antagonist foundation (schemes rather than TG objectives) is in place, and theft is still
-   held up by what a crew member's own ID can open.
+   done; the antagonist foundation (schemes rather than TG objectives) is in place, and since 2026-10-05 the
+   thief carries a traitor's kit (a doorjack for doors, an emag for lockers), so what their own ID opens no
+   longer bounds what they can steal. The rest is `docs/03-antagonists-plan.md`.
 8. **Python sidecar** — reads `BB_SP_HEARD` and station state, few high-value model calls.
 9. ~~**Dialogue trees + spending standing**~~ — Done: player conversations that track a thread (M0, M1 and M3
    of `01-dialogue-plan.md`), conversations tied to what the crew already do (M2), and standing spent on
@@ -309,6 +310,40 @@ Decided:
   antagonist is built first.** **One antagonist a round** by default, with a config key.
 - **First step:** the traitor with an emag, which is the missing half of the theft funnel (`docs/02` §8).
 
+### 2026-10-05 — The traitor's kit
+
+Step 1 of `docs/03-antagonists-plan.md` §8. The thief now draws what a player traitor would buy: a doorjack
+(airlocks and windoors; TG's plain emag refuses every door) and an emag (secure closets). Targets are picked
+against the kit's reach, every walk is planned first for the fewest hacks (corridors before tunnels, own card
+where it opens a route, charges counted before setting off), the hack happens where the thief stands when a
+door refuses them, and the locker is broken open at the end. Both cards are contraband and come off in a
+search. Six live rounds: the sixth stole the CMO's hypospray 64 seconds after the scheme began, through three
+hacked doors and a broken lock, with two witnesses and one record. The five before it each found one bug,
+each fixed: hacks on any bump (a thief hacked engineering open while wandering and was arrested before the
+scheme began); a new walk sent to a stale destination (TG re-paths a running move loop to its old target, now
+fixed for every crew walk); a maintenance route with more doors than the doorjack has charges; waiting for
+charges a card never holds; and a debug spawn inside the chaplain's confession booth, behind a morgue door
+the pathfinder never plans through. Two station-side bugs came out of the same rounds: a prisoner's radio
+complaints about the arresting officer counted as attacks and took the station to red alert and lethal force,
+and one witnessed crime became three records because every officer on the channel filed it. 127 SP unit
+tests. Next: step 2, the station's side (bodies, revival, the detective), then the kill scheme.
+
+### 2026-10-12 — Bodies, the paddles and the detective
+
+Step 2 of `docs/03-antagonists-plan.md` §8, the station's side for bodies. Nobody had ever noticed a corpse.
+Now whoever sees one calls it out and reports it, once; a doctor, who carries a compact defibrillator from
+spawn, comes and tries the paddles exactly as a player does, and takes what cannot be revived to the morgue
+tray; the head of security counts the body as violence; and the detective, with a controller of their own at
+last, goes to the scene, reads the fingerprints on the dead and on whatever was dropped beside them (the md5
+of a DNA identity, which the manifest keeps), and gives security a name to arrest, with murder the longest
+sentence a cell allows. A debug lever, `SP_DEBUG_BODY`, murders somebody in a corridor and leaves prints.
+Four live rounds: the fourth did the whole chain, the victim revived two minutes after death and sutured to
+0 brute where they lay, the killer named off the shirt and the knife, one escort, a cell, the warden. The
+rounds also found two older faults in every crew walk and arrest: a move loop that dies by itself left its
+controller marked as walking forever (a coroner called to a body wandered the station for five minutes), and
+two officers answering one report fought over the prisoner. 133 SP unit tests. Next: step 3, the traitor's
+kill scheme, which is what all of this was built to answer.
+
 ### Next steps (recommended 2026-09-24)
 
 1. ~~**Players before small talk.**~~ Done 2026-09-24.
@@ -323,6 +358,10 @@ Decided:
    test is running (usually `sp_brew`); several SP tests move the corner test tile into another area and never
    move it back, so a later test that assumes the test room can fail only in the full run (it caught the fetch
    test once); and the module README has grown past sixteen hundred lines and wants splitting by department.
+
+8. **Antagonists**, per `docs/03-antagonists-plan.md` §8: ~~step 1, the traitor's kit~~ (done 2026-10-05);
+   ~~step 2, the station's side for bodies~~ (done 2026-10-12); then the kill scheme, changeling, wizard, and
+   antagonists arriving without a debug key.
 
 Later: the Python sidecar, layering generated lines over the static ones the dialogue engine falls back to;
 miners and wider chemistry; antagonists who sabotage, frame and escape.

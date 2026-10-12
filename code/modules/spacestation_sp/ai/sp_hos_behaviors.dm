@@ -33,8 +33,19 @@
 /// Violence is what walks the alert ladder up, so the head of security keeps count of it.
 /datum/ai_controller/sp_crew/security/hos/on_heard_incident(mob/living/carbon/human/reporter, list/incident)
 	. = ..()
+	// A body found is violence whether or not anybody saw it done.
+	var/datum/weakref/body_ref = incident[SP_INCIDENT_BODY]
+	if(!isnull(body_ref?.resolve()))
+		set_blackboard_key(BB_SP_VIOLENCE_SEEN, (blackboard[BB_SP_VIOLENCE_SEEN] || 0) + 1)
+		return
 	var/datum/weakref/attacker_ref = incident[SP_INCIDENT_ATTACKER]
-	if(isnull(attacker_ref?.resolve()))
+	var/mob/living/attacker = attacker_ref?.resolve()
+	if(isnull(attacker))
+		return
+	// Somebody being taken in radios it as an attack by the officer. The officers know better (on_heard_incident
+	// above), and so must the count, or a prisoner's complaints on the way to the cell walk the station to red and
+	// lethal force by themselves: seven of them did exactly that in the first live round with a thief.
+	if(ishuman(attacker) && sp_is_authority(attacker) && sp_is_arresting(attacker, reporter))
 		return
 	set_blackboard_key(BB_SP_VIOLENCE_SEEN, (blackboard[BB_SP_VIOLENCE_SEEN] || 0) + 1)
 

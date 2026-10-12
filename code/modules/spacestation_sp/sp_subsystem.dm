@@ -137,6 +137,8 @@ SUBSYSTEM_DEF(spacestation_sp)
 		addtimer(CALLBACK(src, PROC_REF(debug_security_alarm)), 2 MINUTES)
 	if(CONFIG_GET(flag/sp_debug_arrest))
 		addtimer(CALLBACK(src, PROC_REF(debug_arrest)), 3 MINUTES)
+	if(CONFIG_GET(flag/sp_debug_body))
+		addtimer(CALLBACK(src, PROC_REF(debug_body)), 150 SECONDS)
 	if(CONFIG_GET(flag/sp_debug_stand_in))
 		addtimer(CALLBACK(src, PROC_REF(debug_stand_in)), 2 MINUTES)
 
@@ -177,15 +179,14 @@ SUBSYSTEM_DEF(spacestation_sp)
 			continue
 		// Spawned this far into the round, the job's own roundstart landmark is long gone and they land on the
 		// arrival shuttle, which is a z-level of its own: everything worth stealing is on the station below, so the
-		// scheme finds nothing and says so every couple of minutes forever. Put them where the crew actually are.
+		// scheme finds nothing and says so every couple of minutes forever. Put them in a corridor, as a late
+		// arrival would walk in: not on another crew member's tile, which was once the chaplain's confession booth,
+		// behind a morgue door the pathfinder never plans through, and a thief who could not get out of it.
 		if(!is_station_level(crew.z))
-			for(var/mob/living/carbon/human/other as anything in shuffle(ai_crew))
-				var/turf/somewhere = get_turf(other)
-				if(other == crew || isnull(somewhere) || !is_station_level(somewhere.z))
-					continue
+			var/turf/somewhere = sp_hallway_spot()
+			if(!isnull(somewhere))
 				crew.forceMove(somewhere)
-				log_sp("debug: moved [crew.real_name] onto the station, beside [other.real_name] in [get_area_name(somewhere)]")
-				break
+				log_sp("debug: moved [crew.real_name] onto the station, into [get_area_name(somewhere)]")
 		var/datum/sp_scheme/scheme = sp_make_thief(crew.ai_controller)
 		if(isnull(scheme))
 			log_sp("debug: spawned antagonist [crew.real_name] but found nothing worth stealing")
@@ -193,6 +194,60 @@ SUBSYSTEM_DEF(spacestation_sp)
 		log_sp("debug: spawned antagonist [crew.real_name] ([job.title]) with scheme: [scheme.name]")
 		return
 	log_sp("debug: could not spawn an antagonist")
+
+/**
+ * Debug helper: a murder. Somebody standing somewhere public, who is neither security nor command, is killed where they
+ * stand by a crew member who then walks off, as a knifing in a corridor would leave things: the killer's prints on the
+ * victim's clothes and on the knife dropped beside them, and wounds short of what the paddles can undo. From there it
+ * is the station's: the body found and called out, medbay with the paddles, the detective reading the scene, security
+ * going for the name. An assistant does the killing when there is one.
+ */
+/datum/controller/subsystem/spacestation_sp/proc/debug_body()
+	var/mob/living/carbon/human/victim
+	var/mob/living/carbon/human/killer
+	var/list/could_kill = list()
+	for(var/mob/living/carbon/human/crew as anything in shuffle(ai_crew))
+		if(crew.stat != STABLE || istype(crew.ai_controller, /datum/ai_controller/sp_crew/security) || sp_is_authority(crew))
+			continue
+		if(isnull(victim) && sp_clown_prank_spot(crew) && !istype(crew.ai_controller, /datum/ai_controller/sp_crew/medical))
+			victim = crew
+			continue
+		could_kill += crew
+	for(var/mob/living/carbon/human/crew as anything in could_kill)
+		if(crew == victim)
+			continue
+		if(isnull(killer) || (istype(crew.ai_controller, /datum/ai_controller/sp_crew/assistant) && !istype(killer.ai_controller, /datum/ai_controller/sp_crew/assistant)))
+			killer = crew
+	if(isnull(victim) || isnull(killer))
+		log_sp("debug: wanted a murder, but there is nobody standing anywhere public to kill, or nobody to do it")
+		return
+	// In a corridor, where somebody will pass: the third lever's victim was a chaplain in their own office, and the
+	// body lay there unfound for the rest of the round, which is fair but proves nothing.
+	if(!istype(get_area(victim), /area/station/hallway))
+		var/turf/corridor = sp_hallway_spot()
+		if(!isnull(corridor))
+			victim.forceMove(corridor)
+	var/turf/scene = get_turf(victim)
+	var/obj/item/knife/kitchen/knife = new(scene)
+	knife.add_fingerprint(killer, ignoregloves = TRUE)
+	victim.w_uniform?.add_fingerprint(killer, ignoregloves = TRUE)
+	victim.wear_suit?.add_fingerprint(killer, ignoregloves = TRUE)
+	victim.adjust_brute_loss(120)
+	victim.death()
+	log_sp("debug: [killer.real_name] murdered [victim.real_name] in [get_area_name(scene)] and left the knife")
+
+/// Somewhere in a station corridor with nothing standing on it, or null if the map has no such thing.
+/proc/sp_hallway_spot()
+	var/list/hallways = list()
+	for(var/area_type in typesof(/area/station/hallway))
+		var/area/hallway = GLOB.areas_by_type[area_type]
+		if(!isnull(hallway))
+			hallways += hallway
+	for(var/area/hallway as anything in shuffle(hallways))
+		for(var/turf/open/floor in shuffle(hallway.get_turfs_from_all_zlevels()))
+			if(is_station_level(floor.z) && !isspaceturf(floor) && !floor.is_blocked_turf(exclude_mobs = TRUE))
+				return floor
+	return null
 
 /// Debug helper: has a random non-cargo crew member ask cargo for something.
 /datum/controller/subsystem/spacestation_sp/proc/debug_supply_request()

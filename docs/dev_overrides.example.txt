@@ -56,5 +56,9 @@ SP_DEBUG_BREACH_COUNT 0
 ## have the officer arrest them (the word, cuffs, the search, the cell, the warden letting them out again)
 #SP_DEBUG_ARREST
 
+## Debug: two and a half minutes in, a murder in a corridor: the killer walks off and leaves prints on the body and
+## on a knife beside it (the body found and called out, medbay's paddles, the detective's reading, the arrest)
+#SP_DEBUG_BODY
+
 # Send a stand-in player to visit the crew two minutes in, and log what they hear, see and click.
 # SP_DEBUG_STAND_IN

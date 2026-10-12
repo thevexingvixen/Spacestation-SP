@@ -19,7 +19,11 @@
 				},
 				{
 					"type": "leaf",
-					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+					"behavior": "/datum/bt_node/ai_behavior/sp_plan_scheme_walk"
+				},
+				{
+					"type": "leaf",
+					"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_scheme",
 					"vars": {
 						"target_key": "BB_SP_SCHEME_TARGET",
 						"required_dist": 1,

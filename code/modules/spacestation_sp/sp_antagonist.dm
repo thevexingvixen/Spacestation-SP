@@ -121,9 +121,165 @@
 	if(!istype(locker))
 		return FALSE
 	// A closet we can open. A locked one we have no key to is the lockbox problem one layer down: the thief walks
-	// all the way there, clicks at it, and comes away with nothing.
-	if(locker.locked && !isnull(thief) && !locker.allowed(thief))
+	// all the way there, clicks at it, and comes away with nothing. An emag in the bag breaks any lock.
+	if(locker.locked && !isnull(thief) && !locker.allowed(thief) && isnull(sp_emag_carried(thief)))
 		return FALSE
+	return TRUE
+
+// --- The traitor's kit ----------------------------------------------------------------------------------
+
+/**
+ * What a thief draws from the uplink before setting out: a doorjack, which hacks airlocks open and recharges,
+ * and an emag, which breaks the lock on any secure closet. TG keeps the two apart -- the plain emag refuses every
+ * airlock type (`type_blacklist`), the doorjack refuses everything but doors -- so a thief needs both. These are
+ * the missing half of the theft funnel measured in docs/02 §8: every target was behind a door. Both are
+ * contraband, so an arrest and a search take them back (sp_search.dm).
+ */
+/proc/sp_issue_uplink_kit(datum/ai_controller/sp_crew/controller)
+	var/mob/living/carbon/human/pawn = controller?.pawn
+	if(!istype(pawn))
+		return FALSE
+	var/list/drawn = list()
+	// One of each, charged or not: a flat doorjack is recharging, not missing.
+	if(isnull(sp_doorjack_owned(pawn)))
+		var/obj/item/card/emag/doorjack/jack = new(pawn)
+		if(pawn.equip_to_storage(jack, ITEM_SLOT_BACK, indirect_action = TRUE) || pawn.put_in_hands(jack))
+			drawn += jack
+		else
+			qdel(jack)
+	if(isnull(sp_emag_carried(pawn)))
+		var/obj/item/card/emag/card = new(pawn)
+		if(pawn.equip_to_storage(card, ITEM_SLOT_BACK, indirect_action = TRUE) || pawn.put_in_hands(card))
+			drawn += card
+		else
+			qdel(card)
+	if(!length(drawn))
+		return FALSE
+	sp_record("antag.uplink", length(drawn))
+	log_sp("[pawn.real_name] drew [sp_item_names(drawn)] from the uplink")
+	return TRUE
+
+/// The doorjack somebody carries, with a charge left on it, or null.
+/proc/sp_doorjack_carried(mob/living/who)
+	for(var/obj/item/card/emag/doorjack/jack as anything in who?.get_all_contents_type(/obj/item/card/emag/doorjack))
+		if(jack.charges > 0)
+			return jack
+	return null
+
+/// The emag somebody carries, or null. A doorjack is an emag by type but opens no lockers, so it does not count.
+/proc/sp_emag_carried(mob/living/who)
+	for(var/obj/item/card/emag/card as anything in who?.get_all_contents_type(/obj/item/card/emag))
+		if(!istype(card, /obj/item/card/emag/doorjack))
+			return card
+	return null
+
+/**
+ * The access the kit gives a thief: their own, and every station door while they carry a charged doorjack. This is
+ * what a target is picked against (sp_reachable_steal_item()), and what the pathfinder gets on the walk to it, and
+ * only on that walk (/datum/ai_controller/sp_crew/antagonist/get_access()).
+ */
+/proc/sp_thief_access(mob/living/thief)
+	var/list/ours = thief?.get_access()
+	ours = islist(ours) ? ours : list()
+	if(isnull(sp_doorjack_carried(thief)))
+		return ours
+	return ours | SSid_access.get_region_access_list(list(REGION_ALL_STATION))
+
+/// How a thief would walk to something: the access the walk is planned with, and how many doors on the way their own card will not open.
+/datum/sp_walk_plan
+	var/list/access
+	var/hacks = 0
+
+/**
+ * Plans the walk to `reach`: the route, as the pathfinder would take it, and how many doors on it need the doorjack.
+ * The corridors are tried before the tunnels (every station access but maintenance, then everything), because a
+ * maintenance route is a locked door every few tiles: the first thief to walk with every door open went from cargo
+ * to medbay through the tunnels, four hacks for a trip the corridors do in two, and stalled flat at the fourth. A
+ * route that needs no hack is walked with the thief's own card, so any re-path on the way stays on doors that open
+ * for them. Returns null when nothing reaches. Sleeps: it asks the pathfinder.
+ */
+/proc/sp_scheme_walk_plan(mob/living/carbon/human/thief, atom/reach)
+	if(QDELETED(thief) || QDELETED(reach))
+		return null
+	var/datum/ai_movement/jps/sp_crew/movement = /datum/ai_movement/jps/sp_crew
+	var/max_length = initial(movement.maximum_length)
+	var/list/own = thief.get_access()
+	own = islist(own) ? own : list()
+	var/list/everywhere = SSid_access.get_region_access_list(list(REGION_ALL_STATION))
+	for(var/list/attempt in list(own | (everywhere - ACCESS_MAINT_TUNNELS), own | everywhere))
+		var/list/path = get_path_to(thief, reach, max_length, 1, attempt)
+		if(!length(path))
+			continue
+		var/datum/sp_walk_plan/plan = new
+		plan.hacks = sp_hacks_on_path(path, thief)
+		plan.access = plan.hacks ? attempt : own
+		return plan
+	return null
+
+/// Doors on a planned path that this thief's own card will not open: airlocks and windoors shut to them, hacked ones aside.
+/proc/sp_hacks_on_path(list/path, mob/living/thief)
+	var/hacks = 0
+	for(var/turf/step as anything in path)
+		for(var/obj/machinery/door/door in step)
+			if(!sp_jackable_door(door) || !door.density || (door.obj_flags & EMAGGED) || door.allowed(thief))
+				continue
+			hacks++
+	return hacks
+
+/// The doorjack somebody carries, charged or flat, or null.
+/proc/sp_doorjack_owned(mob/living/who)
+	return locate(/obj/item/card/emag/doorjack) in who?.get_all_contents_type(/obj/item/card/emag/doorjack)
+
+/// A door the doorjack works on: an airlock or a windoor. Firelocks are pushed open by anybody (on_bump()).
+/proc/sp_jackable_door(atom/door)
+	return istype(door, /obj/machinery/door/airlock) || istype(door, /obj/machinery/door/window)
+
+/**
+ * Hacks a door open with the doorjack, as the thief walks into it. The hack itself is TG's: the door opens 0.6
+ * seconds on and stays open for good. Done once per door at a time (BB_SP_JACKING_DOOR), since a walk bumps the
+ * same door several times a second. Somebody may see it. Sleeps for the click.
+ */
+/proc/sp_jack_door(datum/ai_controller/sp_crew/controller, obj/machinery/door/door)
+	var/mob/living/carbon/human/pawn = controller?.pawn
+	var/obj/item/card/emag/doorjack/jack = sp_doorjack_carried(pawn)
+	if(!istype(pawn) || QDELETED(door) || !sp_jackable_door(door) || isnull(jack) || !door.density || (door.obj_flags & EMAGGED))
+		return FALSE
+	if(controller.blackboard[BB_SP_JACKING_DOOR] == door)
+		return FALSE
+	controller.set_blackboard_key(BB_SP_JACKING_DOOR, door)
+	addtimer(CALLBACK(controller, TYPE_PROC_REF(/datum/ai_controller, clear_blackboard_key), BB_SP_JACKING_DOOR), SP_JACK_RETRY)
+	if(!sp_take_in_hand(pawn, jack))
+		return FALSE
+	pawn.face_atom(door)
+	sp_ai_click(controller, door)
+	// The hack lands on a timer and the door then takes its time opening; wait for both, then put the card away.
+	sleep(SP_JACK_SETTLE)
+	if(QDELETED(pawn))
+		return FALSE
+	sp_free_hands(pawn)
+	if(QDELETED(door) || !(door.obj_flags & EMAGGED))
+		log_sp("[pawn.real_name] tried the doorjack on [door] in [get_area_name(door)] and it did not take")
+		return FALSE
+	sp_record("antag.door_jacked")
+	log_sp("[pawn.real_name] hacked [door] open in [get_area_name(door)]")
+	sp_crime_seen(pawn, SP_CRIME_VANDALISM, "hack [door] open", get_turf(door))
+	return TRUE
+
+/// Breaks the lock on a secure closet with the emag. Sleeps for the click. Somebody may see it.
+/proc/sp_break_lock(datum/ai_controller/sp_crew/controller, obj/structure/closet/locker)
+	var/mob/living/carbon/human/pawn = controller?.pawn
+	var/obj/item/card/emag/card = sp_emag_carried(pawn)
+	if(!istype(pawn) || QDELETED(locker) || isnull(card) || !locker.locked)
+		return FALSE
+	if(!sp_take_in_hand(pawn, card))
+		return FALSE
+	pawn.face_atom(locker)
+	sp_ai_click(controller, locker)
+	if(QDELETED(pawn) || QDELETED(locker) || locker.locked)
+		return FALSE
+	sp_record("antag.lock_broken")
+	log_sp("[pawn.real_name] broke the lock on [locker] in [get_area_name(locker)]")
+	sp_crime_seen(pawn, SP_CRIME_VANDALISM, "break open [locker]", get_turf(locker))
 	return TRUE
 
 /**
@@ -147,7 +303,14 @@
 	for(var/obj/item/instance as anything in GLOB.steal_item_handler?.objectives_by_path[info.targetitem])
 		if(!sp_can_be_lifted(instance, thief))
 			continue
-		if(length(get_path_to(thief, instance, max_length, 1, thief.get_access())))
+		// Somewhere a walk gets to, and if the walk needs hacks, no more of them than the doorjack ever holds.
+		var/datum/sp_walk_plan/plan = sp_scheme_walk_plan(thief, instance)
+		if(isnull(plan))
+			continue
+		var/obj/item/card/emag/doorjack/jack = sp_doorjack_owned(thief)
+		var/within_reach = !plan.hacks || (!isnull(jack) && plan.hacks <= jack.max_charges)
+		qdel(plan)
+		if(within_reach)
 			return instance
 	return null
 
@@ -195,7 +358,7 @@
 	var/max_length = initial(movement.maximum_length)
 	for(var/obj/item/instance as anything in liftable_instances)
 		var/area/spot = get_area(instance)
-		var/generous = length(get_path_to(thief, instance, 1000, 1, thief.get_access()))
+		var/generous = length(get_path_to(thief, instance, 1000, 1, sp_thief_access(thief)))
 		var/verdict
 		if(generous)
 			verdict = "[generous] steps at budget 1000, so the budget was the problem"
@@ -211,6 +374,8 @@
 	var/mob/living/carbon/human/pawn = controller?.pawn
 	if(QDELETED(pawn))
 		return null
+	// The kit first: with a doorjack in the bag, what counts as reachable is most of the station.
+	sp_issue_uplink_kit(controller)
 	if(isnull(info))
 		info = sp_pick_steal_target(pawn)
 	if(isnull(info))

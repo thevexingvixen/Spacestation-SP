@@ -874,6 +874,47 @@
 /// How far from a cell's inside tile still counts as in the cell.
 #define SP_CELL_REACH 3
 
+// --- Bodies (sp_body.dm, ai/sp_body_behaviors.dm) -------------------------------------------------------
+
+/// Incident record: the dead, when the report is of a body found (a weakref). Medbay comes to it; security treats it as a scene.
+#define SP_INCIDENT_BODY "body"
+/// A crime record entry for whoever the detective's reading of a scene names.
+#define SP_CRIME_MURDER "murder"
+/// Medic: the body we are seeing to, and when we took it on.
+#define BB_SP_BODY "sp_body"
+#define BB_SP_BODY_AT "sp_body_at"
+/// Medic: the morgue tray a body is going to, and the tile beside its tray to stand on.
+#define BB_SP_MORGUE "sp_morgue"
+#define BB_SP_MORGUE_SPOT "sp_morgue_spot"
+/// Detective: the body whose scene we are going to look over, when we took it on, the tile it lay on, and what we walk to.
+#define BB_SP_SCENE "sp_scene"
+#define BB_SP_SCENE_AT "sp_scene_at"
+#define BB_SP_SCENE_TURF "sp_scene_turf"
+#define BB_SP_SCENE_GOAL "sp_scene_goal"
+/// How long a medic or the detective keeps trying to reach a body before giving up on it.
+#define SP_BODY_CALL_TIME (5 MINUTES)
+/// A body still lying where it was is called out again after this.
+#define SP_BODY_REPORT_AGAIN (3 MINUTES)
+/// How far round the dead the detective looks for what was dropped.
+#define SP_SCENE_RANGE 3
+
+// --- The traitor's kit (sp_antagonist.dm) ---------------------------------------------------------------
+
+/// The door a thief is hacking open just now, so a dozen bumps against it are one hack and not twelve.
+#define BB_SP_JACKING_DOOR "sp_jacking_door"
+/// TRUE while the scheme's own walk is running (move_to_target/sp_reported/sp_scheme): the one walk hacks are for.
+#define BB_SP_SCHEME_WALK "sp_scheme_walk"
+/// TRUE when that walk needs the kit: our own card opens no route to the target, the doorjack does (sp_plan_scheme_walk).
+#define BB_SP_SCHEME_NEEDS_KIT "sp_scheme_needs_kit"
+/// The access list the scheme's walk was planned with (sp_scheme_walk_plan()), which is what the pathfinder gets on it.
+#define BB_SP_SCHEME_WALK_ACCESS "sp_scheme_walk_access"
+/// When the report that put a suspect on an officer's list was made, so three officers hearing it file one note.
+#define BB_SP_SUSPECT_SEEN_AT "sp_suspect_seen_at"
+/// How long a hacked door is left alone after the attempt, successful or not.
+#define SP_JACK_RETRY (10 SECONDS)
+/// How long a hack takes to show: TG's 0.6 second timer, then the door's own opening animation.
+#define SP_JACK_SETTLE (2 SECONDS)
+
 /// A call on the radio for another department's help, read off the caller as incidents are (on_pre_hear()).
 #define BB_SP_LAST_CALL "sp_last_call"
 #define BB_SP_LAST_CALL_HEARD "sp_last_call_heard"

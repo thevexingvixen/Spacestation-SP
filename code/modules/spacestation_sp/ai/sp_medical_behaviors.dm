@@ -180,6 +180,11 @@
 		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_FAILED)
 		return
 	var/plan = sp_triage(patient, !isnull(cryo), can_operate)
+	// Somebody in crit is patched where they lie before any trip: a walk to the theatre with a patient who is not
+	// breathing properly is a walk with a corpse. The first crew member revived in a live round was told "that
+	// needs surgery", left in the corridor, and dead again three minutes later. Surgery or cryo comes after.
+	if(plan != SP_TRIAGE_TREAT && plan != SP_TRIAGE_NONE && patient.stat != STABLE && !isnull(sp_pick_treatment(pawn, patient)))
+		plan = SP_TRIAGE_TREAT
 	log_sp("[pawn.real_name] looked [patient.real_name] over: [injuries] -> [plan]")
 	if(plan == SP_TRIAGE_NONE)
 		sp_crew_speak(pawn, pick("Clean bill of health.", "You're in good shape. Off you go.", "Nothing wrong with you that I can see."))

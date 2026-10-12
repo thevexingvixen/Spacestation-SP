@@ -50,6 +50,39 @@
 	maximum_length = 220
 
 /**
+ * A walk that starts while an earlier one is still going keeps the earlier move loop and only re-paths it, and in
+ * TG that means re-paths it to the earlier destination: update_movement_target() never tells the loop about the
+ * new one, and the loop paths to its own `target`. The first thief with a doorjack set off for the head of
+ * security's locker with a wander to the central hallway still running, and walked to the hallway instead, hacking
+ * the showroom and the bridge open on the way because the walk now carried the scheme's access. Point the loop at
+ * the new place, with the access the controller gives now, and then let TG re-path it.
+ */
+/**
+ * A move loop that ends by itself (the pawn held still by a do_after mid-step, which deletes it; a target that was
+ * deleted) leaves the controller marked as moving with no loop behind it, and TG then treats every walk after it
+ * as a change of target for a loop that is not there: nothing is created, nobody moves, and nothing fails. The first
+ * medic called to a body said "on my way" and wandered the station for five minutes. A mark with no loop is cleared
+ * before a walk starts.
+ */
+/datum/ai_movement/jps/sp_crew/start_moving_towards(datum/ai_controller/controller, atom/current_movement_target, min_distance, delay_override)
+	if(moving_controllers[controller] && isnull(GLOB.move_manager.processing_on(controller.pawn, SSai_movement)))
+		var/mob/living/pawn = controller.pawn
+		log_sp("[pawn?.real_name || "someone"] was marked as walking with no walk behind it; cleared")
+		moving_controllers -= controller
+	return ..()
+
+/datum/ai_movement/jps/sp_crew/update_movement_target(datum/ai_controller/controller, atom/new_target)
+	var/datum/move_loop/has_target/jps/loop = GLOB.move_manager.processing_on(controller.pawn, SSai_movement)
+	if(istype(loop) && loop.target != new_target)
+		if(!isnull(loop.target) && !isturf(loop.target))
+			loop.UnregisterSignal(loop.target, COMSIG_QDELETING)
+		loop.target = new_target
+		if(!isturf(new_target))
+			loop.RegisterSignal(new_target, COMSIG_QDELETING, TYPE_PROC_REF(/datum/move_loop/has_target, handle_no_target))
+		loop.access = controller.get_access()
+	return ..()
+
+/**
  * Walking somebody to a cell: no diagonal steps. A pulled prisoner is moved into the tile the officer just left,
  * and past a wall corner that is a diagonal move, which TG refuses when a corner is dense; the pull breaks, and
  * one escort lost its prisoner four times in thirty seconds along the brig's front corridor. Straight steps only.
@@ -526,6 +559,11 @@
 	var/mob/living/current = controller.blackboard[threat_key]
 	var/mob/living/found
 	for(var/mob/living/carbon/human/candidate in oview(scan_range, pawn))
+		// The dead lying about get noticed by the same look round: called out once, and seen to by whoever it falls to.
+		if(candidate.stat == DEAD)
+			if(pawn.stat == STABLE && sp_is_body(candidate) && can_see(pawn, candidate, scan_range))
+				sp_notice_body(controller, candidate)
+			continue
 		if(!sp_armed_threat(candidate))
 			continue
 		if(!can_see(pawn, candidate, scan_range))
@@ -687,7 +725,14 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	var/obj/item/reported = controller.blackboard[BB_SP_SUSPECT_ITEM]
 	pawn.face_atom(suspect)
 	var/area/scene = get_area(suspect)
-	var/priors = sp_file_crime_record(suspect, crime, "Reported in [scene ? scene.name : "the station"].", pawn)
+	var/when = controller.blackboard[BB_SP_SUSPECT_SEEN_AT]
+	// A colleague got here first: one note per incident, and one word.
+	if(sp_incident_filed(suspect, crime, when))
+		log_sp("[pawn.real_name] left [suspect.real_name] be: already written up for that")
+		sp_clear_suspect(controller)
+		finish_async(AI_BEHAVIOR_DELAY | AI_BEHAVIOR_SUCCEEDED)
+		return
+	var/priors = sp_file_crime_record(suspect, crime, "Reported in [scene ? scene.name : "the station"].", pawn, when)
 	sp_adjust_reputation(controller, suspect, SP_WITNESS_REPUTATION_HIT, "had to have a word with them")
 	sp_record("sec.confronted")
 	controller.clear_blackboard_key(BB_SP_SUSPECT_SINCE)
@@ -736,6 +781,7 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	controller?.clear_blackboard_key(BB_SP_SUSPECT)
 	controller?.clear_blackboard_key(BB_SP_SUSPECT_CRIME)
 	controller?.clear_blackboard_key(BB_SP_SUSPECT_ITEM)
+	controller?.clear_blackboard_key(BB_SP_SUSPECT_SEEN_AT)
 
 /**
  * The suspect is somewhere we cannot walk to: say so on the radio, and hold on to the incident.
@@ -1166,6 +1212,14 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 	if(!ishuman(pawn) || QDELETED(prisoner) || !prisoner.Adjacent(pawn))
 		return FALSE
 	if(pawn.pulling != prisoner)
+		// One escort per prisoner. Two officers answering the same report took hold of one murderer forty-six times
+		// between them on the way to the brig, and the second took them out of the first's cell into another.
+		var/mob/living/other = prisoner.pulledby
+		if(!isnull(other) && other != pawn && istype(other.ai_controller, /datum/ai_controller/sp_crew/security))
+			log_sp("[pawn.real_name] left [prisoner.real_name] to [other.real_name], who has them")
+			sp_clear_escort_keys(controller)
+			controller.clear_blackboard_key(BB_SP_INCIDENT_TARGET)
+			return FALSE
 		// Only a loss that meant going back for them counts against the escort: a hold lost and taken again on
 		// the spot is a corner turned, not a prisoner getting away.
 		var/holds = controller.blackboard[BB_SP_ESCORT_RETAKES] || 0
@@ -1174,7 +1228,9 @@ GLOBAL_LIST_INIT(sp_confrontation_lines, list(
 			sp_abandon_escort(controller)
 			return FALSE
 		if(!pawn.start_pulling(prisoner, supress_message = TRUE))
-			log_sp("[pawn.real_name] could not take hold of [prisoner.real_name]")
+			// Every reason TG has for refusing, so a refusal in a live round says which it was.
+			var/mob/living/puller = prisoner.pulledby
+			log_sp("[pawn.real_name] could not take hold of [prisoner.real_name] (on turf [isturf(prisoner.loc)], anchored [prisoner.anchored], thrown [prisoner.throwing], buckled [!isnull(prisoner.buckled)], held by [puller ? puller.real_name : "nobody"], same tile [get_turf(pawn) == get_turf(prisoner)], officer may pull [!!(pawn.mobility_flags & MOBILITY_PULL)], officer pulling [pawn.pulling])")
 			sp_abandon_escort(controller)
 			return FALSE
 		if(went_back)

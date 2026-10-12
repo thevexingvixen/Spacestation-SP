@@ -4,9 +4,9 @@
 A singleplayer fork of <a href="https://github.com/tgstation/tgstation">/tg/station</a> in which AI crew hold real jobs and actually do them.</p>
 
 <p align="center">
-  <img alt="122 unit tests passing" src="https://img.shields.io/badge/unit_tests-122_passing-2f7d46">
-  <img alt="16 AI controllers" src="https://img.shields.io/badge/AI_controllers-16-1c6b86">
-  <img alt="75 behaviour trees" src="https://img.shields.io/badge/behaviour_trees-75-1c6b86">
+  <img alt="133 unit tests passing" src="https://img.shields.io/badge/unit_tests-133_passing-2f7d46">
+  <img alt="17 AI controllers" src="https://img.shields.io/badge/AI_controllers-17-1c6b86">
+  <img alt="78 behaviour trees" src="https://img.shields.io/badge/behaviour_trees-78-1c6b86">
   <img alt="34 dialogue files" src="https://img.shields.io/badge/dialogue_files-34-1c6b86">
   <img alt="Map: MetaStation" src="https://img.shields.io/badge/map-MetaStation-56656a">
   <img alt="BYOND 516.1685 or newer" src="https://img.shields.io/badge/BYOND-516.1685+-56656a">
@@ -26,10 +26,10 @@ behaviours land regularly.
 
 | | |
 |---:|---|
-| **16,146** | lines of SP code, kept in its own module |
-| **122** | unit tests, all passing |
-| **16** | AI controllers, one per kind of job |
-| **75** | behaviour trees |
+| **22,353** | lines of SP code, kept in its own module |
+| **133** | unit tests, all passing |
+| **17** | AI controllers, one per kind of job |
+| **78** | behaviour trees |
 | **34** | written dialogue files, checked as they load |
 | **5** | small code edits to /tg/station itself |
 
@@ -41,12 +41,12 @@ the round log counts what they managed.
 | Department | What they do | Status |
 |---|---|---|
 | **Engineering**<br><sub>Engineers, atmos techs, the CE</sub> | Bring the engine up and keep the power on. Suit up and patch hull breaches with the RCD. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
-| **Security**<br><sub>Officers, HoS, warden</sub> | A word, a note on the record, an arrest once there is a pattern. Stun and cuff, pat down, walk them to a cell and file the evidence. The HoS raises the alert, calls briefings and orders arming. The warden lets prisoners out on time and keeps the armoury. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
-| **Medbay**<br><sub>Doctors, CMO, chemist</sub> | Triage, limb-by-limb treatment, cryo, and surgery on bones and wounds. The chemist brews patches and cryoxadone. Medics restock from lockers, cargo and botany, and come when somebody calls medbay for you. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
+| **Security**<br><sub>Officers, HoS, warden, detective</sub> | A word, a note on the record, an arrest once there is a pattern. Stun and cuff, pat down, walk them to a cell and file the evidence. The HoS raises the alert, calls briefings and orders arming. The warden lets prisoners out on time and keeps the armoury. The detective goes to a body, reads the fingerprints on it and on whatever was dropped beside it, and names the killer. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
+| **Medbay**<br><sub>Doctors, CMO, chemist</sub> | Triage, limb-by-limb treatment, cryo, and surgery on bones and wounds. The chemist brews patches and cryoxadone. Medics restock from lockers, cargo and botany, and come when somebody calls medbay for you. A body found is called out; a doctor comes with the paddles, and what cannot be brought back goes to the morgue. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
 | **Service**<br><sub>Botanist, cook, bartender, janitor, clown</sub> | Grow and deliver produce and take requests. Cook the recipe tree onto the counter. Mix drinks to order. Mop the station. Honk, and leave peels only where they are funny. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
 | **Cargo**<br><sub>Quartermaster, technicians</sub> | Order what departments ask for against the budget, run the shuttle, and haul each crate to whoever asked. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
 | **Assistants**<br><sub>One to three greytiders</sub> | Gear up at tool storage, rummage, try doors, pull harmless pranks. One with a streak smashes a light. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
-| **Antagonists**<br><sub>A thief, so far</sub> | A hidden scheme to steal something worth taking. Usually it is behind a door they cannot open. This is the next big build. | ![Partial](https://img.shields.io/badge/partial-b24a1c) |
+| **Antagonists**<br><sub>A traitor, so far</sub> | A hidden scheme to steal something worth taking, and a traitor's kit to do it with: a doorjack for the doors in the way, an emag for the locker it sits in. The walk is planned for the fewest hacks, every hack can be seen, and a search takes both cards back. The rest of the roster is the current build. | ![Seen live](https://img.shields.io/badge/seen_live-2f7d46) |
 | **Everyone else**<br><sub>Science, captain, HoP, detective, chaplain and others</sub> | Wander, chat and do favours. No work of their own yet. | ![Not built](https://img.shields.io/badge/not_built-6b7478) |
 
 ## What you can do
@@ -59,6 +59,9 @@ the round log counts what they managed.
   not, fetch you something from their department, or call medbay when you are hurt.
 - **Get into trouble.** Witnesses call out what they see. Security starts with a word, keeps a record, and
   arrests on a pattern: cuffs, a search, a cell with a timer, and a warden who lets you out when it runs down.
+- **Die, and maybe come back.** Whoever finds you calls it in. A doctor comes with a defibrillator, and if
+  you have not been dead too long, you wake up in crit with somebody patching you. Otherwise it is the
+  morgue, and the detective comes to read the scene.
 - **Run the place.** You have admin powers, because someone has to keep the lights on.
 
 > The player's side has been driven end to end by an automated stand-in player in live rounds. It has had very
@@ -86,7 +89,7 @@ Local settings go in `config/dev_overrides.txt`, which is gitignored; copy
 
 ## How it is proved
 
-- **Unit tests.** 122 SP tests in a `UNIT_TESTS` build pin the logic, and every bug found in play gets one.
+- **Unit tests.** 133 SP tests in a `UNIT_TESTS` build pin the logic, and every bug found in play gets one.
 - **Live rounds.** Headless rounds with 32 AI crew, with the tally the game prints of what actually happened.
 
 From one 17-minute round with nobody at the keyboard:
@@ -99,15 +102,22 @@ security  sec.searched=1 sec.confiscated=1 sec.evidence_filed=1 sec.jailed=1 war
 talk      talk.thread=74 talk.finished=72 talk.line=158
 ```
 
+And from the round in which the traitor first got away with it, 64 seconds from scheme to theft:
+
+```
+antag     antag.uplink=2 antag.door_jacked=3 antag.lock_broken=1 antag.stole=1 antag.scheme_done=1
+station   crime.vandalism_seen=3 crime.theft_seen=1 sec.confronted=1 sec.recorded=1
+```
+
 ## What is missing
 
 | | |
 |---|---|
-| **Antagonists rarely act** | The one thief usually finds nothing it can reach. Fixing this is next. |
+| **One antagonist, one scheme** | A thief who steals, and nothing yet that kills, sabotages or frames. They arrive only when you spawn them (a config key or the admin verb). |
 | **Half the station has no work** | Science, command, the detective and others only wander and chat. |
 | **No rhythm to a shift** | No schedules, meal breaks or needs. Hunger is switched off. |
 | **One map** | Cells, the armoury and routes assume MetaStation. |
-| **Death is permanent** | Medbay cannot revive anybody yet. |
+| **Revival has a window** | A doctor can defibrillate a fresh body. One too damaged, or dead too long, goes to the morgue: there is no repairing a corpse yet. |
 
 The full list is in the [module README](code/modules/spacestation_sp/README.md#known-limitations).
 
@@ -140,10 +150,12 @@ files under `strings/spacestation_sp/dialogue`.
 - [`docs/`](docs/) holds the plans: the original analysis, dialogue, and antagonists.
 
 <details>
-<summary><b>The build so far</b> (6 to 26 September 2026)</summary>
+<summary><b>The build so far</b> (6 September to 12 October 2026)</summary>
 
 | Date | What landed |
 |---|---|
+| 12 Oct | Bodies found and called out, a doctor with the paddles and the morgue, and a detective who names the killer |
+| 5 Oct | The traitor's kit: a thief who hacks their way to the target and steals it |
 | 26 Sep | Favours, dialogue tied to work, the warden, searches and evidence |
 | 24 Sep | A stand-in for the player, and what it found |
 | 22 Sep | Dialogue as a system, and a player who can talk back |

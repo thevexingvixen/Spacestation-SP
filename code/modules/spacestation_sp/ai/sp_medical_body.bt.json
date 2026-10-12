@@ -1,0 +1,43 @@
+{
+	"dm_type": "/datum/bt_node/subtree/sp_medical_body",
+	"type": "decorator",
+	"decorator": "/datum/bt_node/decorator/bb_key_set",
+	"vars": {
+		"key": "BB_SP_BODY"
+	},
+	"child": {
+		"type": "sequence",
+		"children": [
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_find_body"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported",
+				"vars": {
+					"target_key": "BB_SP_BODY",
+					"required_dist": 1,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_see_to_body"
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/move_to_target/sp_reported/sp_hauling",
+				"vars": {
+					"target_key": "BB_SP_MORGUE_SPOT",
+					"required_dist": 0,
+					"finish_on_arrival": true
+				}
+			},
+			{
+				"type": "leaf",
+				"behavior": "/datum/bt_node/ai_behavior/sp_store_body"
+			}
+		]
+	}
+}

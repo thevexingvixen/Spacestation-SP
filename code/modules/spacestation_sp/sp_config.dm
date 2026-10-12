@@ -87,6 +87,11 @@
 /// misbehave three times in front of a witness. Config key: SP_DEBUG_ARREST
 /datum/config_entry/flag/sp_debug_arrest
 
+/// Debug: two and a half minutes in, a murder. Somebody standing somewhere public is killed where they stand and
+/// the killer walks off, leaving prints on the body and on a knife beside it, so the body being found, medbay's
+/// paddles, the detective's reading of the scene and the arrest can be watched in one round. Config key: SP_DEBUG_BODY
+/datum/config_entry/flag/sp_debug_body
+
 /// Debug: two minutes in, send a stand-in player to visit the crew and log what they hear, see and click
 /// (sp_stand_in.dm), so the player's side of conversation can be checked with nobody at the keyboard.
 /// Config key: SP_DEBUG_STAND_IN

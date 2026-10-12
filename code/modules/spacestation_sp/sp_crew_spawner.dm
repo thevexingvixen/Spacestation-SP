@@ -111,6 +111,8 @@
 	// The warden keeps the brig rather than patrolling, and holds the armoury keys.
 	if(istype(job, /datum/job/warden))
 		return /datum/ai_controller/sp_crew/security/warden
+	if(istype(job, /datum/job/detective))
+		return /datum/ai_controller/sp_crew/security/detective
 	if(/datum/job_department/security in job.departments_list)
 		return /datum/ai_controller/sp_crew/security
 	if(/datum/job_department/engineering in job.departments_list)

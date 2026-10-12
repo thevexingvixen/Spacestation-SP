@@ -547,7 +547,16 @@
  * medic "busy" all shift. A setup job is a few quick clicks, and one started over does no harm.
  */
 /datum/ai_controller/sp_crew/medical/busy_with_work()
-	return blackboard_key_exists(BB_SP_PATIENT)
+	return blackboard_key_exists(BB_SP_PATIENT) || blackboard_key_exists(BB_SP_BODY)
+
+/**
+ * A compact defibrillator in the bag. TG hands doctors none: the full unit sits in their locker and the compact one
+ * in the CMO's. A medic sent to a body without paddles can only take it to the morgue (sp_body.dm), so they carry
+ * one from the start, as the CMO does.
+ */
+/datum/ai_controller/sp_crew/medical/equip_extra_gear(mob/living/carbon/human/human_pawn)
+	if(!length(human_pawn.get_all_contents_type(/obj/item/defibrillator)))
+		human_pawn.equip_to_storage(new /obj/item/defibrillator/compact/loaded(human_pawn), ITEM_SLOT_BACK, indirect_action = TRUE, del_on_fail = TRUE)
 
 /// Going off shift with a patient: they are unstrapped from the table and no longer told to wait for us.
 /datum/ai_controller/sp_crew/medical/on_sent_off_shift()
@@ -767,6 +776,7 @@
 		if(!isnull(suspect) && suspect != pawn)
 			set_blackboard_key(BB_SP_SUSPECT, suspect)
 			set_blackboard_key(BB_SP_SUSPECT_CRIME, incident[SP_INCIDENT_CRIME])
+			set_blackboard_key(BB_SP_SUSPECT_SEEN_AT, incident[SP_INCIDENT_TIME])
 			// What they were seen taking, if the witness could say: the thing the officer asks for back.
 			var/datum/weakref/item_ref = incident[SP_INCIDENT_ITEM]
 			var/obj/item/taken = item_ref?.resolve()
